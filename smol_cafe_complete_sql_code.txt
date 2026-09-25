@@ -3073,12 +3073,12 @@ ON CONFLICT DO NOTHING;
 -- 4. Initial Vendors
 INSERT INTO vendors (id, name, contact_person, phone, email, address, tax_id)
 VALUES
-  ('v-1', 'Valley Organic Dairies', 'Rajesh Sharma', '+91 98765 43210', 'orders@valleydairy.in', 'Plot 14, Farm Zone, Himachal Pradesh', '02AAAAA0000A1Z5'),
-  ('v-2', 'Mountain Roasters Co.', 'Kavita Nair', '+91 98112 34567', 'supply@mountainroasters.com', 'Estate 7, Chikmagalur & Dehradun', '05BBBBB1111B2Z8'),
-  ('v-3', 'Artisan Breads & Co.', 'Chef Vikram Joshi', '+91 98223 45678', 'bake@artisanbreads.co', 'Bakery Lane, Tapovan, Rishikesh', '02CCCCC2222C3Z1'),
-  ('v-4', 'Green Earth Organics', 'Anita Kapoor', '+91 98334 56789', 'greens@greenearth.org', 'Hydroponics Unit 2, Solan', '02DDDDD3333D4Z4'),
-  ('v-5', 'Himalayan Botanicals', 'Sunil Verma', '+91 98445 67890', 'botanicals@himalayannectar.com', 'Forest Outpost, Kulu', '02EEEEE4444E5Z7')
-ON CONFLICT DO NOTHING;
+  ('00000000-0000-0000-0002-000000000001', 'Valley Organic Dairies', 'Rajesh Sharma', '+91 98765 43210', 'orders@valleydairy.in', 'Plot 14, Farm Zone, Himachal Pradesh', '02AAAAA0000A1Z5'),
+  ('00000000-0000-0000-0002-000000000002', 'Mountain Roasters Co.', 'Kavita Nair', '+91 98112 34567', 'supply@mountainroasters.com', 'Estate 7, Chikmagalur & Dehradun', '05BBBBB1111B2Z8'),
+  ('00000000-0000-0000-0002-000000000003', 'Artisan Breads & Co.', 'Chef Vikram Joshi', '+91 98223 45678', 'bake@artisanbreads.co', 'Bakery Lane, Tapovan, Rishikesh', '02CCCCC2222C3Z1'),
+  ('00000000-0000-0000-0002-000000000004', 'Green Earth Organics', 'Anita Kapoor', '+91 98334 56789', 'greens@greenearth.org', 'Hydroponics Unit 2, Solan', '02DDDDD3333D4Z4'),
+  ('00000000-0000-0000-0002-000000000005', 'Himalayan Botanicals', 'Sunil Verma', '+91 98445 67890', 'botanicals@himalayannectar.com', 'Forest Outpost, Kulu', '02EEEEE4444E5Z7')
+ON CONFLICT (id) DO NOTHING;
 
 -- ==============================================================================
 -- END OF SMOL CAFÉ FULL DATABASE ARCHITECTURE
