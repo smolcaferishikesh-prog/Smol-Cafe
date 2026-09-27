@@ -206,7 +206,7 @@ export const PostPaymentCelebrationModal: React.FC<PostPaymentCelebrationModalPr
             </div>
           </div>
 
-          {/* Smol Club Loyalty Points Earned Card */}
+          {/* Smol Club Loyalty Points Card (Coming Soon) */}
           <div className="rounded-2xl border border-[#FDE68A] dark:border-amber-800/40 bg-[#FFFBEB] dark:bg-amber-950/25 p-4 space-y-2.5 shadow-2xs">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2.5">
@@ -215,22 +215,22 @@ export const PostPaymentCelebrationModal: React.FC<PostPaymentCelebrationModalPr
                 </div>
                 <div>
                   <span className="block font-mono text-[10px] uppercase font-bold text-[#78350F] dark:text-amber-300 tracking-wider">
-                    SMOL CLUB LOYALTY
+                    SMOL CLUB LOYALTY • COMING SOON
                   </span>
                   <span className="font-serif text-sm font-bold text-[#241F1C] dark:text-white">
-                    +{pointsEarned} Points Credited
+                    Patron Perks &amp; Rewards Launching Soon
                   </span>
                 </div>
               </div>
-              <span className="rounded-full bg-[#B72E35] text-white px-3 py-0.5 font-mono text-xs font-bold shadow-xs">
-                ₹10 = 1 pt
+              <span className="rounded-full bg-[#B72E35] text-white px-2.5 py-0.5 font-mono text-[10px] font-bold shadow-xs">
+                Coming Soon 🚀
               </span>
             </div>
 
             <div className="border-t border-[#FDE68A]/80 dark:border-amber-900/50 pt-2.5 flex items-center justify-between text-xs text-[#78350F] dark:text-stone-300">
-              <span>Tier Status: <strong>Seedling Patron</strong></span>
+              <span>Tier Status: <strong>Regular Patron Pass</strong></span>
               <span className="font-mono text-[11px] text-[#B72E35] dark:text-[#F87171] font-bold">
-                Free Cookie at 100 pts
+                +{pointsEarned} Points Reserved
               </span>
             </div>
           </div>

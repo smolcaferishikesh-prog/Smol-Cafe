@@ -701,30 +701,23 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ tableLabel = "07", guest
                       <Gift className="w-4 h-4" />
                     </div>
                     <div>
-                      <h4 className="font-serif font-bold text-[14px] text-[#241F1C] dark:text-[#FAF4EB] leading-none">
-                        Smol Club Points
-                      </h4>
+                      <div className="flex items-center gap-1.5">
+                        <h4 className="font-serif font-bold text-[14px] text-[#241F1C] dark:text-[#FAF4EB] leading-none">
+                          Smol Club Points
+                        </h4>
+                        <span className="rounded-full bg-[#B72E35] text-white px-2 py-0.2 font-mono text-[9px] font-bold">
+                          Coming Soon 🚀
+                        </span>
+                      </div>
                       <p className="font-mono text-[10.5px] text-[#725039] dark:text-[#C9AE8B] mt-0.5">
-                        Balance: <strong className="text-[#B72E35] dark:text-[#F2C84B]">{userBalance} pts</strong> (₹{userBalance})
+                        Patron Rewards &amp; Bill Offs launching soon
                       </p>
                     </div>
                   </div>
 
-                  {userBalance > 0 && maxDiscountRupees > 0 ? (
-                    <button
-                      type="button"
-                      onClick={() => setRedeemPoints(!redeemPoints)}
-                      className={`px-3 py-1.5 rounded-full font-serif text-[12px] font-bold transition shadow-xs cursor-pointer ${
-                        redeemPoints
-                          ? "bg-[#B72E35] text-[#F3E7D3] hover:bg-[#9E252C]"
-                          : "bg-[#F3E7D3] dark:bg-stone-800 text-[#725039] dark:text-[#FAF4EB] hover:bg-[#EAE0D2] border border-[#C9AE8B]/50"
-                      }`}
-                    >
-                      {redeemPoints ? `Applied ₹${maxDiscountRupees} Off ✓` : `Claim 20% Off (-₹${maxDiscountRupees})`}
-                    </button>
-                  ) : (
-                    <span className="font-mono text-[10px] text-[#725039]/70">No points yet</span>
-                  )}
+                  <span className="px-3 py-1.5 rounded-full font-serif text-[11px] font-bold bg-[#EFE7DC] dark:bg-stone-800 text-[#725039] dark:text-[#C9AE8B] border border-[#C9AE8B]/40">
+                    Coming Soon
+                  </span>
                 </div>
 
                 <div className="border-t border-[#C9AE8B]/20 dark:border-white/5 pt-1.5 flex items-center justify-between text-[10.5px] font-mono text-[#725039] dark:text-[#C9AE8B]">
@@ -910,29 +903,19 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ tableLabel = "07", guest
                             <span className="font-serif font-bold text-[13.5px] text-[#241F1C] dark:text-[#FAF4EB]">
                               Smol Club Rewards
                             </span>
-                            <span className="rounded-full bg-[#B72E35] text-[#F3E7D3] px-2 py-0.2 font-mono text-[9.5px] font-bold">
-                              {userBalance} pts (₹{userBalance})
+                            <span className="rounded-full bg-[#B72E35] text-white px-2 py-0.2 font-mono text-[9.5px] font-bold">
+                              Coming Soon 🚀
                             </span>
                           </div>
                           <p className="font-mono text-[10.5px] text-[#725039] dark:text-[#C9AE8B] truncate">
-                            Earn 1 pt / ₹10 • Max {maxDiscountPercent}% off next bill
+                            Patron Rewards &amp; Cashback launching soon
                           </p>
                         </div>
                       </div>
 
-                      {userBalance > 0 && maxDiscountRupees > 0 && (
-                        <button
-                          type="button"
-                          onClick={() => setRedeemPoints(!redeemPoints)}
-                          className={`shrink-0 px-2.5 py-1.5 rounded-full font-serif text-[11.5px] font-bold transition shadow-xs cursor-pointer ${
-                            redeemPoints
-                              ? "bg-[#B72E35] text-[#F3E7D3] hover:bg-[#9E252C]"
-                              : "bg-[#F3E7D3] dark:bg-stone-800 text-[#725039] dark:text-[#FAF4EB] hover:bg-[#EAE0D2] border border-[#C9AE8B]/50"
-                          }`}
-                        >
-                          {redeemPoints ? `₹${maxDiscountRupees} OFF ✓` : `Use 20% Off`}
-                        </button>
-                      )}
+                      <span className="shrink-0 px-2.5 py-1.5 rounded-full font-serif text-[11px] font-bold bg-[#EFE7DC] dark:bg-stone-800 text-[#725039] dark:text-[#C9AE8B] border border-[#C9AE8B]/40">
+                        Coming Soon
+                      </span>
                     </div>
 
                     {/* Happy Hour Bonus Notice */}

@@ -282,7 +282,31 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
       </header>
 
       <main className="mx-auto max-w-md px-4 pt-4 space-y-4">
-        {/* Smol Loyalty Pass Card */}
+        {/* SMOL CLUB LOYALTY - COMING SOON HERO BANNER */}
+        <div className="relative overflow-hidden rounded-3xl border border-[#B72E35]/40 dark:border-amber-500/30 bg-gradient-to-br from-[#FAF4EB] via-[#FFFBEB] to-[#F3E7D3] dark:from-[#201A17] dark:via-[#1A1513] dark:to-[#151110] p-5 shadow-md text-center space-y-2.5">
+          <div className="inline-flex items-center gap-1.5 rounded-full bg-[#B72E35] text-white px-3.5 py-1 font-mono text-[10.5px] font-black uppercase tracking-widest shadow-xs">
+            <Sparkles className="h-3.5 w-3.5" />
+            <span>SMOL CLUB LOYALTY • COMING SOON</span>
+          </div>
+
+          <h2 className="font-serif text-xl font-bold text-[#241F1C] dark:text-[#FAF4EB] leading-tight pt-1">
+            Exclusive Patron Pass &amp; Rewards Launching Soon
+          </h2>
+
+          <p className="font-serif italic text-xs text-[#725039] dark:text-[#C9AE8B] max-w-xs mx-auto leading-relaxed">
+            We are hand-crafting an exclusive loyalty experience for smol café regulars! Earn points on every artisan sip, unlock birthday gifts, secret menu perks &amp; slow-period multipliers.
+          </p>
+
+          <div className="pt-1 flex items-center justify-center gap-2 font-mono text-[10px] font-bold text-[#B72E35] dark:text-[#FF5B52]">
+            <span className="rounded-md bg-[#EFE7DC] dark:bg-white/10 px-2 py-0.5">Tier Rewards</span>
+            <span>•</span>
+            <span className="rounded-md bg-[#EFE7DC] dark:bg-white/10 px-2 py-0.5">Cashback Off Bills</span>
+            <span>•</span>
+            <span className="rounded-md bg-[#EFE7DC] dark:bg-white/10 px-2 py-0.5">Bonus Quests</span>
+          </div>
+        </div>
+
+        {/* Smol Loyalty Pass Card (Teaser View) */}
         <div className="relative overflow-hidden rounded-3xl border border-[#C9AE8B]/50 dark:border-white/10 bg-[#FAF4EB] dark:bg-[#201A17] p-5 shadow-xs transition-colors space-y-3">
           <div className="flex items-start justify-between">
             <div>
