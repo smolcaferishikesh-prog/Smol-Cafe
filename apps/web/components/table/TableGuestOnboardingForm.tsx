@@ -2,8 +2,9 @@
 
 import React, { useState, useEffect, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { User, Phone, ArrowRight, Sparkles } from "lucide-react";
+import { User, Phone, ArrowRight, Sparkles, ChevronDown } from "lucide-react";
 import { onboardGuestAndRedirectAction } from "@/app/t/actions";
+import { COUNTRY_CODES, normalizePhoneNumber } from "@/lib/customer-phone";
 
 interface TableGuestOnboardingFormProps {
   tableToken: string;
@@ -23,15 +24,20 @@ export function TableGuestOnboardingForm({
 
   const [name, setName] = useState(initialGuestName);
   const [phone, setPhone] = useState(initialGuestPhone);
+  const [countryCode, setCountryCode] = useState("+91");
   const [error, setError] = useState<string | null>(null);
 
-  // Pre-fill from localStorage if available
+  // Pre-fill from localStorage or initial props if available
   useEffect(() => {
     if (typeof window !== "undefined") {
       const savedName = localStorage.getItem("smol_guest_name");
       const savedPhone = localStorage.getItem("smol_guest_phone");
       if (savedName && !name) setName(savedName);
-      if (savedPhone && !phone) setPhone(savedPhone);
+      if (savedPhone && !phone) {
+        setPhone(savedPhone);
+        const matched = COUNTRY_CODES.find((c) => savedPhone.startsWith(c.code));
+        if (matched) setCountryCode(matched.code);
+      }
     }
   }, []);
 
@@ -40,29 +46,29 @@ export function TableGuestOnboardingForm({
     setError(null);
 
     const trimmedName = name.trim();
-    const cleanDigits = phone.replace(/\D/g, "");
+    const normalizedPhone = normalizePhoneNumber(phone, countryCode);
 
     if (!trimmedName || trimmedName.length < 2) {
       setError("Please enter your name to continue.");
       return;
     }
 
-    if (!cleanDigits || cleanDigits.length < 10) {
-      setError("Please enter a valid 10-digit mobile number.");
+    if (!normalizedPhone || normalizedPhone.length < 8 || !normalizedPhone.startsWith("+")) {
+      setError("Please enter a valid international mobile number.");
       return;
     }
 
-    // Persist immediately in localStorage for instant client-side responsiveness
+    // Persist complete E.164 normalized phone in localStorage
     if (typeof window !== "undefined") {
       localStorage.setItem("smol_guest_name", trimmedName);
-      localStorage.setItem("smol_guest_phone", cleanDigits);
+      localStorage.setItem("smol_guest_phone", normalizedPhone);
       localStorage.setItem("smol_current_table", tableLabel);
     }
 
     const formData = new FormData();
     formData.append("tableToken", tableToken);
     formData.append("guestName", trimmedName);
-    formData.append("guestPhone", cleanDigits);
+    formData.append("guestPhone", normalizedPhone);
 
     startTransition(async () => {
       try {
@@ -74,11 +80,12 @@ export function TableGuestOnboardingForm({
         }
       } catch (err) {
         console.error("Error onboarding guest:", err);
-        // Fallback directly to home since local state is already saved
         router.push("/home");
       }
     });
   };
+
+  const selectedCountry = COUNTRY_CODES.find((c) => c.code === countryCode) || COUNTRY_CODES[0];
 
   return (
     <form
@@ -109,23 +116,35 @@ export function TableGuestOnboardingForm({
         />
       </div>
 
-      {/* Phone Number Input */}
+      {/* International Phone Number Input with Country Dropdown */}
       <div className="relative flex items-center rounded-2xl border border-[#C9AE8B]/60 dark:border-white/15 bg-[#FAF4EB] dark:bg-[#1E1815] shadow-xs focus-within:border-[#B72E35] dark:focus-within:border-[#F2C84B] focus-within:ring-2 focus-within:ring-[#B72E35]/20 transition-all overflow-hidden">
-        <div className="flex items-center gap-1 pl-3.5 pr-2 py-3 bg-[#EFE3D3]/50 dark:bg-white/5 border-r border-[#C9AE8B]/30 dark:border-white/10 select-none">
-          <Phone className="h-3.5 w-3.5 text-[#725039] dark:text-[#C9AE8B] opacity-70" />
-          <span className="font-mono text-xs font-bold text-[#241F1C] dark:text-[#FAF4EB]">
-            +91
-          </span>
+        {/* Country Code Selector Dropdown */}
+        <div className="relative flex items-center bg-[#EFE3D3]/60 dark:bg-white/5 border-r border-[#C9AE8B]/30 dark:border-white/10 shrink-0">
+          <select
+            value={countryCode}
+            onChange={(e) => setCountryCode(e.target.value)}
+            className="appearance-none bg-transparent pl-3.5 pr-6 py-3 font-mono text-xs font-bold text-[#241F1C] dark:text-[#FAF4EB] focus:outline-none cursor-pointer"
+            aria-label="Select Country Code"
+          >
+            {COUNTRY_CODES.map((c) => (
+              <option key={`${c.iso}-${c.code}`} value={c.code} className="bg-[#FAF4EB] dark:bg-[#241F1C] text-[#241F1C] dark:text-[#FAF4EB]">
+                {c.flag} {c.code} ({c.iso})
+              </option>
+            ))}
+          </select>
+          <ChevronDown className="absolute right-1.5 h-3.5 w-3.5 text-[#725039] dark:text-[#C9AE8B] pointer-events-none opacity-60" />
         </div>
+
+        {/* Local Mobile Number Input */}
         <input
           type="tel"
           name="guestPhone"
           value={phone}
           onChange={(e) => setPhone(e.target.value)}
-          placeholder="10-digit mobile number"
+          placeholder={selectedCountry.example}
           required
-          maxLength={10}
-          autoComplete="tel-national"
+          maxLength={16}
+          autoComplete="tel"
           className="flex-1 px-3 py-3 bg-transparent text-[#241F1C] dark:text-[#FAF4EB] placeholder-[#725039]/60 dark:placeholder-[#C9AE8B]/50 font-mono text-xs sm:text-sm focus:outline-none"
         />
       </div>
@@ -133,7 +152,7 @@ export function TableGuestOnboardingForm({
       {/* Micro Loyalty Banner */}
       <div className="flex items-center justify-center gap-1.5 pt-0.5 text-[10.5px] font-mono text-[#725039] dark:text-[#C9AE8B]">
         <Sparkles className="h-3 w-3 text-[#B72E35] dark:text-[#F2C84B]" />
-        <span>Earn loyalty points &amp; receipts on this number</span>
+        <span>E.164 international receipt &amp; order tracking</span>
       </div>
 
       {/* Primary CTA: Continue to Café (Navigating to /home) */}
@@ -154,6 +173,7 @@ export function TableGuestOnboardingForm({
           </span>
           <ArrowRight className="relative z-10 h-4 w-4 stroke-[2.5] transition-transform duration-300 group-hover:translate-x-1 drop-shadow-[0_1px_2px_rgba(0,0,0,0.35)]" />
         </button>
+
       </div>
     </form>
   );

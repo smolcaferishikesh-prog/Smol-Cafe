@@ -5,6 +5,7 @@ import Image from "next/image";
 import type { BaristaTicket } from "@/app/barista/actions";
 import {
   fetchBaristaOrdersAction,
+  fetchSingleBaristaTicketAction,
   transitionBaristaOrderStatusAction,
   staffLogoutAction,
 } from "@/app/barista/actions";
@@ -40,6 +41,9 @@ export const BaristaBoardView: React.FC<BaristaBoardViewProps> = ({ initialOrder
   const [categoryFilter, setCategoryFilter] = useState<"ALL" | "ESPRESSO" | "COLD" | "SHAKES">("ALL");
   const [mounted, setMounted] = useState(false);
   const prevOrderCountRef = useRef(initialOrders.length);
+  const playedChimeTicketIdsRef = useRef<Set<string>>(
+    new Set(initialOrders.map((o) => o.id))
+  );
   const optimisticLocksRef = useRef<Map<string, { status: OrderStatus; timestamp: number }>>(new Map());
 
   useEffect(() => {
@@ -94,8 +98,14 @@ export const BaristaBoardView: React.FC<BaristaBoardViewProps> = ({ initialOrder
     }
   };
 
-  const playChime = useCallback(() => {
+  const playChime = useCallback((orderId?: string) => {
     if (!soundEnabled) return;
+    if (orderId) {
+      if (playedChimeTicketIdsRef.current.has(orderId)) {
+        return; // Already chimed for this ticket
+      }
+      playedChimeTicketIdsRef.current.add(orderId);
+    }
     soundManager.playKitchenNewOrderAlert();
   }, [soundEnabled]);
 
@@ -104,9 +114,13 @@ export const BaristaBoardView: React.FC<BaristaBoardViewProps> = ({ initialOrder
     try {
       const result = await fetchBaristaOrdersAction();
       if (result && result.success && Array.isArray(result.orders)) {
-        if (result.orders.length > prevOrderCountRef.current) {
-          playChime();
+        const unchimedOrder = result.orders.find(
+          (o) => !playedChimeTicketIdsRef.current.has(o.id)
+        );
+        if (unchimedOrder && result.orders.length > prevOrderCountRef.current) {
+          playChime(unchimedOrder.id);
         }
+        result.orders.forEach((o) => playedChimeTicketIdsRef.current.add(o.id));
         prevOrderCountRef.current = result.orders.length;
 
         // Clean up expired optimistic locks
@@ -139,11 +153,47 @@ export const BaristaBoardView: React.FC<BaristaBoardViewProps> = ({ initialOrder
     }
   }, [playChime]);
 
+  const handleIncomingTicket = useCallback(
+    (orderId: string, newStatus?: OrderStatus) => {
+      let exists = false;
+      setOrders((prev) => {
+        exists = prev.some((o) => o.id === orderId);
+        if (exists && newStatus) {
+          return prev.map((o) =>
+            o.id === orderId ? { ...o, status: newStatus } : o
+          );
+        }
+        return prev;
+      });
+
+      if (!exists) {
+        fetchSingleBaristaTicketAction(orderId).then((result) => {
+          if (result && result.success && result.ticket) {
+            const newTicket = result.ticket;
+            setOrders((prev) => {
+              if (prev.some((o) => o.id === newTicket.id)) return prev;
+              return [newTicket, ...prev];
+            });
+            playChime(newTicket.id);
+          } else {
+            refreshOrders();
+          }
+        });
+      }
+    },
+    [playChime, refreshOrders]
+  );
+
   // Real-time WebSocket
   useSupabaseRealtime({
     table: "orders",
-    onData: () => {
-      refreshOrders();
+    onData: (payload: any) => {
+      const newRow = payload?.new;
+      if (newRow && newRow.id) {
+        handleIncomingTicket(newRow.id, newRow.status as OrderStatus);
+      } else {
+        refreshOrders();
+      }
     },
   });
 
@@ -152,10 +202,14 @@ export const BaristaBoardView: React.FC<BaristaBoardViewProps> = ({ initialOrder
       if (document.visibilityState === "visible") {
         refreshOrders();
       }
-    }, 4000);
+    }, 30000);
 
-    const unsubscribe = subscribeToSyncEvents(() => {
-      refreshOrders();
+    const unsubscribe = subscribeToSyncEvents((event) => {
+      if (event.orderId) {
+        handleIncomingTicket(event.orderId, event.status as OrderStatus);
+      } else {
+        refreshOrders();
+      }
     });
 
     const handleFocus = () => refreshOrders();
@@ -166,7 +220,7 @@ export const BaristaBoardView: React.FC<BaristaBoardViewProps> = ({ initialOrder
       unsubscribe();
       window.removeEventListener("focus", handleFocus);
     };
-  }, [refreshOrders]);
+  }, [handleIncomingTicket, refreshOrders]);
 
   const handleTransition = async (
     orderId: string,

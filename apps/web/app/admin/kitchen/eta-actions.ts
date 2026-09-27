@@ -58,7 +58,7 @@ export async function fetchEtaAccuracyReportAction(): Promise<EtaAccuracyReport>
         eta_max_minutes
       `
       )
-      .in("status", ["SERVED", "COMPLETED"])
+      .in("status", ["SERVED", "PAID"])
       .not("served_at", "is", null)
       .order("served_at", { ascending: false })
       .limit(50);

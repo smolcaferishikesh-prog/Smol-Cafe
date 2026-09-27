@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, Suspense } from "react";
+import React, { useState, useEffect, useCallback, Suspense } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import type { CategoryWithItems, MenuItemWithDetails } from "@/lib/queries/menu";
@@ -14,6 +14,8 @@ import { subscribeToSyncEvents } from "@/lib/sync-events";
 import { cacheMenuCatalog, getCachedMenuCatalog } from "@/lib/offline-cache";
 import { fetchLiveMenuCatalogAction } from "@/app/admin/menu-actions";
 import MenuLoading from "@/app/menu/loading";
+
+import { useSupabaseRealtime } from "@/hooks/useSupabaseRealtime";
 
 interface MenuClientViewProps {
   categories: CategoryWithItems[];
@@ -52,47 +54,140 @@ const MenuContentInner: React.FC<MenuClientViewProps> = ({
     }
   }, [initialCategories]);
 
-  // Listen for real-time item stock, new items, and menu changes across all tabs & devices
-  useEffect(() => {
-    const unsub = subscribeToSyncEvents(async (event) => {
-      if (event.type === "ITEM_AVAILABILITY_CHANGED") {
-        if (event.itemId && event.stockStatus) {
-          setCategories((prev) =>
-            prev.map((cat) => ({
-              ...cat,
-              items: cat.items.map((item) => {
-                if (item.id === event.itemId) {
-                  return {
-                    ...item,
-                    status: event.stockStatus === "SOLD_OUT" ? "SOLD_OUT" : "ACTIVE",
-                    metadata: {
-                      ...item.metadata,
-                      availability: event.stockStatus,
-                      low_stock_portions: (event.metadata as any)?.lowStockCount,
-                    },
-                  };
-                }
-                return item;
-              }),
-            }))
+  // Single Item Realtime Update Handler (Near-Instant, 0ms local state mutation)
+  const handleItemRealtimeUpdate = useCallback((payload: {
+    id: string;
+    name?: string;
+    categoryId?: string;
+    priceRupees?: number;
+    pricePaise?: number;
+    status?: string;
+    stockStatus?: string;
+    description?: string;
+    imageUrl?: string | null;
+    dietary?: string;
+  }) => {
+    setCategories((prevCategories) => {
+      if (payload.status === "ARCHIVED" || payload.stockStatus === "ARCHIVED") {
+        return prevCategories.map((cat) => ({
+          ...cat,
+          items: cat.items.filter((it) => it.id !== payload.id),
+        }));
+      }
+
+      let found = false;
+      const updatedCategories = prevCategories.map((cat) => {
+        const itemIndex = cat.items.findIndex((it) => it.id === payload.id);
+        if (itemIndex >= 0) {
+          found = true;
+          const targetItem = cat.items[itemIndex];
+          const isSoldOut = payload.stockStatus === "SOLD_OUT" || payload.status === "SOLD_OUT";
+          const newStatus = isSoldOut ? "SOLD_OUT" : "ACTIVE";
+          const newPricePaise =
+            payload.pricePaise !== undefined
+              ? payload.pricePaise
+              : payload.priceRupees !== undefined
+              ? Math.round(payload.priceRupees * 100)
+              : targetItem.pricePaise;
+
+          const updatedItems = [...cat.items];
+          updatedItems[itemIndex] = {
+            ...targetItem,
+            name: payload.name || targetItem.name,
+            description: payload.description !== undefined ? payload.description : targetItem.description,
+            imageUrl: payload.imageUrl !== undefined ? payload.imageUrl : targetItem.imageUrl,
+            pricePaise: newPricePaise,
+            status: newStatus,
+            metadata: {
+              ...targetItem.metadata,
+              availability: isSoldOut ? "SOLD_OUT" : "IN_STOCK",
+              dietary: payload.dietary || targetItem.metadata?.dietary || "veg",
+            },
+          };
+          return { ...cat, items: updatedItems };
+        }
+        return cat;
+      });
+
+      if (!found && payload.name && payload.id) {
+        // Newly added dish by Admin/KDS — append to category dynamically in 0ms!
+        const targetCategory =
+          updatedCategories.find(
+            (c) =>
+              c.id === payload.categoryId ||
+              c.name.toLowerCase() === (payload.categoryId || "").toLowerCase()
+          ) || updatedCategories[0];
+
+        if (targetCategory) {
+          const isSoldOut = payload.stockStatus === "SOLD_OUT" || payload.status === "SOLD_OUT";
+          const newItem: MenuItemWithDetails = {
+            id: payload.id,
+            categoryId: targetCategory.id,
+            name: payload.name,
+            description: payload.description || "",
+            pricePaise:
+              payload.pricePaise || Math.round((payload.priceRupees || 100) * 100),
+            status: isSoldOut ? "SOLD_OUT" : "ACTIVE",
+            imageUrl: payload.imageUrl || null,
+            metadata: {
+              dietary: payload.dietary || "veg",
+              availability: isSoldOut ? "SOLD_OUT" : "IN_STOCK",
+            },
+          };
+
+          return updatedCategories.map((c) =>
+            c.id === targetCategory.id ? { ...c, items: [newItem, ...c.items] } : c
           );
         }
+      }
 
-        // Fetch latest catalog to sync new items, price changes, or edits
-        try {
-          const res = await fetchLiveMenuCatalogAction();
-          if (res.success && res.categories && res.categories.length > 0) {
-            setCategories(res.categories);
-            cacheMenuCatalog(res.categories);
-          }
-        } catch {
-          // ignore
+      return updatedCategories;
+    });
+  }, []);
+
+  // Realtime WebSocket for instantaneous menu_items changes (stock, price, status)
+  useSupabaseRealtime({
+    table: "menu_items",
+    onData: (payload: any) => {
+      const item = payload?.new;
+      if (item && item.id) {
+        handleItemRealtimeUpdate({
+          id: item.id,
+          name: item.name,
+          categoryId: item.category_id,
+          pricePaise: item.price_snapshot || item.price_paise,
+          status: item.status,
+          stockStatus: item.status === "SOLD_OUT" ? "SOLD_OUT" : "IN_STOCK",
+          description: item.description,
+          imageUrl: item.image_url,
+        });
+      }
+    },
+  });
+
+  // Listen for real-time item stock, new items, and menu changes across all tabs & devices
+  useEffect(() => {
+    const unsub = subscribeToSyncEvents((event) => {
+      if (event.type === "ITEM_AVAILABILITY_CHANGED" || event.type === "INVENTORY_UPDATED") {
+        if (event.itemId) {
+          const meta = (event.metadata as any) || {};
+          handleItemRealtimeUpdate({
+            id: event.itemId,
+            name: meta.name,
+            categoryId: meta.categoryId,
+            priceRupees: meta.priceRupees,
+            status: meta.status || event.availability,
+            stockStatus: event.stockStatus || event.availability,
+            description: meta.description,
+            imageUrl: meta.imageUrl,
+            dietary: meta.dietary,
+          });
         }
       }
     });
 
     return () => unsub();
-  }, []);
+  }, [handleItemRealtimeUpdate]);
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -234,11 +329,10 @@ const MenuContentInner: React.FC<MenuClientViewProps> = ({
           <button
             type="button"
             onClick={() => setActiveCategoryId("")}
-            className={`group relative shrink-0 rounded-full px-4 py-1.5 text-xs font-serif transition-all duration-300 ease-[cubic-bezier(0.25,1,0.35,1)] active:scale-95 touch-manipulation cursor-pointer ${
-              activeCategoryId === ""
+            className={`group relative shrink-0 rounded-full px-4 py-1.5 text-xs font-serif transition-all duration-300 ease-[cubic-bezier(0.25,1,0.35,1)] active:scale-95 touch-manipulation cursor-pointer ${activeCategoryId === ""
                 ? "bg-gradient-to-b from-[#E03A43]/70 via-[#B72E35]/80 to-[#7D1217]/90 dark:from-[#A855F7]/70 dark:via-[#7E22CE]/80 dark:to-[#4C1D95]/90 text-white font-bold backdrop-blur-[16px] border border-white/55 dark:border-purple-300/40 shadow-[0_6px_20px_rgba(183,46,53,0.38),inset_0_1.5px_1.5px_rgba(255,255,255,0.85),inset_0_-1.5px_2px_rgba(0,0,0,0.4),inset_0_0_12px_rgba(255,140,140,0.35)] dark:shadow-[0_6px_22px_rgba(126,34,206,0.5),inset_0_1.5px_1.5px_rgba(255,255,255,0.85),inset_0_-1.5px_2px_rgba(0,0,0,0.5),inset_0_0_14px_rgba(192,132,252,0.45)] scale-[1.03]"
                 : "border border-[#C9AE8B]/50 dark:border-white/10 bg-white/45 dark:bg-white/[0.05] backdrop-blur-md text-[#241F1C] dark:text-[#FAF4EB] hover:bg-white/70 dark:hover:bg-white/10 hover:shadow-[inset_0_1px_1px_rgba(255,255,255,0.6)] scale-100 hover:scale-[1.02]"
-            }`}
+              }`}
           >
             {/* Curved Specular Glass Gloss Reflection */}
             {activeCategoryId === "" && (
@@ -256,11 +350,10 @@ const MenuContentInner: React.FC<MenuClientViewProps> = ({
                 key={cat.id}
                 type="button"
                 onClick={() => handleSelectCategory(cat.id)}
-                className={`group relative shrink-0 rounded-full px-4 py-1.5 text-xs font-serif lowercase transition-all duration-300 ease-[cubic-bezier(0.25,1,0.35,1)] active:scale-95 touch-manipulation cursor-pointer ${
-                  isActive
+                className={`group relative shrink-0 rounded-full px-4 py-1.5 text-xs font-serif lowercase transition-all duration-300 ease-[cubic-bezier(0.25,1,0.35,1)] active:scale-95 touch-manipulation cursor-pointer ${isActive
                     ? "bg-gradient-to-b from-[#E03A43]/70 via-[#B72E35]/80 to-[#7D1217]/90 dark:from-[#A855F7]/70 dark:via-[#7E22CE]/80 dark:to-[#4C1D95]/90 text-white font-bold backdrop-blur-[16px] border border-white/55 dark:border-purple-300/40 shadow-[0_6px_20px_rgba(183,46,53,0.38),inset_0_1.5px_1.5px_rgba(255,255,255,0.85),inset_0_-1.5px_2px_rgba(0,0,0,0.4),inset_0_0_12px_rgba(255,140,140,0.35)] dark:shadow-[0_6px_22px_rgba(126,34,206,0.5),inset_0_1.5px_1.5px_rgba(255,255,255,0.85),inset_0_-1.5px_2px_rgba(0,0,0,0.5),inset_0_0_14px_rgba(192,132,252,0.45)] scale-[1.03]"
                     : "border border-[#C9AE8B]/50 dark:border-white/10 bg-white/45 dark:bg-white/[0.05] backdrop-blur-md text-[#241F1C] dark:text-[#FAF4EB] hover:bg-white/70 dark:hover:bg-white/10 hover:shadow-[inset_0_1px_1px_rgba(255,255,255,0.6)] scale-100 hover:scale-[1.02]"
-                }`}
+                  }`}
               >
                 {/* Curved Specular Glass Gloss Reflection */}
                 {isActive && (
@@ -277,11 +370,10 @@ const MenuContentInner: React.FC<MenuClientViewProps> = ({
           <button
             type="button"
             onClick={() => setFilterVegOnly(!filterVegOnly)}
-            className={`shrink-0 flex items-center justify-center h-8 w-8 rounded-full border transition-all duration-200 active:scale-90 cursor-pointer ${
-              filterVegOnly
+            className={`shrink-0 flex items-center justify-center h-8 w-8 rounded-full border transition-all duration-200 active:scale-90 cursor-pointer ${filterVegOnly
                 ? "bg-gradient-to-b from-[#75AFA7] to-[#4F8B83] text-white border-white/40 shadow-[0_4px_12px_rgba(79,139,131,0.4),inset_0_1px_1px_rgba(255,255,255,0.7)]"
                 : "border-[#C9AE8B]/50 dark:border-white/10 bg-white/45 dark:bg-white/[0.05] backdrop-blur-md text-[#241F1C] dark:text-[#FAF4EB] hover:bg-white/70 dark:hover:bg-white/10 hover:shadow-[inset_0_1px_1px_rgba(255,255,255,0.6)]"
-            }`}
+              }`}
             title="Filter Veg only"
           >
             <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>

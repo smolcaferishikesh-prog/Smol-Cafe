@@ -113,14 +113,18 @@ export async function fetchPendingCashierOrdersAction(): Promise<FetchPendingOrd
     }
 
     // Filter to those genuinely pending cashier confirmation / approval:
-    // (Orders that are in PENDING_CONFIRMATION, SUBMITTED, DRAFT, OR payment_status PENDING, and NOT yet confirmed/completed/cancelled)
+    // (Orders that are in PENDING_CONFIRMATION, SUBMITTED, DRAFT, OR payment_status PENDING, and NOT yet accepted/preparing/ready/completed/cancelled)
     const relevantOrders = orders.filter(
       (o) =>
         (o.status === "PENDING_CONFIRMATION" ||
           o.status === "SUBMITTED" ||
           o.status === "DRAFT" ||
-          (o.payment_status === "PENDING" &&
-            !["CONFIRMED", "ACCEPTED", "PREPARING", "READY", "SERVED", "COMPLETED"].includes(o.status))) &&
+          o.payment_status === "PENDING") &&
+        o.status !== "ACCEPTED" &&
+        o.status !== "PREPARING" &&
+        o.status !== "READY" &&
+        o.status !== "SERVED" &&
+        o.status !== "COMPLETED" &&
         o.status !== "CANCELLED" &&
         o.status !== "REJECTED" &&
         o.status !== "CLOSED"

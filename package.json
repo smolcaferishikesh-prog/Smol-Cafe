@@ -8,7 +8,7 @@
   ],
   "scripts": {
     "dev": "npm run dev --workspace=@smol-cafe/web",
-    "build": "npm run build --workspace=@smol-cafe/web && (cp -R apps/web/.next .next 2>/dev/null || true)",
+    "build": "npm run build --workspace=@smol-cafe/web && node -e \"try{require('fs').cpSync('apps/web/.next','.next',{recursive:true})}catch(e){}\"",
     "start": "npm run start --workspace=@smol-cafe/web",
     "lint": "npm run lint --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present",

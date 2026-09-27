@@ -4,6 +4,8 @@ import { getMenuCatalog } from "@/lib/queries/menu";
 import { MenuClientView } from "@/components/menu/MenuClientView";
 import { isBeverageItem } from "@/lib/station-utils";
 
+export const dynamic = "force-dynamic";
+
 export const metadata = {
   title: "Artisanal Drinks & Brews — smol café",
   description:

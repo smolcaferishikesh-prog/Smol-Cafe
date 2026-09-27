@@ -5,6 +5,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { fetchActiveOrdersAction, type CustomerOrderDetails } from "@/app/orders/actions";
+import type { OrderStatus } from "@smol-cafe/db";
 import { OrderCard } from "./OrderCard";
 import { ConversationDeckModal } from "./ConversationDeckModal";
 import { Bell, BellRing, CheckCircle2, Sparkles, CreditCard, Tag, Receipt, Star, ExternalLink, MapPin } from "lucide-react";
@@ -100,19 +101,68 @@ export const OrderStatusClientView: React.FC<OrderStatusClientViewProps> = ({
     }
   }, [tableLabel, currentGuestName]);
 
-  // 1. Cross-Interface & Cross-Port Supabase Broadcast Subscription
+  // 1. Cross-Interface & Cross-Port Supabase Broadcast Subscription with 0ms Instant State Mutation
   useEffect(() => {
-    const unsub = subscribeToSyncEvents(() => {
-      refreshOrders();
+    const unsub = subscribeToSyncEvents((event) => {
+      if (event.orderId && event.status) {
+        const newStatus = event.status as OrderStatus;
+        const prevStatus = prevStatusesRef.current[event.orderId];
+        if (prevStatus && prevStatus !== newStatus && (newStatus === "READY" || newStatus === "COMPLETED" || newStatus === "SERVED")) {
+          soundManager.playOrderReadyChime();
+          if (typeof window !== "undefined" && "Notification" in window && Notification.permission === "granted") {
+            try {
+              new Notification(`Order is Ready! ☕`, {
+                body: `Your order at Table ${tableLabel || "01"} is hot & ready to serve.`,
+                icon: "/google-maps-icon.png",
+              });
+            } catch {
+              // ignore
+            }
+          }
+        }
+        prevStatusesRef.current[event.orderId] = newStatus;
+        setOrders((prev) =>
+          prev.map((o) =>
+            o.id === event.orderId ? { ...o, status: newStatus } : o
+          )
+        );
+      } else {
+        refreshOrders();
+      }
     });
     return () => unsub();
-  }, [refreshOrders]);
+  }, [refreshOrders, tableLabel]);
 
   // 2. Supabase Realtime WebSocket subscription for Customer Order Status Updates
   useSupabaseRealtime({
     table: "orders",
-    onData: () => {
-      refreshOrders();
+    onData: (payload: any) => {
+      const newRow = payload?.new;
+      if (newRow && newRow.id && newRow.status) {
+        const newStatus = newRow.status as OrderStatus;
+        const prevStatus = prevStatusesRef.current[newRow.id];
+        if (prevStatus && prevStatus !== newStatus && (newStatus === "READY" || newStatus === "COMPLETED" || newStatus === "SERVED")) {
+          soundManager.playOrderReadyChime();
+          if (typeof window !== "undefined" && "Notification" in window && Notification.permission === "granted") {
+            try {
+              new Notification(`Order #${newRow.order_no || newRow.id.slice(-4)} is Ready! ☕`, {
+                body: `Your order at Table ${tableLabel || "01"} is hot & ready to serve.`,
+                icon: "/google-maps-icon.png",
+              });
+            } catch {
+              // ignore
+            }
+          }
+        }
+        prevStatusesRef.current[newRow.id] = newStatus;
+        setOrders((prev) =>
+          prev.map((o) =>
+            o.id === newRow.id ? { ...o, status: newStatus } : o
+          )
+        );
+      } else {
+        refreshOrders();
+      }
     },
     enabled: true,
   });
@@ -129,7 +179,7 @@ export const OrderStatusClientView: React.FC<OrderStatusClientViewProps> = ({
       if (isMounted) {
         refreshOrders();
       }
-    }, 15000);
+    }, 30000);
 
     return () => {
       isMounted = false;

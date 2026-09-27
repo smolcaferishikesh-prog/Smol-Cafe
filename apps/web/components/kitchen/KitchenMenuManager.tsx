@@ -22,12 +22,12 @@ import {
   fetchKitchenMenuCatalogAction,
   updateMenuItemStockAction,
   updateChefItemNotesAction,
-  bulkSetCategoryStockAction,
 } from "@/app/kitchen/menu-actions";
 import { saveMenuItemAction } from "@/app/admin/menu-actions";
 import { broadcastSyncEvent, subscribeToSyncEvents } from "@/lib/sync-events";
 import { getFoodImage } from "@/lib/food-images";
 import { DishImagePicker } from "@/components/common/DishImagePicker";
+import { useSupabaseRealtime } from "@/hooks/useSupabaseRealtime";
 
 interface KitchenMenuManagerProps {
   onClose?: () => void;
@@ -83,15 +83,51 @@ export const KitchenMenuManager: React.FC<KitchenMenuManagerProps> = () => {
     loadData();
   }, [loadData]);
 
+  // Realtime Supabase WebSocket subscription for instant CDC menu_items changes
+  useSupabaseRealtime({
+    table: "menu_items",
+    onData: (payload: any) => {
+      const item = payload?.new;
+      if (item && item.id) {
+        let exists = false;
+        setItems((prev) => {
+          exists = prev.some((i) => i.id === item.id);
+          if (exists) {
+            return prev.map((i) =>
+              i.id === item.id
+                ? {
+                    ...i,
+                    name: item.name || i.name,
+                    stockStatus: item.status === "SOLD_OUT" ? "SOLD_OUT" : "IN_STOCK",
+                    priceRupees: item.price_snapshot ? Math.round(item.price_snapshot / 100) : i.priceRupees,
+                  }
+                : i
+            );
+          }
+          return prev;
+        });
+        if (!exists) {
+          loadData();
+        }
+      }
+    },
+  });
+
   // Subscribe to real-time events across tabs/stations
   useEffect(() => {
     const unsub = subscribeToSyncEvents((event) => {
       if (event.type === "ITEM_AVAILABILITY_CHANGED" || event.type === "INVENTORY_UPDATED") {
-        loadData();
+        if (event.itemId && event.stockStatus) {
+          setItems((prev) =>
+            prev.map((i) =>
+              i.id === event.itemId ? { ...i, stockStatus: event.stockStatus as "IN_STOCK" | "SOLD_OUT" } : i
+            )
+          );
+        }
       }
     });
     return () => unsub();
-  }, [loadData]);
+  }, []);
 
   // Compute stats (Simple 2-state: In Stock vs Out of Stock)
   const stats = useMemo(() => {
@@ -118,12 +154,18 @@ export const KitchenMenuManager: React.FC<KitchenMenuManagerProps> = () => {
     });
   }, [items, selectedStation, stockFilter, searchQuery]);
 
-  // Toggle Item Stock Status (IN_STOCK / SOLD_OUT)
+  // Toggle Item Stock Status (IN_STOCK / SOLD_OUT) with instant optimistic update & rollback
   const handleSetStock = async (itemId: string, newStatus: "IN_STOCK" | "SOLD_OUT") => {
-    // Optimistic update
+    const prevItems = items;
+
+    // Instant 0ms Optimistic UI Update
     setItems((prev) =>
       prev.map((i) => (i.id === itemId ? { ...i, stockStatus: newStatus } : i))
     );
+    setFeedback({
+      type: "success",
+      text: newStatus === "IN_STOCK" ? "Marked as In Stock" : "Marked as Out Of Stock",
+    });
 
     try {
       const res = await updateMenuItemStockAction(itemId, newStatus);
@@ -132,43 +174,20 @@ export const KitchenMenuManager: React.FC<KitchenMenuManagerProps> = () => {
           type: "ITEM_AVAILABILITY_CHANGED",
           itemId: itemId,
           availability: newStatus,
+          stockStatus: newStatus,
           timestamp: Date.now(),
         });
-        setFeedback({
-          type: "success",
-          text: newStatus === "IN_STOCK" ? "Marked as In Stock" : "Marked as Out Of Stock",
-        });
+      } else {
+        setItems(prevItems); // Rollback on failure
+        setFeedback({ type: "error", text: res.message || "Failed to update item availability." });
       }
     } catch {
+      setItems(prevItems); // Rollback on network exception
       setFeedback({ type: "error", text: "Failed to update item availability." });
-      loadData();
     }
   };
 
-  // Bulk Station Stock Change
-  const handleBulkStationStock = async (stockStatus: "IN_STOCK" | "SOLD_OUT") => {
-    const target = selectedStation === "All Stations" ? "ALL" : selectedStation;
-    try {
-      const res = await bulkSetCategoryStockAction(target, stockStatus);
-      if (res.success) {
-        res.updatedItemIds.forEach((id) => {
-          broadcastSyncEvent({
-            type: "ITEM_AVAILABILITY_CHANGED",
-            itemId: id,
-            availability: stockStatus,
-            timestamp: Date.now(),
-          });
-        });
-        loadData();
-        setFeedback({
-          type: "success",
-          text: stockStatus === "IN_STOCK" ? "All items marked In Stock" : "All items marked Out Of Stock",
-        });
-      }
-    } catch {
-      setFeedback({ type: "error", text: "Bulk action failed." });
-    }
-  };
+
 
   // Open Chef Note Modal
   const handleOpenNoteModal = (item: KitchenMenuItem) => {
@@ -226,9 +245,11 @@ export const KitchenMenuManager: React.FC<KitchenMenuManagerProps> = () => {
     setIsDishModalOpen(true);
   };
 
-  // Save Dish (Add or Edit)
+  // Save Dish (Add or Edit) with 0ms Optimistic UI update & Rollback
   const handleSaveDish = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSavingDish) return; // Prevent duplicate submissions
+
     if (!dishName.trim()) {
       setFeedback({ type: "error", text: "Dish name is required." });
       return;
@@ -238,13 +259,48 @@ export const KitchenMenuManager: React.FC<KitchenMenuManagerProps> = () => {
       return;
     }
 
+    const prevItems = items;
+    const targetId = editingDish?.id || `item_custom_${Date.now()}`;
+    const targetPrice = Number(dishPrice);
+    const targetStatus = dishStatus === "SOLD_OUT" ? "SOLD_OUT" : "IN_STOCK";
+
+    const optimisticItem: KitchenMenuItem = {
+      id: targetId,
+      name: dishName.trim(),
+      category: dishCategory || "Slow Mornings",
+      station: editingDish?.station || "Hot Kitchen & Grill",
+      priceRupees: targetPrice,
+      stockStatus: targetStatus as "IN_STOCK" | "SOLD_OUT",
+      isChefSpecial: editingDish?.isChefSpecial || false,
+      chefNotes: dishDescription.trim() || editingDish?.chefNotes || "",
+      imageUrl: dishImageUrl.trim() || null,
+      coreIngredients: dishDescription.trim(),
+      dietary: dishDietary,
+    };
+
+    // 1. Instant Optimistic UI Update (0ms)
+    setItems((prev) => {
+      const exists = prev.some((i) => i.id === targetId);
+      if (exists) {
+        return prev.map((i) => (i.id === targetId ? optimisticItem : i));
+      }
+      return [optimisticItem, ...prev];
+    });
+
+    // 2. Close modal & show instant feedback
+    setIsDishModalOpen(false);
     setIsSavingDish(true);
+    setFeedback({
+      type: "success",
+      text: editingDish ? `Saving changes to "${dishName}"...` : `Adding "${dishName}" to menu...`,
+    });
+
     try {
       const res = await saveMenuItemAction({
         id: editingDish?.id,
         name: dishName.trim(),
         categoryId: dishCategory,
-        priceRupees: Number(dishPrice),
+        priceRupees: targetPrice,
         description: dishDescription.trim(),
         dietary: dishDietary,
         status: dishStatus,
@@ -253,13 +309,17 @@ export const KitchenMenuManager: React.FC<KitchenMenuManagerProps> = () => {
 
       if (res.success) {
         setFeedback({ type: "success", text: res.message });
-        setIsDishModalOpen(false);
-        await loadData();
-        broadcastSyncEvent({ type: "ITEM_AVAILABILITY_CHANGED", itemId: res.itemId });
+        broadcastSyncEvent({
+          type: "ITEM_AVAILABILITY_CHANGED",
+          itemId: res.itemId || targetId,
+          stockStatus: targetStatus,
+        });
       } else {
-        setFeedback({ type: "error", text: res.message });
+        setItems(prevItems); // Rollback on failure
+        setFeedback({ type: "error", text: res.message || "Failed to save dish." });
       }
     } catch {
+      setItems(prevItems); // Rollback on error
       setFeedback({ type: "error", text: "Failed to save dish." });
     } finally {
       setIsSavingDish(false);
@@ -271,11 +331,10 @@ export const KitchenMenuManager: React.FC<KitchenMenuManagerProps> = () => {
       {/* Toast Feedback */}
       {feedback && (
         <div
-          className={`flex items-center justify-between rounded-2xl p-4 text-xs font-mono transition-all border ${
-            feedback.type === "success"
+          className={`flex items-center justify-between rounded-2xl p-4 text-xs font-mono transition-all border ${feedback.type === "success"
               ? "bg-emerald-50 text-emerald-900 border-emerald-300 dark:bg-emerald-950/80 dark:text-emerald-200 dark:border-emerald-800"
               : "bg-rose-50 text-rose-900 border-rose-300 dark:bg-rose-950/80 dark:text-rose-200 dark:border-rose-800"
-          }`}
+            }`}
         >
           <div className="flex items-center gap-2">
             {feedback.type === "success" ? (
@@ -370,37 +429,17 @@ export const KitchenMenuManager: React.FC<KitchenMenuManagerProps> = () => {
             <button
               key={st}
               onClick={() => setSelectedStation(st)}
-              className={`px-3 py-1.5 rounded-xl font-mono text-xs font-bold transition whitespace-nowrap cursor-pointer ${
-                selectedStation === st
+              className={`px-3 py-1.5 rounded-xl font-mono text-xs font-bold transition whitespace-nowrap cursor-pointer ${selectedStation === st
                   ? "bg-[#B72E35] text-white shadow-xs"
                   : "bg-white/80 dark:bg-stone-900 text-[#725039] dark:text-stone-300 border border-[#C9AE8B]/30 dark:border-stone-800 hover:bg-[#F3E7D3]"
-              }`}
+                }`}
             >
               {st}
             </button>
           ))}
         </div>
 
-        {/* Bulk Quick Action Buttons */}
-        <div className="flex items-center gap-2 shrink-0">
-          <button
-            onClick={() => handleBulkStationStock("SOLD_OUT")}
-            className="flex-1 md:flex-none flex items-center justify-center gap-1.5 rounded-xl bg-rose-100 dark:bg-rose-950/60 text-rose-800 dark:text-rose-200 border border-rose-300 dark:border-rose-800 px-3 py-1.5 text-xs font-mono font-bold hover:bg-rose-200 dark:hover:bg-rose-900 transition cursor-pointer shadow-xs"
-            title={`Mark all items in ${selectedStation} as Out Of Stock`}
-          >
-            <Ban className="h-3.5 w-3.5" />
-            <span>Mark All Out Of Stock</span>
-          </button>
 
-          <button
-            onClick={() => handleBulkStationStock("IN_STOCK")}
-            className="flex-1 md:flex-none flex items-center justify-center gap-1.5 rounded-xl bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-200 border border-emerald-300 dark:border-emerald-800 px-3 py-1.5 text-xs font-mono font-bold hover:bg-emerald-200 dark:hover:bg-emerald-900 transition cursor-pointer shadow-xs"
-            title={`Restore all items in ${selectedStation} to In Stock`}
-          >
-            <CheckCheck className="h-3.5 w-3.5" />
-            <span>Restore All In Stock</span>
-          </button>
-        </div>
       </div>
 
       {/* Search & Simple 2-State Filter Pills */}
@@ -421,33 +460,30 @@ export const KitchenMenuManager: React.FC<KitchenMenuManagerProps> = () => {
         <div className="flex items-center gap-1 rounded-2xl bg-[#EFE7DC] dark:bg-stone-900 p-1 border border-[#C9AE8B]/30 dark:border-stone-800 shrink-0">
           <button
             onClick={() => setStockFilter("ALL")}
-            className={`px-3 py-1.5 rounded-xl font-mono text-[11px] font-bold transition cursor-pointer ${
-              stockFilter === "ALL"
+            className={`px-3 py-1.5 rounded-xl font-mono text-[11px] font-bold transition cursor-pointer ${stockFilter === "ALL"
                 ? "bg-[#241F1C] dark:bg-white text-white dark:text-[#241F1C] shadow-xs"
                 : "text-[#725039] dark:text-stone-400 hover:text-[#241F1C] dark:hover:text-white"
-            }`}
+              }`}
           >
             All Dishes
           </button>
 
           <button
             onClick={() => setStockFilter("IN_STOCK")}
-            className={`px-3 py-1.5 rounded-xl font-mono text-[11px] font-bold transition cursor-pointer ${
-              stockFilter === "IN_STOCK"
+            className={`px-3 py-1.5 rounded-xl font-mono text-[11px] font-bold transition cursor-pointer ${stockFilter === "IN_STOCK"
                 ? "bg-emerald-600 text-white shadow-xs"
                 : "text-[#725039] dark:text-stone-400 hover:text-emerald-700 dark:hover:text-emerald-400"
-            }`}
+              }`}
           >
             In Stock
           </button>
 
           <button
             onClick={() => setStockFilter("SOLD_OUT")}
-            className={`px-3 py-1.5 rounded-xl font-mono text-[11px] font-bold transition cursor-pointer ${
-              stockFilter === "SOLD_OUT"
+            className={`px-3 py-1.5 rounded-xl font-mono text-[11px] font-bold transition cursor-pointer ${stockFilter === "SOLD_OUT"
                 ? "bg-rose-600 text-white shadow-xs"
                 : "text-[#725039] dark:text-stone-400 hover:text-rose-700 dark:hover:text-rose-400"
-            }`}
+              }`}
           >
             Out Of Stock
           </button>
@@ -473,11 +509,10 @@ export const KitchenMenuManager: React.FC<KitchenMenuManagerProps> = () => {
             return (
               <div
                 key={item.id}
-                className={`rounded-3xl border p-4 transition-all relative flex flex-col justify-between shadow-xs bg-[#FAF4EB] dark:bg-[#1A1715] ${
-                  isOutOfStock
+                className={`rounded-3xl border p-4 transition-all relative flex flex-col justify-between shadow-xs bg-[#FAF4EB] dark:bg-[#1A1715] ${isOutOfStock
                     ? "border-rose-300 dark:border-rose-900/80 bg-rose-50/30 dark:bg-rose-950/20"
                     : "border-[#C9AE8B]/40 dark:border-stone-800 hover:border-[#C9AE8B]/70"
-                }`}
+                  }`}
               >
                 {/* Item Card Content */}
                 <div>
@@ -488,9 +523,8 @@ export const KitchenMenuManager: React.FC<KitchenMenuManagerProps> = () => {
                           <img
                             src={imgUrl}
                             alt={item.name}
-                            className={`h-full w-full object-cover transition-all ${
-                              isOutOfStock ? "grayscale opacity-60" : ""
-                            }`}
+                            className={`h-full w-full object-cover transition-all ${isOutOfStock ? "grayscale opacity-60" : ""
+                              }`}
                           />
                         </div>
                       )}
@@ -511,11 +545,10 @@ export const KitchenMenuManager: React.FC<KitchenMenuManagerProps> = () => {
                           )}
                         </div>
                         <h3
-                          className={`font-serif text-base font-bold leading-tight mt-0.5 line-clamp-1 ${
-                            isOutOfStock
+                          className={`font-serif text-base font-bold leading-tight mt-0.5 line-clamp-1 ${isOutOfStock
                               ? "text-stone-500 dark:text-stone-400 line-through decoration-rose-500/60"
                               : "text-[#241F1C] dark:text-white"
-                          }`}
+                            }`}
                         >
                           {item.name}
                         </h3>
@@ -558,11 +591,10 @@ export const KitchenMenuManager: React.FC<KitchenMenuManagerProps> = () => {
                     {/* Button 1: IN STOCK */}
                     <button
                       onClick={() => handleSetStock(item.id, "IN_STOCK")}
-                      className={`py-2 px-3 rounded-xl font-mono text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shadow-xs ${
-                        !isOutOfStock
+                      className={`py-2 px-3 rounded-xl font-mono text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shadow-xs ${!isOutOfStock
                           ? "bg-emerald-600 text-white hover:bg-emerald-700 border border-emerald-600"
                           : "bg-white dark:bg-stone-900 text-stone-600 dark:text-stone-400 border border-stone-200 dark:border-stone-800 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 hover:text-emerald-700"
-                      }`}
+                        }`}
                     >
                       <Check className="h-3.5 w-3.5 shrink-0" />
                       <span>In Stock</span>
@@ -571,11 +603,10 @@ export const KitchenMenuManager: React.FC<KitchenMenuManagerProps> = () => {
                     {/* Button 2: OUT OF STOCK */}
                     <button
                       onClick={() => handleSetStock(item.id, "SOLD_OUT")}
-                      className={`py-2 px-3 rounded-xl font-mono text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shadow-xs ${
-                        isOutOfStock
+                      className={`py-2 px-3 rounded-xl font-mono text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shadow-xs ${isOutOfStock
                           ? "bg-rose-600 text-white hover:bg-rose-700 border border-rose-600"
                           : "bg-white dark:bg-stone-900 text-stone-600 dark:text-stone-400 border border-stone-200 dark:border-stone-800 hover:bg-rose-50 dark:hover:bg-rose-950/40 hover:text-rose-700"
-                      }`}
+                        }`}
                     >
                       <Ban className="h-3.5 w-3.5 shrink-0" />
                       <span>Out Of Stock</span>

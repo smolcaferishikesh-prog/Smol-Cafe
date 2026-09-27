@@ -36,6 +36,8 @@ import {
   Loader2,
 } from "lucide-react";
 
+import { normalizePhoneNumber } from "@/lib/customer-phone";
+
 interface CartDrawerProps {
   tableLabel?: string;
   guestName?: string;
@@ -223,7 +225,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ tableLabel = "07", guest
       clientPhone = localStorage.getItem("smol_guest_phone") || "";
       clientName = localStorage.getItem("smol_guest_name") || "";
     }
-    const cleanPhone = clientPhone.replace(/\D/g, "").slice(-10);
+    const cleanPhone = normalizePhoneNumber(clientPhone);
     const idempotencyKey = cleanPhone
       ? `smol_ord_${cleanPhone}_${crypto.randomUUID()}`
       : `smol_ord_guest_${crypto.randomUUID()}`;
@@ -741,172 +743,27 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ tableLabel = "07", guest
 
               {/* Payment Method Cards */}
               <div className="space-y-2.5 pt-1">
-                {/* Payment Options (UPI, Card, Wallets) Commented Out
-                <button
-                  type="button"
-                  onClick={() => setIsUpiDrawerOpen(true)}
-                  className="w-full rounded-[1.25rem] border border-[#C9AE8B] dark:border-white/10 bg-[#FAF4EB] dark:bg-[#201A17] p-3.5 flex items-center justify-between hover:bg-[#F3E7D3] dark:hover:bg-[#2C2420] active:scale-[0.99] transition shadow-xs cursor-pointer text-left"
-                >
-                  <div className="flex items-center gap-3.5">
-                    <div className="w-10 h-10 flex items-center justify-center shrink-0 rounded-xl bg-white dark:bg-stone-800 border border-[#C9AE8B]/40 dark:border-stone-700 p-1.5 shadow-2xs">
-                      <Image
-                        src="/upi-logo-trimmed.png"
-                        alt="UPI"
-                        width={32}
-                        height={16}
-                        className="object-contain w-auto h-5 dark:hidden"
-                      />
-                      <Image
-                        src="/upi-logo-dark.png"
-                        alt="UPI"
-                        width={32}
-                        height={16}
-                        className="object-contain w-auto h-5 hidden dark:block"
-                      />
-                    </div>
-                    <div>
-                      <h3 className="font-sans font-bold text-[15.5px] text-[#241F1C] dark:text-[#FAF4EB] leading-tight">
-                        UPI
-                      </h3>
-                      <p className="font-sans text-[12.5px] text-[#725039] dark:text-[#C9AE8B] mt-0.5">
-                        Pay with any UPI app
-                      </p>
-                    </div>
-                  </div>
-                  <ChevronRight className="w-5 h-5 text-[#725039] dark:text-[#C9AE8B]" />
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    setRequestMessage("Staff notified for Card payment at table.");
-                    setTimeout(() => setRequestMessage(null), 4000);
-                  }}
-                  className="w-full rounded-[1.25rem] border border-[#C9AE8B] dark:border-white/10 bg-[#FAF4EB] dark:bg-[#201A17] p-3.5 flex items-center justify-between hover:bg-[#F3E7D3] dark:hover:bg-[#2C2420] active:scale-[0.99] transition shadow-xs cursor-pointer text-left"
-                >
-                  <div className="flex items-center gap-3.5">
-                    <div className="w-10 h-10 flex items-center justify-center shrink-0 rounded-xl bg-white dark:bg-stone-800 border border-[#C9AE8B]/40 dark:border-stone-700 p-1.5 shadow-2xs">
-                      <Image
-                        src="/icon_card_hd.png"
-                        alt="Card"
-                        width={28}
-                        height={28}
-                        className="object-contain w-auto h-6 drop-shadow-xs"
-                      />
-                    </div>
-                    <div>
-                      <h3 className="font-sans font-bold text-[15.5px] text-[#241F1C] dark:text-[#FAF4EB] leading-tight">
-                        Card
-                      </h3>
-                      <p className="font-sans text-[12.5px] text-[#725039] dark:text-[#C9AE8B] mt-0.5">
-                        Visa, MasterCard, Rupay
-                      </p>
-                    </div>
-                  </div>
-                  <ChevronRight className="w-5 h-5 text-[#725039] dark:text-[#C9AE8B]" />
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    setRequestMessage("Staff notified for Wallet payment.");
-                    setTimeout(() => setRequestMessage(null), 4000);
-                  }}
-                  className="w-full rounded-[1.25rem] border border-[#C9AE8B] dark:border-white/10 bg-[#FAF4EB] dark:bg-[#201A17] p-3.5 flex items-center justify-between hover:bg-[#F3E7D3] dark:hover:bg-[#2C2420] active:scale-[0.99] transition shadow-xs cursor-pointer text-left"
-                >
-                  <div className="flex items-center gap-3.5">
-                    <div className="w-10 h-10 flex items-center justify-center shrink-0 rounded-xl bg-white dark:bg-stone-800 border border-[#C9AE8B]/40 dark:border-stone-700 p-1.5 shadow-2xs">
-                      <Image
-                        src="/icon_wallet_hd.png"
-                        alt="Wallets"
-                        width={28}
-                        height={28}
-                        className="object-contain w-auto h-6 drop-shadow-xs"
-                      />
-                    </div>
-                    <div>
-                      <h3 className="font-sans font-bold text-[15.5px] text-[#241F1C] dark:text-[#FAF4EB] leading-tight">
-                        Wallets
-                      </h3>
-                      <p className="font-sans text-[12.5px] text-[#725039] dark:text-[#C9AE8B] mt-0.5">
-                        Amazon Pay, Mobikwik &amp; more
-                      </p>
-                    </div>
-                  </div>
-                  <ChevronRight className="w-5 h-5 text-[#725039] dark:text-[#C9AE8B]" />
-                </button>
-                */}
-
-                {/* Cashier Counter Option */}
+                {/* Instant Test Payment Shortcut for Laptop/Dev Testing */}
                 <button
                   type="button"
                   onClick={handleTestBypassPayment}
                   disabled={isBypassing}
-                  className={`relative overflow-hidden w-full rounded-[1.25rem] border p-3.5 flex items-center justify-between transition-all duration-300 shadow-xs cursor-pointer text-left group ${
-                    isBypassing
-                      ? "border-[#B72E35] dark:border-[#F2C84B] bg-[#FDF2F0] dark:bg-[#2A1D1A] ring-2 ring-[#B72E35]/20 dark:ring-[#F2C84B]/20 scale-[0.99] cursor-wait"
-                      : "border-[#C9AE8B] dark:border-white/10 bg-[#FAF4EB] dark:bg-[#201A17] hover:bg-[#F3E7D3] dark:hover:bg-[#2C2420] active:scale-[0.99]"
-                  }`}
+                  className="w-full rounded-[1.25rem] border border-amber-500/60 bg-amber-50 dark:bg-amber-950/40 p-3.5 flex items-center justify-between hover:bg-amber-100 dark:hover:bg-amber-900/60 active:scale-[0.99] transition shadow-xs cursor-pointer text-left"
                 >
-                  {/* Subtle top shimmer bar while loading */}
-                  {isBypassing && (
-                    <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-amber-500 via-[#B72E35] to-amber-500 animate-pulse" />
-                  )}
-
                   <div className="flex items-center gap-3.5">
-                    <div
-                      className={`w-10 h-10 flex items-center justify-center shrink-0 rounded-xl border transition-all duration-300 ${
-                        isBypassing
-                          ? "bg-[#B72E35] dark:bg-[#F2C84B] border-[#B72E35] dark:border-[#F2C84B] shadow-md"
-                          : "bg-[#B72E35]/15 dark:bg-[#B72E35]/25 border-[#B72E35]/30"
-                      }`}
-                    >
-                      {isBypassing ? (
-                        <Loader2 className="w-5 h-5 text-white dark:text-[#241F1C] animate-spin" />
-                      ) : (
-                        <Receipt className="w-5 h-5 text-[#B72E35] dark:text-[#F2C84B]" />
-                      )}
+                    <div className="w-10 h-10 flex items-center justify-center shrink-0 rounded-xl bg-amber-500 text-white font-bold text-lg shadow-sm">
+                      ⚡
                     </div>
                     <div>
-                      <div className="flex items-center gap-2">
-                        <h3 className="font-sans font-bold text-[15.5px] text-[#241F1C] dark:text-[#FAF4EB] leading-tight">
-                          {isBypassing ? "Connecting to Cashier..." : "Pay at Cashier"}
-                        </h3>
-                        <span
-                          className={`rounded-full font-mono text-[9px] font-extrabold px-2 py-0.5 uppercase tracking-wide transition ${
-                            isBypassing
-                              ? "bg-amber-500/25 text-amber-800 dark:text-amber-200 border border-amber-500/40 animate-pulse"
-                              : "bg-[#B72E35]/15 text-[#B72E35] dark:bg-[#B72E35]/30 dark:text-[#FF5B52]"
-                          }`}
-                        >
-                          {isBypassing ? "Sending Order" : "Cash / Counter"}
-                        </span>
-                      </div>
-                      <p className="font-sans text-[12px] text-[#725039] dark:text-[#C9AE8B] mt-0.5 flex items-center gap-1.5">
-                        {isBypassing ? (
-                          <>
-                            <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber-600 dark:bg-amber-400 animate-ping" />
-                            <span className="font-medium text-[#B72E35] dark:text-[#F2C84B]">
-                              Dispatching order to Cashier Desk...
-                            </span>
-                          </>
-                        ) : (
-                          "Send order to Cashier • Settle bill at counter"
-                        )}
+                      <h3 className="font-sans font-bold text-[15px] text-amber-900 dark:text-amber-200 leading-tight">
+                        {isBypassing ? "Processing Test Order..." : "⚡ Instant Test Payment (Laptop Mode)"}
+                      </h3>
+                      <p className="font-sans text-[12px] text-amber-800 dark:text-amber-300 mt-0.5">
+                        Simulate UPI payment &amp; dispatch order live to Cashier &amp; KDS
                       </p>
                     </div>
                   </div>
-
-                  <div className="shrink-0 flex items-center justify-center pl-2">
-                    {isBypassing ? (
-                      <div className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#B72E35]/10 dark:bg-white/10 text-[#B72E35] dark:text-[#F2C84B]">
-                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                        <span className="text-[10px] font-mono font-bold hidden sm:inline">Sending</span>
-                      </div>
-                    ) : (
-                      <ChevronRight className="w-5 h-5 text-[#725039] dark:text-[#C9AE8B] group-hover:translate-x-0.5 transition" />
-                    )}
-                  </div>
+                  <ChevronRight className="w-5 h-5 text-amber-700 dark:text-amber-300" />
                 </button>
               </div>
 

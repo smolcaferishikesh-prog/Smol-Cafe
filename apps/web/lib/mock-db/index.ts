@@ -756,7 +756,7 @@ export class MockSupabaseClient {
       const taxPaise = Math.round(taxableAmount * 0.05); // 5% GST
       const totalPaise = taxableAmount + taxPaise;
 
-      // 5. Create Order with PENDING_CONFIRMATION initial state
+      // 5. Create Order with SUBMITTED initial state
       const newOrder: MockOrder = {
         id: orderId,
         location_id: locationId || MOCK_LOCATION.id,
@@ -764,13 +764,13 @@ export class MockSupabaseClient {
         customer_session_id: customerSessionId,
         verification_code: verificationCode,
         order_no: orderNo,
-        status: "CONFIRMED",
+        status: "SUBMITTED",
         service_mode: "DINE_IN",
         instructions: instructions || null,
         submitted_at: now,
         confirmed_at: now,
         confirmed_by: "Payment Gateway (PAID)",
-        accepted_at: now,
+        accepted_at: null,
         ready_at: null,
         served_at: null,
         predicted_ready_at: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
@@ -824,10 +824,10 @@ export class MockSupabaseClient {
         id: `osh_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
         order_id: orderId,
         from_status: null,
-        to_status: "CONFIRMED",
+        to_status: "SUBMITTED",
         actor_type: "CUSTOMER",
         actor_id: customerSessionId,
-        notes: "Payment successful (PAID). Order confirmed and dispatched to Kitchen & Cashier",
+        notes: "Payment successful (PAID). Order submitted to Cashier queue",
         created_at: now,
       });
 

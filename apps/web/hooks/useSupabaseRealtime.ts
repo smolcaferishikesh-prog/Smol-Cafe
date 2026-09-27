@@ -8,13 +8,13 @@ export interface RealtimeSubscriptionOptions {
   schema?: string;
   filter?: string;
   event?: "INSERT" | "UPDATE" | "DELETE" | "*";
-  onData: (payload: unknown) => void;
+  onData: (payload: any) => void;
   enabled?: boolean;
 }
 
 /**
- * Custom React hook for real-time PostgreSQL WebSocket subscriptions via Supabase Realtime.
- * Automatically cleans up subscriptions on component unmount and handles reconnects.
+ * High-performance React hook for real-time PostgreSQL WebSocket subscriptions via Supabase Realtime.
+ * Uses deterministic channel names to prevent connection bloat and re-subscribe churn.
  */
 export function useSupabaseRealtime({
   table,
@@ -34,18 +34,16 @@ export function useSupabaseRealtime({
     try {
       supabase = createClient();
     } catch {
-      // If client creation fails or placeholder
       return;
     }
 
-    // Create a unique channel name per component/table/filter
-    const channelName = `realtime_${table}_${filter || "all"}_${Math.random().toString(36).substring(7)}`;
+    // Deterministic channel name per table & filter to avoid duplicate subscriptions
+    const channelName = `realtime_${schema}_${table}_${filter || "all"}`;
     
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const channel = (supabase as any).channel(channelName);
 
     if (!channel || typeof channel.on !== "function") {
-      // Mock client does not support real WebSockets; caller falls back to polling gracefully
       return;
     }
 
@@ -58,20 +56,15 @@ export function useSupabaseRealtime({
           table,
           filter,
         },
-        (payload: unknown) => {
+        (payload: any) => {
           if (onDataRef.current) {
             onDataRef.current(payload);
           }
         }
       )
       .subscribe((status: string) => {
-        if (status === "SUBSCRIBED") {
-          // Connected - trigger refresh to reconcile any events missed during connection
-          if (onDataRef.current) {
-            onDataRef.current({ eventType: "SUBSCRIBED" });
-          }
-        } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
-          console.warn(`[Realtime] Channel for ${table} status: ${status}, will reconcile.`);
+        if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+          console.warn(`[Realtime] Channel status for ${table}: ${status}`);
         }
       });
 

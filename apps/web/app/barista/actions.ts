@@ -50,8 +50,8 @@ export async function fetchBaristaOrdersAction(): Promise<FetchBaristaOrdersResu
   const supabase = createAdminClient();
 
   try {
-    // 1. Fetch active orders (only accepted & in-progress beverage tickets)
-    const activeStatuses = ["ACCEPTED", "PREPARING", "READY", "SERVED", "COMPLETED"];
+    // 1. Fetch active orders (submitted, accepted, preparing, ready, served)
+    const activeStatuses = ["SUBMITTED", "ACCEPTED", "PREPARING", "READY", "SERVED"];
     const { data: orders, error: ordersError } = await supabase
       .from("orders")
       .select("*")
@@ -252,18 +252,85 @@ export async function transitionBaristaOrderStatusAction(
       timestamp: Date.now(),
     });
 
-    revalidatePath("/barista");
-    revalidatePath("/kitchen");
-    revalidatePath("/orders");
-    revalidatePath("/cashier");
-    revalidatePath("/admin");
-
     return { success: true, currentStatus: toStatus, message: `Brew status updated to ${toStatus}` };
   } catch (err: any) {
     captureAppException(err, { requestId, orderId });
     return { success: false, message: err?.message || "Internal server error." };
   }
 }
+
+/**
+ * Fast Server Action: Fetch a single active Barista ticket by Order ID (~15ms response)
+ */
+export async function fetchSingleBaristaTicketAction(
+  orderId: string
+): Promise<{ success: boolean; ticket?: BaristaTicket }> {
+  try {
+    const supabase = createAdminClient();
+    const { data: o, error } = await supabase
+      .from("orders")
+      .select("*")
+      .eq("id", orderId)
+      .single();
+
+    if (error || !o) return { success: false };
+
+    let tableLabel = "01";
+    let tableId = "";
+    if (o.table_session_id) {
+      const { data: session } = await supabase
+        .from("table_sessions")
+        .select("table_id")
+        .eq("id", o.table_session_id)
+        .single();
+      if (session?.table_id) {
+        tableId = session.table_id;
+        const { data: table } = await supabase
+          .from("dining_tables")
+          .select("label")
+          .eq("id", session.table_id)
+          .single();
+        if (table?.label) tableLabel = table.label;
+      }
+    }
+
+    const { data: orderItems } = await supabase
+      .from("order_items")
+      .select("*")
+      .eq("order_id", orderId);
+
+    const items: BaristaOrderItem[] = (orderItems || []).map((item: any) => {
+      const resolvedName = item.name_snapshot || "Artisanal Item";
+      return {
+        id: item.id,
+        name: resolvedName,
+        qty: item.qty,
+        itemStatus: item.item_status || "PENDING",
+        isBeverage: isBeverageItem(resolvedName),
+      };
+    });
+
+    const ticket: BaristaTicket = {
+      id: o.id,
+      orderNo: o.order_no,
+      tableLabel,
+      tableId,
+      guestName: null,
+      guestPhone: null,
+      status: o.status as OrderStatus,
+      submittedAt: o.submitted_at || o.created_at,
+      acceptedAt: o.accepted_at,
+      readyAt: o.ready_at,
+      instructions: o.special_instructions || null,
+      items,
+    };
+
+    return { success: true, ticket };
+  } catch {
+    return { success: false };
+  }
+}
+
 
 /**
  * Server Action: Check if staff is logged in

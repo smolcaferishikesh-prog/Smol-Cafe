@@ -98,9 +98,6 @@ export const StaffLoginGate: React.FC<StaffLoginGateProps> = ({ onSuccess }) => 
           </button>
         </form>
 
-        <div className="mt-6 text-center">
-          <span className="text-[11px] text-[#C9AE8B]/70 font-mono">demo staff pin: 1234</span>
-        </div>
       </div>
     </div>
   );

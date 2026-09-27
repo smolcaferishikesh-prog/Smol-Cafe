@@ -29,7 +29,7 @@ export const AdminLoginGate: React.FC<AdminLoginGateProps> = ({ onSuccess }) => 
         }
         onSuccess();
       } else {
-        setError("invalid admin credentials. try demo pin: 8888");
+        setError("Invalid admin passcode. Please try again.");
       }
       setIsLoading(false);
     }, 400);
@@ -93,9 +93,6 @@ export const AdminLoginGate: React.FC<AdminLoginGateProps> = ({ onSuccess }) => 
           </button>
         </form>
 
-        <div className="mt-6 text-center">
-          <span className="text-[11px] text-[#C9AE8B]/70 font-mono">demo passcode: 8888 or admin123</span>
-        </div>
       </div>
     </div>
   );

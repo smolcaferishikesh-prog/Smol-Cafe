@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getTableSessionCookie } from "@/lib/session";
 import type { LoyaltyAccount, LoyaltyLedgerEntry } from "@smol-cafe/db";
+import { normalizePhoneNumber, getPhoneUuid } from "@/lib/customer-phone";
 import {
   getLoyaltyConfigStore,
   type LoyaltyBonusRule,
@@ -85,12 +86,12 @@ export async function recordCustomerPhoneLoginAction(
   displayName?: string;
   loginCount?: number;
 }> {
-  const cleanDigits = (phoneInput || "").replace(/\D/g, "").slice(-10);
+  const cleanDigits = normalizePhoneNumber(phoneInput);
 
-  if (cleanDigits.length < 10) {
+  if (!cleanDigits || cleanDigits.length < 8) {
     return {
       success: false,
-      message: "Please enter a valid 10-digit mobile phone number.",
+      message: "Please enter a valid international mobile phone number.",
     };
   }
 
@@ -252,14 +253,14 @@ export async function getLoyaltyAccountAction(explicitPhone?: string): Promise<L
   const session = await getTableSessionCookie();
   const { data: authUser } = await supabase.auth.getUser();
 
-  let cleanDigits = explicitPhone ? explicitPhone.replace(/\D/g, "").slice(-10) : "";
+  let cleanDigits = explicitPhone ? normalizePhoneNumber(explicitPhone) : "";
 
   if (!cleanDigits && session?.guestPhone) {
-    cleanDigits = session.guestPhone.replace(/\D/g, "").slice(-10);
+    cleanDigits = normalizePhoneNumber(session.guestPhone);
   }
 
   if (!cleanDigits && authUser?.user?.phone) {
-    cleanDigits = authUser.user.phone.replace(/\D/g, "").slice(-10);
+    cleanDigits = normalizePhoneNumber(authUser.user.phone);
   }
 
   const config = getLoyaltyConfigStore();

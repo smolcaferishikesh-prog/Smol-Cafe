@@ -294,27 +294,33 @@ export async function onboardGuestAndRedirectAction(formData: FormData): Promise
   if (!guestName || guestName.length < 2) {
     return { success: false, error: "Please enter your name." };
   }
-  const cleanDigits = normalizePhoneNumber(guestPhone);
-  if (!cleanDigits || cleanDigits.length < 10) {
-    return { success: false, error: "Please enter a valid 10-digit mobile number." };
+  const e164Phone = normalizePhoneNumber(guestPhone);
+  if (!e164Phone || e164Phone.length < 8 || !e164Phone.startsWith("+")) {
+    return { success: false, error: "Please enter a valid international mobile number." };
   }
 
-  const result = await resolveQrToken(token, true, guestName, cleanDigits);
+  const result = await resolveQrToken(token, true, guestName, e164Phone);
 
   if (!result.success) {
     return { success: false, error: result.message || "Failed to start table session." };
   }
 
-  // Upsert profile record with deterministic phone UUID so order history & loyalty rewards immediately associate with this phone
+  // Upsert profile record with deterministic E.164 phone UUID so order history & loyalty rewards immediately associate with this phone
   try {
     const supabase = createAdminClient();
-    const phoneUuid = getPhoneUuid(cleanDigits);
-    const formattedPhone = cleanDigits.startsWith("+") ? cleanDigits : `+91${cleanDigits}`;
+    const phoneUuid = getPhoneUuid(e164Phone);
+    const { data: existingProf } = await supabase
+      .from("profiles")
+      .select("id")
+      .eq("phone", e164Phone)
+      .maybeSingle();
+
+    const targetProfileId = existingProf?.id || phoneUuid;
     await supabase.from("profiles").upsert(
       {
-        id: phoneUuid,
+        id: targetProfileId,
         display_name: guestName,
-        phone: formattedPhone,
+        phone: e164Phone,
         updated_at: new Date().toISOString(),
       },
       { onConflict: "phone" }

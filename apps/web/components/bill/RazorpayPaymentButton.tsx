@@ -59,25 +59,11 @@ export const RazorpayPaymentButton: React.FC<RazorpayPaymentButtonProps> = ({
         return;
       }
 
-      // 2. Load script
+      // 2. Load Razorpay Checkout Script
       const scriptLoaded = await loadRazorpayScript();
 
-      if (!scriptLoaded || !window.Razorpay || orderRes.keyId?.includes("placeholder")) {
-        // Fallback for offline/test mode: simulate successful client callback directly
-        const mockPaymentId = `pay_${Date.now()}`;
-        const verifyRes = await verifyRazorpayPaymentAction({
-          tableSessionId,
-          billId: orderRes.billId,
-          razorpayOrderId: orderRes.orderId,
-          razorpayPaymentId: mockPaymentId,
-          razorpaySignature: `mock_sig_${Date.now()}`,
-        });
-
-        if (verifyRes.success) {
-          onSuccess();
-        } else {
-          setErrorMessage(verifyRes.message || "Payment verification failed.");
-        }
+      if (!scriptLoaded || !window.Razorpay) {
+        setErrorMessage("Payment gateway script failed to load. Please use Direct UPI QR or Pay at Counter.");
         setIsLoading(false);
         return;
       }

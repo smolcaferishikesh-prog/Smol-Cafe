@@ -60,8 +60,8 @@ function getStatusCopy(status: string): StatusCopy {
     case "CANCELLED":
     case "REJECTED":
       return {
-        title: "Order Cancelled",
-        subtitle: "This order was cancelled by staff.",
+        title: "Order Cancelled by Cashier",
+        subtitle: "This order was cancelled by the cashier desk.",
         badgeColor:
           "bg-[#B72E35]/15 text-[#B72E35] border-[#B72E35]/30 dark:bg-red-950/40 dark:text-red-300",
       };

@@ -49,7 +49,7 @@ export const OrderStatusProgress: React.FC<OrderStatusProgressProps> = ({ status
     return (
       <div className="flex items-center justify-center gap-2 rounded-2xl border border-red-200 bg-red-50/80 p-3.5 text-center text-xs font-semibold text-red-700 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-300">
         <XCircle className="h-4 w-4 shrink-0" />
-        <span>Order {status.toLowerCase()} by café staff.</span>
+        <span>Order Cancelled by Cashier</span>
       </div>
     );
   }

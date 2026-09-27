@@ -5,6 +5,8 @@ import {
 } from "@/app/cashier/actions";
 import { CashierDashboard } from "@/components/cashier/CashierDashboard";
 
+export const dynamic = "force-dynamic";
+
 export const metadata = {
   title: "Cashier & Settlement — smol café",
   description: "POS cash settlement and table session closer for smol café staff.",

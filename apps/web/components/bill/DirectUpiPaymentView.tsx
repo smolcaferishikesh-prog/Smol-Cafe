@@ -2,7 +2,7 @@
 
 import React, { useState } from "react";
 import { getUpiConfig, buildUpiUri, launchUpiAppChooser } from "@/lib/upi";
-import { Smartphone, QrCode, Copy, Check, ShieldCheck, ArrowRight, Clock } from "lucide-react";
+import { Smartphone, QrCode, Copy, Check, ShieldCheck, ArrowRight, Clock, Zap } from "lucide-react";
 
 interface DirectUpiPaymentViewProps {
   tableSessionId: string;
@@ -65,6 +65,21 @@ export const DirectUpiPaymentView: React.FC<DirectUpiPaymentViewProps> = ({
           </div>
         </div>
         <ArrowRight className="h-5 w-5" />
+      </button>
+
+      {/* Laptop / Dev Mode Test Payment Shortcut */}
+      <button
+        type="button"
+        onClick={() => {
+          if (onPaymentInitiated) onPaymentInitiated();
+          setPaymentInitiated(true);
+          setUtrInput(`TEST-${Date.now().toString().slice(-6)}`);
+          setUtrSubmitted(true);
+        }}
+        className="w-full flex items-center justify-center gap-2 rounded-2xl border border-amber-400 bg-amber-50 dark:bg-amber-950/40 p-3 text-xs font-bold text-amber-900 dark:text-amber-200 hover:bg-amber-100 transition cursor-pointer shadow-xs"
+      >
+        <Zap className="h-4 w-4 text-amber-600 shrink-0" />
+        <span>⚡ Laptop Testing: Simulate UPI Payment Success</span>
       </button>
 
       {/* Secondary Options Grid */}

@@ -2,6 +2,7 @@
 
 import { createAdminClient } from "@/lib/supabase/admin";
 import { revalidatePath, revalidateTag } from "next/cache";
+import { broadcastSyncEvent } from "@/lib/sync-events";
 import {
   getMenuCatalog,
   getCustomItemsStore,
@@ -269,15 +270,23 @@ export async function saveMenuItemAction(
       // In-memory fallback handles gracefully
     }
 
-    // Revalidate Next.js cache and all relevant paths
-    try {
-      revalidateTag("menu-catalog");
-      revalidatePath("/smol-menu");
-      revalidatePath("/smol-backdoor/admin");
-      revalidatePath("/smol-backdoor/kitchen");
-    } catch {
-      // ignore
-    }
+    broadcastSyncEvent({
+      type: "ITEM_AVAILABILITY_CHANGED",
+      itemId,
+      stockStatus: itemStatus === "SOLD_OUT" ? "SOLD_OUT" : "IN_STOCK",
+      availability: itemStatus === "SOLD_OUT" ? "SOLD_OUT" : "IN_STOCK",
+      timestamp: Date.now(),
+      metadata: {
+        id: itemId,
+        name,
+        categoryId,
+        priceRupees,
+        description: description || "",
+        dietary: dietary || "veg",
+        status: itemStatus,
+        imageUrl: finalImageUrl,
+      },
+    });
 
     return {
       success: true,
@@ -322,14 +331,17 @@ export async function deleteMenuItemAction(
       // ignore
     }
 
-    try {
-      revalidateTag("menu-catalog");
-      revalidatePath("/smol-menu");
-      revalidatePath("/smol-backdoor/admin");
-      revalidatePath("/smol-backdoor/kitchen");
-    } catch {
-      // ignore
-    }
+    broadcastSyncEvent({
+      type: "ITEM_AVAILABILITY_CHANGED",
+      itemId,
+      stockStatus: "ARCHIVED",
+      availability: "ARCHIVED",
+      timestamp: Date.now(),
+      metadata: {
+        id: itemId,
+        status: "ARCHIVED",
+      },
+    });
 
     return {
       success: true,

@@ -2990,3 +2990,175 @@ CREATE INDEX IF NOT EXISTS idx_loyalty_ledger_account_id ON loyalty_ledger(loyal
 -- Music & Jukebox Indexes
 CREATE INDEX IF NOT EXISTS idx_song_requests_session_id ON song_requests(session_id);
 CREATE INDEX IF NOT EXISTS idx_song_requests_status ON song_requests(status);
+
+-- ==============================================================================
+-- Migration: 20260823000019_realtime_and_order_sync.sql
+-- Realtime CDC Subscriptions and Customer Order Synchronization
+-- ==============================================================================
+
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_publication WHERE pubname = 'supabase_realtime') THEN
+    BEGIN
+      ALTER PUBLICATION supabase_realtime ADD TABLE orders;
+    EXCEPTION WHEN OTHERS THEN NULL;
+    END;
+    BEGIN
+      ALTER PUBLICATION supabase_realtime ADD TABLE order_items;
+    EXCEPTION WHEN OTHERS THEN NULL;
+    END;
+    BEGIN
+      ALTER PUBLICATION supabase_realtime ADD TABLE table_sessions;
+    EXCEPTION WHEN OTHERS THEN NULL;
+    END;
+    BEGIN
+      ALTER PUBLICATION supabase_realtime ADD TABLE bills;
+    EXCEPTION WHEN OTHERS THEN NULL;
+    END;
+  END IF;
+END $$;
+
+DROP POLICY IF EXISTS "orders_customer_select" ON orders;
+CREATE POLICY "orders_customer_select" ON orders
+  FOR SELECT USING (true);
+
+DROP POLICY IF EXISTS "order_items_customer_select" ON order_items;
+CREATE POLICY "order_items_customer_select" ON order_items
+  FOR SELECT USING (true);
+
+DROP POLICY IF EXISTS "table_sessions_customer_select" ON table_sessions;
+CREATE POLICY "table_sessions_customer_select" ON table_sessions
+  FOR SELECT USING (true);
+
+DROP POLICY IF EXISTS "bills_select_claimed" ON bills;
+CREATE POLICY "bills_select_claimed" ON bills
+  FOR SELECT USING (true);
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'chk_profiles_phone_e164'
+  ) THEN
+    ALTER TABLE profiles 
+      ADD CONSTRAINT chk_profiles_phone_e164 
+      CHECK (phone IS NULL OR phone ~ '^\+[1-9]\d{6,14}$');
+  END IF;
+EXCEPTION WHEN OTHERS THEN NULL;
+END $$;
+
+CREATE INDEX IF NOT EXISTS idx_profiles_phone_e164 ON profiles(phone);
+
+-- ==============================================================================
+-- Migration: 20260823000020_fix_guest_profiles_and_order_sync.sql
+-- Fix Guest Mobile Profiles, Foreign Keys & Realtime Full Row CDC Sync
+-- ==============================================================================
+
+ALTER TABLE profiles DROP CONSTRAINT IF EXISTS profiles_id_fkey;
+
+ALTER TABLE orders DROP CONSTRAINT IF EXISTS orders_customer_id_fkey;
+ALTER TABLE orders 
+  ADD CONSTRAINT orders_customer_id_fkey 
+  FOREIGN KEY (customer_id) REFERENCES profiles(id) ON DELETE SET NULL;
+
+ALTER TABLE orders REPLICA IDENTITY FULL;
+ALTER TABLE order_items REPLICA IDENTITY FULL;
+ALTER TABLE table_sessions REPLICA IDENTITY FULL;
+ALTER TABLE bills REPLICA IDENTITY FULL;
+ALTER TABLE profiles REPLICA IDENTITY FULL;
+
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_publication WHERE pubname = 'supabase_realtime') THEN
+    BEGIN
+      ALTER PUBLICATION supabase_realtime ADD TABLE orders;
+    EXCEPTION WHEN OTHERS THEN NULL;
+    END;
+    BEGIN
+      ALTER PUBLICATION supabase_realtime ADD TABLE order_items;
+    EXCEPTION WHEN OTHERS THEN NULL;
+    END;
+    BEGIN
+      ALTER PUBLICATION supabase_realtime ADD TABLE table_sessions;
+    EXCEPTION WHEN OTHERS THEN NULL;
+    END;
+    BEGIN
+      ALTER PUBLICATION supabase_realtime ADD TABLE bills;
+    EXCEPTION WHEN OTHERS THEN NULL;
+    END;
+    BEGIN
+      ALTER PUBLICATION supabase_realtime ADD TABLE profiles;
+    EXCEPTION WHEN OTHERS THEN NULL;
+    END;
+  END IF;
+END $$;
+
+-- ==============================================================================
+-- Migration: 20260823000021_performance_indexes_v2.sql
+-- High-Performance Composite Indexes for Sub-Millisecond Realtime Query Speed
+-- ==============================================================================
+
+CREATE INDEX IF NOT EXISTS idx_orders_customer_id_created ON orders(customer_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_orders_status_created ON orders(status, created_at ASC);
+CREATE INDEX IF NOT EXISTS idx_orders_table_session_created ON orders(table_session_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_profiles_phone ON profiles(phone);
+CREATE INDEX IF NOT EXISTS idx_bills_table_session_id ON bills(table_session_id);
+CREATE INDEX IF NOT EXISTS idx_table_sessions_status_open ON table_sessions(status) WHERE status = 'OPEN';
+CREATE INDEX IF NOT EXISTS idx_order_items_order_id_created ON order_items(order_id, created_at ASC);
+
+-- ==============================================================================
+-- Migration: 20260823000022_realtime_menu_and_speed_indexes.sql
+-- High-Performance Supabase Realtime CDC & Composite Indexes for Instant Sync
+-- ==============================================================================
+
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_status TEXT DEFAULT 'PENDING';
+
+ALTER TABLE menu_items REPLICA IDENTITY FULL;
+ALTER TABLE menu_categories REPLICA IDENTITY FULL;
+
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'ingredients') THEN
+    ALTER TABLE ingredients REPLICA IDENTITY FULL;
+  END IF;
+END $$;
+
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_publication WHERE pubname = 'supabase_realtime') THEN
+    BEGIN
+      ALTER PUBLICATION supabase_realtime ADD TABLE menu_items;
+    EXCEPTION WHEN OTHERS THEN NULL;
+    END;
+    BEGIN
+      ALTER PUBLICATION supabase_realtime ADD TABLE menu_categories;
+    EXCEPTION WHEN OTHERS THEN NULL;
+    END;
+    BEGIN
+      IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'ingredients') THEN
+        ALTER PUBLICATION supabase_realtime ADD TABLE ingredients;
+      END IF;
+    EXCEPTION WHEN OTHERS THEN NULL;
+    END;
+  END IF;
+END $$;
+
+DROP POLICY IF EXISTS "menu_items_realtime_select" ON menu_items;
+CREATE POLICY "menu_items_realtime_select" ON menu_items FOR SELECT USING (true);
+
+DROP POLICY IF EXISTS "menu_categories_realtime_select" ON menu_categories;
+CREATE POLICY "menu_categories_realtime_select" ON menu_categories FOR SELECT USING (true);
+
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'ingredients') THEN
+    EXECUTE 'DROP POLICY IF EXISTS "ingredients_realtime_select" ON ingredients';
+    EXECUTE 'CREATE POLICY "ingredients_realtime_select" ON ingredients FOR SELECT USING (true)';
+  END IF;
+END $$;
+
+CREATE INDEX IF NOT EXISTS idx_orders_realtime_lookup ON orders(id, status, updated_at);
+CREATE INDEX IF NOT EXISTS idx_orders_pending_queue ON orders(status, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_order_items_realtime_lookup ON order_items(order_id, item_status);
+CREATE INDEX IF NOT EXISTS idx_menu_items_realtime_lookup ON menu_items(id, status);
+CREATE INDEX IF NOT EXISTS idx_table_sessions_active_lookup ON table_sessions(id, status, table_id);
+

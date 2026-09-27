@@ -76,9 +76,9 @@ export async function fetchActiveOrdersAction(overridePhone?: string): Promise<F
     let ordersQuery = supabase
       .from("orders")
       .select("*")
-      .order("order_no", { ascending: false });
+      .order("created_at", { ascending: false });
 
-    if (cleanPhone && cleanPhone.length >= 10) {
+    if (cleanPhone && cleanPhone.length >= 8) {
       // Fetch orders belonging to this table session OR matching customer profile UUID OR matching phone idempotency key
       ordersQuery = ordersQuery.or(`table_session_id.eq.${session.sessionId},customer_id.eq.${phoneUuid},idempotency_key.ilike.%${cleanPhone}%`);
     } else {

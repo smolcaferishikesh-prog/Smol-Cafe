@@ -2,7 +2,7 @@
  * ==============================================================================
  * Smol Café — Release-Blocking Invariant Automated Test Suite
  * ==============================================================================
- * Validates the 7 critical release-blocking business invariants:
+ * Validates the 8 critical release-blocking business invariants:
  * 1. Double-tapping "Place order" with same idempotency key creates exactly ONE order
  * 2. Price change between browsing and submit produces clean 409 diff (not silent wrong price)
  * 3. Two customers racing for the last unit of stock: exactly ONE succeeds, other gets SOLD_OUT
@@ -10,9 +10,16 @@
  * 5. Duplicate Razorpay webhook only applies financial change once (idempotent dedupe)
  * 6. Out-of-order webhook (AUTHORIZED after CAPTURED) cannot regress payment status
  * 7. Editing a menu item's price does not change total on already-placed historical order
+ * 8. Multi-country E.164 phone normalization, deterministic customer ID & strict order isolation
  */
 
 import crypto from "crypto";
+import {
+  normalizePhoneNumber,
+  getPhoneUuid,
+  doesOrderMatchCustomerPhone,
+  recordOrderForPhone,
+} from "../../../apps/web/lib/customer-phone.ts";
 
 interface OrderItemInput {
   menu_item_id: string;
@@ -335,7 +342,7 @@ async function runReleaseBlockingInvariantTests() {
   console.log("================================================================================\n");
 
   let passedCount = 0;
-  const totalTests = 7;
+  const totalTests = 8;
 
   const db = new SmolSimulationDatabase();
 
@@ -621,6 +628,99 @@ async function runReleaseBlockingInvariantTests() {
     console.error("  ❌ FAIL: Historical order total was corrupted by catalog price change.", {
       initialTotalPaise,
       recheckedTotal: recheckedOrder.total_paise,
+    });
+    process.exit(1);
+  }
+
+  // ----------------------------------------------------------------------------
+  // Test 8: Multi-Country E.164 Phone Normalization & Order Isolation
+  // ----------------------------------------------------------------------------
+  console.log("Test 8: Multi-Country E.164 Phone Normalization, UUID & Order Isolation");
+
+  // 1. Verify Normalization for India (+91), USA (+1), UK (+44)
+  const normIndia1 = normalizePhoneNumber("+91 98765 43210", "+91");
+  const normIndia2 = normalizePhoneNumber("09876543210", "+91");
+  const normIndia3 = normalizePhoneNumber("9876543210", "+91");
+  const normIndia4 = normalizePhoneNumber("+919876543210", "+91");
+
+  const normUSA1 = normalizePhoneNumber("+1 (415) 555-2671", "+1");
+  const normUSA2 = normalizePhoneNumber("4155552671", "+1");
+  const normUSA3 = normalizePhoneNumber("+14155552671", "+1");
+
+  const normUK1 = normalizePhoneNumber("+44 7911 123456", "+44");
+  const normUK2 = normalizePhoneNumber("07911123456", "+44");
+  const normUK3 = normalizePhoneNumber("+447911123456", "+44");
+
+  const allIndiaEqual =
+    normIndia1 === "+919876543210" &&
+    normIndia2 === "+919876543210" &&
+    normIndia3 === "+919876543210" &&
+    normIndia4 === "+919876543210";
+
+  const allUSAEqual =
+    normUSA1 === "+14155552671" &&
+    normUSA2 === "+14155552671" &&
+    normUSA3 === "+14155552671";
+
+  const allUKEqual =
+    normUK1 === "+447911123456" &&
+    normUK2 === "+447911123456" &&
+    normUK3 === "+447911123456";
+
+  // 2. Deterministic UUID derivation consistency
+  const uuidIndia1 = getPhoneUuid("+91 98765 43210", "+91");
+  const uuidIndia2 = getPhoneUuid("09876543210", "+91");
+  const uuidUSA = getPhoneUuid("+14155552671", "+1");
+  const uuidUK = getPhoneUuid("+447911123456", "+44");
+
+  const uuidDeterministic = uuidIndia1 === uuidIndia2;
+  const uuidUniqueAcrossCountries =
+    uuidIndia1 !== uuidUSA && uuidIndia1 !== uuidUK && uuidUSA !== uuidUK;
+
+  // 3. Cross-Customer Order Isolation Protection
+  const orderIndiaId = "ord_india_1001";
+  recordOrderForPhone(orderIndiaId, "+919876543210");
+  const mockIndiaOrder = {
+    id: orderIndiaId,
+    customer_id: uuidIndia1,
+    idempotency_key: "smol_ord_+919876543210_test",
+  };
+
+  const matchesSelfWithFormats =
+    doesOrderMatchCustomerPhone(mockIndiaOrder, "+91 98765 43210") &&
+    doesOrderMatchCustomerPhone(mockIndiaOrder, "09876543210");
+
+  const blocksUSACustomer = !doesOrderMatchCustomerPhone(mockIndiaOrder, "+14155552671");
+  const blocksUKCustomer = !doesOrderMatchCustomerPhone(mockIndiaOrder, "+447911123456");
+  const blocksDifferentLocalNumber = !doesOrderMatchCustomerPhone(mockIndiaOrder, "+919999999999");
+
+  if (
+    allIndiaEqual &&
+    allUSAEqual &&
+    allUKEqual &&
+    uuidDeterministic &&
+    uuidUniqueAcrossCountries &&
+    matchesSelfWithFormats &&
+    blocksUSACustomer &&
+    blocksUKCustomer &&
+    blocksDifferentLocalNumber
+  ) {
+    console.log("  ✅ PASS: Normalized India (+91), USA (+1), and UK (+44) numbers into strict E.164 format.");
+    console.log("  ✅ PASS: Verified deterministic UUID mapping across different input formatting.");
+    console.log("  ✅ PASS: Confirmed unique UUIDs across different international country codes.");
+    console.log("  ✅ PASS: Verified cross-customer order isolation (USA customer cannot view India customer's order history).\n");
+    passedCount++;
+  } else {
+    console.error("  ❌ FAIL: Multi-country E.164 phone handling test failed.", {
+      allIndiaEqual,
+      allUSAEqual,
+      allUKEqual,
+      uuidDeterministic,
+      uuidUniqueAcrossCountries,
+      matchesSelfWithFormats,
+      blocksUSACustomer,
+      blocksUKCustomer,
+      blocksDifferentLocalNumber,
     });
     process.exit(1);
   }

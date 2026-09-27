@@ -1,7 +1,7 @@
 /**
  * Smol Café — Cross-Interface Real-Time Sync Utility
  * Enables zero-latency communication across Customer, Kitchen, Cashier,
- * and Admin views using BroadcastChannel and localStorage events.
+ * and Admin views using BroadcastChannel, localStorage events, and Supabase WebSockets.
  */
 
 import { createClient } from "@/lib/supabase/client";
@@ -79,6 +79,66 @@ function getOrInitSupabaseChannel() {
           }
         );
 
+        // Listen to Postgres CDC changes on 'orders' table for instant DB push notifications
+        channel.on(
+          "postgres_changes",
+          { event: "*", schema: "public", table: "orders" },
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          (payload: any) => {
+            const newOrder = payload?.new;
+            if (newOrder && newOrder.id) {
+              const syncEvent: SyncPayload = {
+                type: newOrder.status === "PENDING" || newOrder.status === "SUBMITTED" ? "ORDER_PLACED" : "STATUS_CHANGED",
+                orderId: newOrder.id,
+                orderNo: newOrder.order_no,
+                tableLabel: newOrder.table_label,
+                status: newOrder.status,
+                timestamp: Date.now(),
+                metadata: {
+                  newRow: newOrder,
+                  eventType: payload.eventType,
+                },
+              };
+              syncListeners.forEach((listener) => {
+                try {
+                  listener(syncEvent);
+                } catch {
+                  // ignore
+                }
+              });
+            }
+          }
+        );
+
+        // Listen to Postgres CDC changes on 'menu_items' table for instant stock/price updates
+        channel.on(
+          "postgres_changes",
+          { event: "*", schema: "public", table: "menu_items" },
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          (payload: any) => {
+            const item = payload?.new;
+            if (item && item.id) {
+              const syncEvent: SyncPayload = {
+                type: "ITEM_AVAILABILITY_CHANGED",
+                itemId: item.id,
+                stockStatus: item.status === "SOLD_OUT" ? "SOLD_OUT" : item.metadata?.availability || "IN_STOCK",
+                timestamp: Date.now(),
+                metadata: {
+                  item,
+                  eventType: payload.eventType,
+                },
+              };
+              syncListeners.forEach((listener) => {
+                try {
+                  listener(syncEvent);
+                } catch {
+                  // ignore
+                }
+              });
+            }
+          }
+        );
+
         channel.subscribe((status: string) => {
           if (status === "SUBSCRIBED") {
             // Connected to broadcast mesh
@@ -140,7 +200,7 @@ export function broadcastSyncEvent(event: SyncPayload): void {
         type: "broadcast",
         event: "sync",
         payload,
-      }).catch(() => {});
+      }).catch(() => { });
     }
   } catch {
     // Supabase broadcast error ignored
@@ -159,7 +219,7 @@ export function subscribeToSyncEvents(
   callback: (event: SyncPayload) => void
 ): () => void {
   if (typeof window === "undefined") {
-    return () => {};
+    return () => { };
   }
 
   // Register in local listener set

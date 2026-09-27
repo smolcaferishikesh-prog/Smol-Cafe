@@ -200,12 +200,6 @@ export async function updateMenuItemStockAction(
       // ignore
     }
 
-    revalidatePath("/kitchen");
-    revalidatePath("/smol-menu");
-    revalidatePath("/menu");
-    revalidatePath("/admin");
-    revalidatePath("/orders");
-
     const statusLabel =
       stockStatus === "SOLD_OUT" ? "OUT OF STOCK" : stockStatus === "LOW_STOCK" ? "LOW STOCK" : "IN STOCK";
 

@@ -5,6 +5,7 @@ import Image from "next/image";
 import type { KitchenTicket } from "@/app/kitchen/actions";
 import {
   fetchKitchenOrdersAction,
+  fetchSingleKitchenTicketAction,
   transitionOrderStatusAction,
   staffLogoutAction,
 } from "@/app/kitchen/actions";
@@ -49,6 +50,9 @@ export const KitchenBoardView: React.FC<KitchenBoardViewProps> = ({ initialOrder
   const [ticketSearchQuery, setTicketSearchQuery] = useState("");
   const [mounted, setMounted] = useState(false);
   const prevOrderCountRef = useRef(initialOrders.length);
+  const playedChimeTicketIdsRef = useRef<Set<string>>(
+    new Set(initialOrders.map((o) => o.id))
+  );
   // Track ongoing optimistic transitions to prevent polling flicker/snap-back
   const optimisticLocksRef = useRef<Map<string, { status: OrderStatus; timestamp: number }>>(new Map());
 
@@ -104,9 +108,15 @@ export const KitchenBoardView: React.FC<KitchenBoardViewProps> = ({ initialOrder
     }
   };
 
-  // Sound chime for incoming orders
-  const playChime = useCallback(() => {
+  // Sound chime for incoming orders - strictly ONCE per order ticket ID
+  const playChime = useCallback((orderId?: string) => {
     if (!soundEnabled) return;
+    if (orderId) {
+      if (playedChimeTicketIdsRef.current.has(orderId)) {
+        return; // Already chimed for this order ticket
+      }
+      playedChimeTicketIdsRef.current.add(orderId);
+    }
     soundManager.playOrderPlacedChime();
   }, [soundEnabled]);
 
@@ -115,9 +125,13 @@ export const KitchenBoardView: React.FC<KitchenBoardViewProps> = ({ initialOrder
     try {
       const result = await fetchKitchenOrdersAction();
       if (result && result.success && Array.isArray(result.orders)) {
-        if (result.orders.length > prevOrderCountRef.current) {
-          playChime();
+        const unchimedOrder = result.orders.find(
+          (o) => !playedChimeTicketIdsRef.current.has(o.id)
+        );
+        if (unchimedOrder && result.orders.length > prevOrderCountRef.current) {
+          playChime(unchimedOrder.id);
         }
+        result.orders.forEach((o) => playedChimeTicketIdsRef.current.add(o.id));
         prevOrderCountRef.current = result.orders.length;
 
         // Clean up expired optimistic locks (> 8000ms)
@@ -153,26 +167,66 @@ export const KitchenBoardView: React.FC<KitchenBoardViewProps> = ({ initialOrder
     }
   }, [playChime]);
 
+  const handleIncomingTicket = useCallback(
+    (orderId: string, newStatus?: OrderStatus) => {
+      let exists = false;
+      setOrders((prev) => {
+        exists = prev.some((o) => o.id === orderId);
+        if (exists && newStatus) {
+          return prev.map((o) =>
+            o.id === orderId ? { ...o, status: newStatus } : o
+          );
+        }
+        return prev;
+      });
+
+      if (!exists) {
+        fetchSingleKitchenTicketAction(orderId).then((result) => {
+          if (result && result.success && result.ticket) {
+            const newTicket = result.ticket;
+            setOrders((prev) => {
+              if (prev.some((o) => o.id === newTicket.id)) return prev;
+              return [newTicket, ...prev];
+            });
+            playChime(newTicket.id);
+          } else {
+            refreshOrders();
+          }
+        });
+      }
+    },
+    [playChime, refreshOrders]
+  );
+
   // Supabase Realtime WebSocket subscription for Instant KDS Ticket updates
   useSupabaseRealtime({
     table: "orders",
-    onData: () => {
-      refreshOrders();
+    onData: (payload: any) => {
+      const newRow = payload?.new;
+      if (newRow && newRow.id) {
+        handleIncomingTicket(newRow.id, newRow.status as OrderStatus);
+      } else {
+        refreshOrders();
+      }
     },
   });
 
   // Real-Time Event Listener & Polling Fallback Loop
   useEffect(() => {
-    // 1. Smart Fallback Polling (6s interval when tab is visible, WebSocket handles instant push)
+    // 1. Smart Fallback Polling (30s background heartbeat, WebSocket handles instant push)
     const interval = setInterval(() => {
       if (document.visibilityState === "visible") {
         refreshOrders();
       }
-    }, 6000);
+    }, 30000);
 
     // 2. Cross-Interface Real-Time Sync Subscription
-    const unsubscribe = subscribeToSyncEvents(() => {
-      refreshOrders();
+    const unsubscribe = subscribeToSyncEvents((event) => {
+      if (event.orderId) {
+        handleIncomingTicket(event.orderId, event.status as OrderStatus);
+      } else {
+        refreshOrders();
+      }
     });
 
     // 3. Window Focus Listener
@@ -184,7 +238,7 @@ export const KitchenBoardView: React.FC<KitchenBoardViewProps> = ({ initialOrder
       unsubscribe();
       window.removeEventListener("focus", handleFocus);
     };
-  }, [refreshOrders]);
+  }, [handleIncomingTicket, refreshOrders]);
 
   // Optimistic Transition Handler
   const handleTransition = async (

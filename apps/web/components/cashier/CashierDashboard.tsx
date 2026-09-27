@@ -113,18 +113,37 @@ export const CashierDashboard: React.FC<CashierDashboardProps> = ({
     }
   }, []);
 
-  // Debounced refresh for realtime updates to prevent request flooding
-  const debouncedRefresh = useCallback(() => {
-    const timer = setTimeout(() => {
-      refreshData();
-    }, 400);
-    return () => clearTimeout(timer);
+  // Instant refresh for realtime updates without artificial delays
+  const instantRefresh = useCallback(() => {
+    refreshData();
   }, [refreshData]);
 
   // Supabase Real-time subscriptions for cross-device live updates
-  useSupabaseRealtime({ table: "orders", onData: () => debouncedRefresh() });
-  useSupabaseRealtime({ table: "table_sessions", onData: () => debouncedRefresh() });
-  useSupabaseRealtime({ table: "bills", onData: () => debouncedRefresh() });
+  useSupabaseRealtime({
+    table: "orders",
+    onData: (payload: any) => {
+      const newRow = payload?.new;
+      if (newRow && newRow.id) {
+        if (
+          newRow.status === "ACCEPTED" ||
+          newRow.status === "PREPARING" ||
+          newRow.status === "READY" ||
+          newRow.status === "SERVED" ||
+          newRow.status === "COMPLETED" ||
+          newRow.status === "CANCELLED" ||
+          newRow.status === "REJECTED"
+        ) {
+          setPendingOrders((prev) => prev.filter((o) => o.id !== newRow.id));
+        } else {
+          refreshData();
+        }
+      } else {
+        refreshData();
+      }
+    },
+  });
+  useSupabaseRealtime({ table: "table_sessions", onData: () => instantRefresh() });
+  useSupabaseRealtime({ table: "bills", onData: () => instantRefresh() });
 
   const handleOpenTableForGuest = async (label: string) => {
     await openTableSessionAction(label);
@@ -142,10 +161,14 @@ export const CashierDashboard: React.FC<CashierDashboardProps> = ({
       if (document.visibilityState === "visible") {
         refreshData();
       }
-    }, 8000);
+    }, 30000);
 
-    const unsubscribe = subscribeToSyncEvents(() => {
-      debouncedRefresh();
+    const unsubscribe = subscribeToSyncEvents((event) => {
+      if (event.orderId && event.status && ["ACCEPTED", "PREPARING", "READY", "SERVED", "COMPLETED", "CANCELLED"].includes(event.status)) {
+        setPendingOrders((prev) => prev.filter((o) => o.id !== event.orderId));
+      } else {
+        refreshData();
+      }
     });
 
     return () => {
@@ -153,7 +176,7 @@ export const CashierDashboard: React.FC<CashierDashboardProps> = ({
       window.removeEventListener("focus", handleFocus);
       unsubscribe();
     };
-  }, [refreshData, debouncedRefresh]);
+  }, [refreshData, instantRefresh]);
 
   const handleConfirmOrder = async (
     orderId: string,

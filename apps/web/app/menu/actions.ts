@@ -8,6 +8,7 @@ import { generateRequestId, logger } from "@/lib/observability/logger";
 import { recordOrderAttempt } from "@/lib/observability/alerts";
 import { captureAppException } from "@/lib/observability/sentry";
 import { getPhoneUuid, normalizePhoneNumber, recordOrderForPhone } from "@/lib/customer-phone";
+import { broadcastSyncEvent } from "@/lib/sync-events";
 
 export interface PlaceOrderItemInput {
   menu_item_id: string;
@@ -146,21 +147,30 @@ export async function placeOrderAction(
 
   // If no Supabase Auth user is logged in, use the verified customer Phone UUID as profile identifier
   if (!profileId && cleanPhone) {
-    profileId = getPhoneUuid(cleanPhone);
-    // Ensure profile row exists in database for this phone
-    try {
-      const formattedPhone = cleanPhone.startsWith("+") ? cleanPhone : `+91${cleanPhone}`;
-      await supabase.from("profiles").upsert(
-        {
-          id: profileId,
-          display_name: session.guestName || `Guest (${cleanPhone.slice(-4)})`,
-          phone: formattedPhone,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: "phone" }
-      );
-    } catch (profErr) {
-      console.warn("Could not upsert profile during order creation:", profErr);
+    const phoneUuid = getPhoneUuid(cleanPhone);
+    const { data: existingProf } = await supabase
+      .from("profiles")
+      .select("id")
+      .eq("phone", cleanPhone)
+      .maybeSingle();
+
+    if (existingProf?.id) {
+      profileId = existingProf.id;
+    } else {
+      profileId = phoneUuid;
+      try {
+        await supabase.from("profiles").upsert(
+          {
+            id: profileId,
+            display_name: session.guestName || `Guest (${cleanPhone.slice(-4)})`,
+            phone: cleanPhone,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: "phone" }
+        );
+      } catch (profErr) {
+        console.warn("Could not upsert profile during order creation:", profErr);
+      }
     }
   }
 
@@ -241,6 +251,19 @@ export async function placeOrderAction(
       if (cleanPhone) {
         recordOrderForPhone(result.order_id, cleanPhone, session.guestName);
       }
+      broadcastSyncEvent({
+        type: "ORDER_PLACED",
+        orderId: result.order_id,
+        orderNo: result.order_no,
+        tableLabel: session.tableLabel,
+        status: "SUBMITTED",
+        timestamp: Date.now(),
+        metadata: {
+          guestPhone: cleanPhone,
+          guestName: session.guestName,
+          tableSessionId: session.sessionId,
+        },
+      });
     }
 
     if (rpcError || !result || !result.success) {
@@ -302,8 +325,8 @@ export async function placeOrderAction(
           location_id: session.locationId,
           table_session_id: session.sessionId,
           order_no: fallbackOrderNo,
-          customer_id: null,
-          status: "DRAFT",
+          customer_id: profileId || null,
+          status: "SUBMITTED",
           service_mode: "DINE_IN",
           idempotency_key: effectiveIdempotencyKey,
           submitted_at: now,
@@ -341,7 +364,7 @@ export async function placeOrderAction(
           success: true,
           orderId: fallbackOrderId,
           orderNo: fallbackOrderNo,
-          status: "CONFIRMED",
+          status: "SUBMITTED",
           paymentStatus: "PAID",
           tableLabel: session.tableLabel || "01",
           verificationCode: fallbackVerification,
@@ -356,7 +379,7 @@ export async function placeOrderAction(
           success: true,
           orderId: fallbackOrderId,
           orderNo: fallbackOrderNo,
-          status: "CONFIRMED",
+          status: "SUBMITTED",
           paymentStatus: "PAID",
           tableLabel: session.tableLabel || "01",
           verificationCode: fallbackVerification,
@@ -383,7 +406,7 @@ export async function placeOrderAction(
       success: true,
       orderId: result.order_id,
       orderNo: result.order_no,
-      status: result.status || "CONFIRMED",
+      status: result.status || "SUBMITTED",
       paymentStatus: "PAID",
       tableLabel: session.tableLabel || "01",
       verificationCode: result.verification_code || "4821",
@@ -455,17 +478,22 @@ export async function placePaidOrderAction(
   const result = await placeOrderAction(items, idempotencyKey, rewardId, instructions, sessionOverride);
 
   const isCashierPayment = paymentMethod === "CASHIER" || paymentMethod === "COUNTER";
-  const targetStatus = isCashierPayment ? "DRAFT" : "ACCEPTED";
+  const targetStatus = isCashierPayment ? "DRAFT" : "SUBMITTED";
+  const targetPaymentStatus = isCashierPayment ? "PENDING" : "PAID";
 
   if (result.success && result.orderId) {
     try {
       const supabase = createAdminClient();
       const now = new Date().toISOString();
+      const cleanPhone = normalizePhoneNumber(finalGuestPhone);
+      const phoneProfileId = cleanPhone ? getPhoneUuid(cleanPhone) : null;
+
       await supabase
         .from("orders")
         .update({
           status: targetStatus,
-          accepted_at: isCashierPayment ? null : now,
+          customer_id: phoneProfileId || undefined,
+          submitted_at: now,
           updated_at: now,
         })
         .eq("id", result.orderId);
@@ -476,8 +504,8 @@ export async function placePaidOrderAction(
 
   return {
     ...result,
-    status: isCashierPayment ? "PENDING_CONFIRMATION" : "CONFIRMED",
-    paymentStatus: isCashierPayment ? "PENDING" : "PAID",
+    status: targetStatus,
+    paymentStatus: targetPaymentStatus,
     tableLabel: tableLabel || result.tableLabel || "01",
   };
 }

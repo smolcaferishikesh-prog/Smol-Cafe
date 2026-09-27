@@ -219,7 +219,7 @@ export async function staffBackdoorLoginAction(
 
   // Barista Quick Passcode
   if (role === "barista") {
-    if (trimmedPin !== currentCred.pin && trimmedPin !== "1234" && trimmedPin !== "barista") {
+    if (trimmedPin !== currentCred.pin && trimmedPin !== "1234") {
       return { success: false, message: "Invalid Barista Station PIN. Please try again." };
     }
     await setStaffSessionCookie("barista");
@@ -245,13 +245,13 @@ export async function staffBackdoorLoginAction(
     };
   }
 
-  // Admin Master Passcode — PIN or master password accepted
+  // Admin Master Passcode — PIN 9900 or master password accepted
   if (role === "admin") {
     const pinMatches = trimmedPin === currentCred.pin || trimmedPin === "9900";
-    const passMatches = password && password.trim().length > 0 && password.trim() === currentCred.password;
+    const passMatches = Boolean(password && password.trim().length > 0 && password.trim() === currentCred.password);
 
     if (!pinMatches && !passMatches) {
-      return { success: false, message: "Invalid Admin PIN or master password. Please try again." };
+      return { success: false, message: "Invalid Admin PIN (9900) or master password. Please try again." };
     }
     await setStaffSessionCookie("admin");
     return {

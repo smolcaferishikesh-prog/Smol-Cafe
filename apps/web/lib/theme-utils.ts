@@ -4,24 +4,17 @@
  * Supports manual user overrides and live periodic checks.
  */
 
-export function isISTNightTime(): boolean {
+export function isLocalNightTime(): boolean {
   try {
-    const istHourStr = new Intl.DateTimeFormat("en-US", {
-      timeZone: "Asia/Kolkata",
-      hour: "numeric",
-      hour12: false,
-    }).format(new Date());
-    const istHour = parseInt(istHourStr, 10);
-    // 6:00 PM (18:00) to 4:00 AM (04:00)
-    return istHour >= 18 || istHour < 4;
+    const localHour = new Date().getHours();
+    // 18:00 (6:00 PM) to 06:00 (6:00 AM) local time -> Dark mode
+    return localHour >= 18 || localHour < 6;
   } catch {
-    // Fallback manual UTC+5:30 computation
-    const utc = Date.now() + new Date().getTimezoneOffset() * 60000;
-    const istDate = new Date(utc + 3600000 * 5.5);
-    const istHour = istDate.getHours();
-    return istHour >= 18 || istHour < 4;
+    return false;
   }
 }
+
+export const isISTNightTime = isLocalNightTime; // for backwards compatibility
 
 export function resolveEffectiveTheme(): boolean {
   if (typeof window === "undefined") return false;
