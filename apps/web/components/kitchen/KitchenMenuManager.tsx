@@ -7,7 +7,6 @@ import {
   CheckCircle2,
   AlertTriangle,
   Sparkles,
-  Edit3,
   X,
   Plus,
   Check,
@@ -21,7 +20,6 @@ import {
   type KitchenIngredientItem,
   fetchKitchenMenuCatalogAction,
   updateMenuItemStockAction,
-  updateChefItemNotesAction,
 } from "@/app/kitchen/menu-actions";
 import { saveMenuItemAction, deleteMenuItemAction } from "@/app/admin/menu-actions";
 import { broadcastSyncEvent, subscribeToSyncEvents } from "@/lib/sync-events";
@@ -44,11 +42,7 @@ export const KitchenMenuManager: React.FC<KitchenMenuManagerProps> = () => {
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [feedback, setFeedback] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
-  // Chef Note Modal state
-  const [noteItem, setNoteItem] = useState<KitchenMenuItem | null>(null);
-  const [noteText, setNoteText] = useState<string>("");
-  const [isSpecial, setIsSpecial] = useState<boolean>(false);
-  const [isSavingNote, setIsSavingNote] = useState<boolean>(false);
+
 
   // Dish Add / Edit Modal state for Kitchen Chefs
   const [isDishModalOpen, setIsDishModalOpen] = useState<boolean>(false);
@@ -245,35 +239,7 @@ export const KitchenMenuManager: React.FC<KitchenMenuManagerProps> = () => {
 
 
 
-  // Open Chef Note Modal
-  const handleOpenNoteModal = (item: KitchenMenuItem) => {
-    setNoteItem(item);
-    setNoteText(item.chefNotes || "");
-    setIsSpecial(item.isChefSpecial || false);
-  };
 
-  // Submit Chef Note
-  const handleSaveNote = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!noteItem) return;
-    setIsSavingNote(true);
-    try {
-      const res = await updateChefItemNotesAction(noteItem.id, noteText, isSpecial);
-      if (res.success) {
-        setItems((prev) =>
-          prev.map((i) =>
-            i.id === noteItem.id ? { ...i, chefNotes: noteText.trim(), isChefSpecial: isSpecial } : i
-          )
-        );
-        setNoteItem(null);
-        setFeedback({ type: "success", text: "Chef notes updated!" });
-      }
-    } catch {
-      setFeedback({ type: "error", text: "Error saving chef notes." });
-    } finally {
-      setIsSavingNote(false);
-    }
-  };
 
   const [deletingDishId, setDeletingDishId] = useState<string | null>(null);
 
@@ -632,20 +598,13 @@ export const KitchenMenuManager: React.FC<KitchenMenuManagerProps> = () => {
                         </div>
                       ) : (
                         <button
-                          onClick={() => setDeletingDishId(item.id)}
+                          onClick={() => handleDeleteDish(item.id)}
                           className="p-1.5 rounded-xl border border-rose-200 dark:border-stone-700 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-rose-500 hover:text-rose-700 transition cursor-pointer"
                           title="Delete Dish"
                         >
                           <Trash2 className="h-3.5 w-3.5" />
                         </button>
                       )}
-                      <button
-                        onClick={() => handleOpenNoteModal(item)}
-                        className="p-1.5 rounded-xl border border-[#C9AE8B]/40 dark:border-stone-700 hover:bg-[#F3E7D3] dark:hover:bg-stone-800 transition text-[#725039] dark:text-stone-300 cursor-pointer"
-                        title="Chef note / recommendation"
-                      >
-                        <Edit3 className="h-3.5 w-3.5" />
-                      </button>
                     </div>
                   </div>
 
@@ -691,78 +650,7 @@ export const KitchenMenuManager: React.FC<KitchenMenuManagerProps> = () => {
         </div>
       )}
 
-      {/* ========================================================================= */}
-      {/* CHEF NOTE & SPECIAL MODAL                                                */}
-      {/* ========================================================================= */}
-      {noteItem && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-fade-in">
-          <div className="relative w-full max-w-md rounded-3xl border border-[#C9AE8B]/50 dark:border-stone-700 bg-[#FAF4EB] dark:bg-[#1A1715] p-6 shadow-2xl space-y-4">
-            <div className="flex items-center justify-between border-b border-[#C9AE8B]/30 dark:border-stone-800 pb-3">
-              <div>
-                <h3 className="font-serif text-lg font-bold text-[#241F1C] dark:text-white">
-                  Chef Notes: {noteItem.name}
-                </h3>
-                <p className="text-[11px] font-mono text-stone-500">Live notes displayed to customers on menu</p>
-              </div>
-              <button onClick={() => setNoteItem(null)} className="text-stone-400 hover:text-stone-600 cursor-pointer">
-                <X className="h-5 w-5" />
-              </button>
-            </div>
 
-            <form onSubmit={handleSaveNote} className="space-y-4">
-              <div>
-                <label className="block text-xs font-mono font-bold text-[#241F1C] dark:text-stone-300 mb-1">
-                  Daily Preparation Notice / Note
-                </label>
-                <textarea
-                  rows={3}
-                  value={noteText}
-                  onChange={(e) => setNoteText(e.target.value)}
-                  placeholder="e.g. Fresh batch out of oven at 4 PM! Extra creamy paneer today."
-                  className="w-full rounded-xl border border-[#C9AE8B]/50 dark:border-stone-700 bg-white dark:bg-stone-900 p-3 text-xs font-mono text-[#241F1C] dark:text-white focus:outline-none focus:ring-2 focus:ring-[#B72E35]"
-                />
-              </div>
-
-              <div className="flex items-center justify-between rounded-xl bg-[#F3E7D3]/60 dark:bg-stone-900/60 p-3 border border-[#C9AE8B]/30 dark:border-stone-800">
-                <div className="flex items-center gap-2">
-                  <Sparkles className="h-4 w-4 text-[#754CFF]" />
-                  <div>
-                    <span className="block text-xs font-mono font-bold text-[#241F1C] dark:text-white">
-                      Today&apos;s Recommendation
-                    </span>
-                    <span className="text-[10px] font-mono text-stone-500">
-                      Highlights item with &ldquo;Chef&apos;s Special ✦&rdquo; badge
-                    </span>
-                  </div>
-                </div>
-                <input
-                  type="checkbox"
-                  checked={isSpecial}
-                  onChange={(e) => setIsSpecial(e.target.checked)}
-                  className="h-5 w-5 accent-[#754CFF] cursor-pointer"
-                />
-              </div>
-
-              <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#C9AE8B]/20 dark:border-stone-800">
-                <button
-                  type="button"
-                  onClick={() => setNoteItem(null)}
-                  className="rounded-xl px-4 py-2 text-xs font-mono text-stone-600 dark:text-stone-400 hover:bg-black/5 cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={isSavingNote}
-                  className="rounded-xl bg-[#B72E35] hover:bg-[#9B252B] px-5 py-2 text-xs font-mono font-bold text-white shadow-md transition disabled:opacity-50 cursor-pointer"
-                >
-                  {isSavingNote ? "Saving..." : "Save Note"}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
 
       {/* ========================================================================= */}
       {/* CHEF ADD / EDIT DISH MODAL                                               */}
