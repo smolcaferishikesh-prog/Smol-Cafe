@@ -19,10 +19,10 @@ export const StaffBackdoorPortal: React.FC = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [livePins, setLivePins] = useState<{ kitchen: string; barista: string; cashier: string; admin: string }>({
-    kitchen: "7711",
+    kitchen: "6175",
     barista: "1234",
-    cashier: "4422",
-    admin: "9900",
+    cashier: "8112",
+    admin: "9227",
   });
 
   useEffect(() => {
@@ -47,7 +47,7 @@ export const StaffBackdoorPortal: React.FC = () => {
       lightLogo: "/kitchen-logo.png",
       darkLogo: "/kitchen-logo-dark.png",
       tagline: "Live confirmed ticket queue & prep timer",
-      defaultPin: livePins.kitchen || "7711",
+      defaultPin: livePins.kitchen || "6175",
       accentColor: "text-amber-600 dark:text-[#F2C84B]",
       badgeBg: "bg-amber-100 text-amber-900 border-amber-300 dark:bg-amber-950/60 dark:text-amber-300 dark:border-amber-800",
       destination: "/smol-backdoor/kitchen",
@@ -69,7 +69,7 @@ export const StaffBackdoorPortal: React.FC = () => {
       lightLogo: "/cashier-logo.png",
       darkLogo: "/cashier-logo-dark.png",
       tagline: "Order verification queue & table cash settlement",
-      defaultPin: livePins.cashier || "4422",
+      defaultPin: livePins.cashier || "8112",
       accentColor: "text-[#B72E35] dark:text-[#FF6B6B]",
       badgeBg: "bg-rose-100 text-rose-900 border-rose-300 dark:bg-rose-950/60 dark:text-rose-300 dark:border-rose-800",
       destination: "/smol-backdoor/cashier",
@@ -80,7 +80,7 @@ export const StaffBackdoorPortal: React.FC = () => {
       lightLogo: "/admin-logo.png",
       darkLogo: "/admin-logo-dark.png",
       tagline: "Master café management, analytics & floor radar",
-      defaultPin: livePins.admin || "9900",
+      defaultPin: livePins.admin || "9227",
       accentColor: "text-[#754CFF] dark:text-[#C4B5FD]",
       badgeBg: "bg-purple-100 text-purple-900 border-purple-300 dark:bg-purple-950/60 dark:text-purple-300 dark:border-purple-800",
       destination: "/smol-backdoor/admin",

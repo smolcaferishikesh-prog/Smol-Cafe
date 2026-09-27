@@ -22,14 +22,14 @@ export const AdminLoginGate: React.FC<AdminLoginGateProps> = ({ onSuccess }) => 
     setError(null);
 
     setTimeout(() => {
-      // Allow demo PIN 8888 or admin123 or 1234
-      if (pin === "8888" || pin === "admin123" || pin === "1234") {
+      // ONLY allow access with legitimate Admin PIN 9227 (or master password smol2026)
+      if (pin.trim() === "9227" || pin.trim() === "smol2026") {
         if (typeof window !== "undefined") {
           sessionStorage.setItem("smol_admin_auth", "true");
         }
         onSuccess();
       } else {
-        setError("Invalid admin passcode. Please try again.");
+        setError("Invalid admin passcode. Please enter PIN: 9227.");
       }
       setIsLoading(false);
     }, 400);
@@ -62,7 +62,7 @@ export const AdminLoginGate: React.FC<AdminLoginGateProps> = ({ onSuccess }) => 
             admin tower
           </h2>
           <p className="font-serif italic text-xs text-[#725039] dark:text-[#C9AE8B] mt-1">
-            sign in to manage orders, catalog, staff & operations
+            sign in to manage orders, catalog, staff &amp; operations
           </p>
         </div>
 
@@ -70,7 +70,7 @@ export const AdminLoginGate: React.FC<AdminLoginGateProps> = ({ onSuccess }) => 
           <div className="relative">
             <input
               type="password"
-              placeholder="Admin Passcode (e.g. 8888)"
+              placeholder="Enter Admin PIN (9227)"
               value={pin}
               onChange={(e) => setPin(e.target.value)}
               className="w-full rounded-2xl border border-[#C9AE8B]/40 dark:border-[#C9AE8B]/30 bg-[#F3E7D3] dark:bg-[#241F1C] px-4 py-3.5 text-center font-mono text-lg tracking-widest text-[#241F1C] dark:text-[#F3E7D3] placeholder:text-xs placeholder:tracking-normal placeholder:text-[#725039]/50 dark:placeholder:text-[#C9AE8B]/50 focus:border-[#B72E35] focus:outline-none"

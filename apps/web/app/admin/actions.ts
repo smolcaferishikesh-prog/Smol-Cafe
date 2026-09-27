@@ -479,3 +479,83 @@ function formatRelativeTime(date: Date): string {
   if (diffHours < 24) return `${diffHours}h ago`;
   return date.toLocaleDateString();
 }
+
+/**
+ * Server Action: Purges all order details, bills, session history, and guest records
+ * for a specified customer phone number (e.g. +91 9305084332) across DB and memory stores.
+ */
+export async function purgeCustomerOrdersAction(rawPhone: string = "+919305084332"): Promise<{
+  success: boolean;
+  purgedOrdersCount: number;
+  message: string;
+}> {
+  try {
+    const supabase = createAdminClient();
+    const cleanDigits = rawPhone.replace(/\D/g, "");
+    const formattedE164 = rawPhone.startsWith("+") ? rawPhone : `+${cleanDigits}`;
+
+    // 1. Clear memory phone map entries
+    if (typeof globalThis !== "undefined" && (globalThis as any).__SMOL_ORDER_PHONE_MAP__) {
+      const map = (globalThis as any).__SMOL_ORDER_PHONE_MAP__;
+      for (const k of Object.keys(map)) {
+        if (
+          map[k]?.phone?.includes(cleanDigits) ||
+          map[k]?.cleanDigits?.includes(cleanDigits)
+        ) {
+          delete map[k];
+        }
+      }
+    }
+
+    // 2. Fetch matching orders in Supabase
+    const { data: matchingOrders } = await supabase
+      .from("orders")
+      .select("id, table_session_id")
+      .or(`idempotency_key.cs.{${cleanDigits}},instructions.ilike.%${cleanDigits}%`);
+
+    const orderIds = (matchingOrders || []).map((o) => o.id);
+    const sessionIds = (matchingOrders || [])
+      .map((o) => o.table_session_id)
+      .filter((id): id is string => Boolean(id));
+
+    if (orderIds.length > 0) {
+      // Delete order child items & status logs
+      await supabase.from("order_items").delete().in("order_id", orderIds);
+      await supabase.from("order_status_history").delete().in("order_id", orderIds);
+      await supabase.from("orders").delete().in("id", orderIds);
+    }
+
+    if (sessionIds.length > 0) {
+      await supabase.from("payment_attempts").delete().in("bill_id", sessionIds);
+      await supabase.from("bills").delete().in("table_session_id", sessionIds);
+      await supabase.from("table_sessions").delete().in("id", sessionIds);
+    }
+
+    // Delete guest profiles if present
+    try {
+      await supabase.from("guest_profiles").delete().ilike("phone", `%${cleanDigits}%`);
+    } catch {
+      // ignore table missing
+    }
+
+    // Broadcast sync event to update all client screens instantly
+    broadcastSyncEvent({
+      type: "STATUS_CHANGED",
+      timestamp: Date.now(),
+    });
+
+    return {
+      success: true,
+      purgedOrdersCount: orderIds.length,
+      message: `Successfully purged all orders and customer data for ${formattedE164}.`,
+    };
+  } catch (err: any) {
+    console.error("purgeCustomerOrdersAction error:", err);
+    return {
+      success: false,
+      purgedOrdersCount: 0,
+      message: err?.message || "Failed to purge customer data.",
+    };
+  }
+}
+

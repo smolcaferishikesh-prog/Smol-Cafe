@@ -38,7 +38,7 @@ const DEFAULT_ROLE_CREDENTIALS: RoleCredentialsMap = {
     role: "admin",
     roleName: "Super Admin (Owner)",
     portal: "/admin",
-    pin: "9900",
+    pin: "9227",
     password: "smol2026",
     permissions: "Full Control, Budgets, Logs",
     status: "Active",
@@ -47,7 +47,7 @@ const DEFAULT_ROLE_CREDENTIALS: RoleCredentialsMap = {
     role: "cashier",
     roleName: "Cashier / Counter Staff",
     portal: "/cashier",
-    pin: "4422",
+    pin: "8112",
     permissions: "Order Verification, Cash Settlement",
     status: "Active",
   },
@@ -55,7 +55,7 @@ const DEFAULT_ROLE_CREDENTIALS: RoleCredentialsMap = {
     role: "kitchen",
     roleName: "Kitchen Display (Chef/Cooks)",
     portal: "/kitchen",
-    pin: "7711",
+    pin: "6175",
     permissions: "Order Queue, Food Prep Status",
     status: "Active",
   },
@@ -205,7 +205,7 @@ export async function staffBackdoorLoginAction(
 
   // Kitchen Quick Passcode
   if (role === "kitchen") {
-    if (trimmedPin !== currentCred.pin && trimmedPin !== "7711") {
+    if (trimmedPin !== currentCred.pin && trimmedPin !== "6175") {
       return { success: false, message: "Invalid Kitchen Station PIN. Please try again." };
     }
     await setStaffSessionCookie("kitchen");
@@ -233,7 +233,7 @@ export async function staffBackdoorLoginAction(
 
   // Cashier Quick Passcode
   if (role === "cashier") {
-    if (trimmedPin !== currentCred.pin && trimmedPin !== "4422") {
+    if (trimmedPin !== currentCred.pin && trimmedPin !== "8112") {
       return { success: false, message: "Invalid Cashier Desk PIN. Please try again." };
     }
     await setStaffSessionCookie("cashier");
@@ -245,13 +245,13 @@ export async function staffBackdoorLoginAction(
     };
   }
 
-  // Admin Master Passcode — PIN 9900 or master password accepted
+  // Admin Master Passcode — PIN 9227 or master password accepted
   if (role === "admin") {
-    const pinMatches = trimmedPin === currentCred.pin || trimmedPin === "9900";
+    const pinMatches = trimmedPin === currentCred.pin || trimmedPin === "9227";
     const passMatches = Boolean(password && password.trim().length > 0 && password.trim() === currentCred.password);
 
     if (!pinMatches && !passMatches) {
-      return { success: false, message: "Invalid Admin PIN (9900) or master password. Please try again." };
+      return { success: false, message: "Invalid Admin PIN (9227) or master password. Please try again." };
     }
     await setStaffSessionCookie("admin");
     return {
