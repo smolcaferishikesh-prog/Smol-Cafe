@@ -2,7 +2,8 @@
 
 import { createAdminClient } from "@/lib/supabase/admin";
 import { revalidatePath } from "next/cache";
-import { getMenuCatalog, type CategoryWithItems } from "@/lib/queries/menu";
+import { getMenuCatalog, getMenuOverridesStore, type CategoryWithItems } from "@/lib/queries/menu";
+import { broadcastSyncEvent } from "@/lib/sync-events";
 
 export type ItemStockStatus = "IN_STOCK" | "LOW_STOCK" | "SOLD_OUT";
 
@@ -183,13 +184,25 @@ export async function updateMenuItemStockAction(
       lowStockCount: stockStatus === "LOW_STOCK" ? (lowStockCount ?? 3) : undefined,
     };
 
+    // Keep overrides store 100% in sync
+    const overridesStore = getMenuOverridesStore();
+    const effectiveAdminStatus = stockStatus === "SOLD_OUT" ? "SOLD_OUT" : "AVAILABLE";
+    overridesStore[itemId] = {
+      ...(overridesStore[itemId] || {}),
+      status: effectiveAdminStatus,
+      metadata: {
+        ...(overridesStore[itemId]?.metadata || {}),
+        availability: stockStatus,
+      },
+    };
+
     // Also update in Supabase / Mock database if available
     try {
       const supabase = createAdminClient();
       await supabase
         .from("menu_items")
         .update({
-          status: stockStatus === "SOLD_OUT" ? "SOLD_OUT" : "ACTIVE",
+          status: effectiveAdminStatus,
           metadata: {
             availability: stockStatus,
             low_stock_portions: stockStatus === "LOW_STOCK" ? (lowStockCount ?? 3) : null,
@@ -199,6 +212,21 @@ export async function updateMenuItemStockAction(
     } catch {
       // ignore
     }
+
+    // Broadcast sync event to all connected interfaces (Customer, Admin, KDS, Barista)
+    broadcastSyncEvent({
+      type: "ITEM_AVAILABILITY_CHANGED",
+      itemId,
+      stockStatus,
+      availability: stockStatus,
+      timestamp: Date.now(),
+      metadata: {
+        id: itemId,
+        status: effectiveAdminStatus,
+        availability: stockStatus,
+        stockStatus,
+      },
+    });
 
     const statusLabel =
       stockStatus === "SOLD_OUT" ? "OUT OF STOCK" : stockStatus === "LOW_STOCK" ? "LOW STOCK" : "IN STOCK";

@@ -63,6 +63,7 @@ const MenuContentInner: React.FC<MenuClientViewProps> = ({
     pricePaise?: number;
     status?: string;
     stockStatus?: string;
+    availability?: string;
     description?: string;
     imageUrl?: string | null;
     dietary?: string;
@@ -140,6 +141,30 @@ const MenuContentInner: React.FC<MenuClientViewProps> = ({
           );
         }
       }
+
+      // Also update open selectedItem modal if active
+      setSelectedItem((prev) => {
+        if (prev && prev.id === payload.id) {
+          const isSoldOut = payload.stockStatus === "SOLD_OUT" || payload.status === "SOLD_OUT" || payload.availability === "SOLD_OUT";
+          const newPricePaise =
+            payload.pricePaise !== undefined
+              ? payload.pricePaise
+              : payload.priceRupees !== undefined
+              ? Math.round(payload.priceRupees * 100)
+              : prev.pricePaise;
+          return {
+            ...prev,
+            name: payload.name || prev.name,
+            status: isSoldOut ? "SOLD_OUT" : "ACTIVE",
+            pricePaise: newPricePaise,
+            metadata: {
+              ...prev.metadata,
+              availability: isSoldOut ? "SOLD_OUT" : "IN_STOCK",
+            },
+          };
+        }
+        return prev;
+      });
 
       return updatedCategories;
     });

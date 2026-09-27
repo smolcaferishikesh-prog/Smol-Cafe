@@ -35,6 +35,8 @@ export interface SyncPayload {
   portionsLeft?: number;
   stockStatus?: string;
   status?: string;
+  priceRupees?: number;
+  pricePaise?: number;
   timestamp?: number;
   metadata?: Record<string, unknown>;
 }

@@ -270,11 +270,22 @@ export async function saveMenuItemAction(
       // In-memory fallback handles gracefully
     }
 
+    // Ensure kitchen stock store is 100% in sync
+    if (!globalThis.__SMOL_KITCHEN_MENU_STOCK__) {
+      globalThis.__SMOL_KITCHEN_MENU_STOCK__ = {};
+    }
+    globalThis.__SMOL_KITCHEN_MENU_STOCK__[itemId] = {
+      ...(globalThis.__SMOL_KITCHEN_MENU_STOCK__[itemId] || {}),
+      stockStatus: itemStatus === "SOLD_OUT" ? "SOLD_OUT" : "IN_STOCK",
+      chefNotes: description || "",
+    };
+
     broadcastSyncEvent({
       type: "ITEM_AVAILABILITY_CHANGED",
       itemId,
       stockStatus: itemStatus === "SOLD_OUT" ? "SOLD_OUT" : "IN_STOCK",
       availability: itemStatus === "SOLD_OUT" ? "SOLD_OUT" : "IN_STOCK",
+      priceRupees,
       timestamp: Date.now(),
       metadata: {
         id: itemId,
@@ -284,6 +295,7 @@ export async function saveMenuItemAction(
         description: description || "",
         dietary: dietary || "veg",
         status: itemStatus,
+        stockStatus: itemStatus === "SOLD_OUT" ? "SOLD_OUT" : "IN_STOCK",
         imageUrl: finalImageUrl,
       },
     });

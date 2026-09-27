@@ -113,15 +113,36 @@ export const KitchenMenuManager: React.FC<KitchenMenuManagerProps> = () => {
     },
   });
 
-  // Subscribe to real-time events across tabs/stations
+  // Subscribe to real-time events across tabs/stations (Admin <-> KDS <-> Customer)
   useEffect(() => {
     const unsub = subscribeToSyncEvents((event) => {
       if (event.type === "ITEM_AVAILABILITY_CHANGED" || event.type === "INVENTORY_UPDATED") {
-        if (event.itemId && event.stockStatus) {
+        if (event.itemId) {
+          const meta = (event.metadata as any) || {};
           setItems((prev) =>
-            prev.map((i) =>
-              i.id === event.itemId ? { ...i, stockStatus: event.stockStatus as "IN_STOCK" | "SOLD_OUT" } : i
-            )
+            prev.map((i) => {
+              if (i.id === event.itemId) {
+                const isSoldOut =
+                  event.stockStatus === "SOLD_OUT" ||
+                  event.availability === "SOLD_OUT" ||
+                  meta.status === "SOLD_OUT" ||
+                  meta.stockStatus === "SOLD_OUT";
+                const newStatus = isSoldOut ? "SOLD_OUT" : "IN_STOCK";
+                const newPrice =
+                  event.priceRupees !== undefined
+                    ? event.priceRupees
+                    : meta.priceRupees !== undefined
+                    ? meta.priceRupees
+                    : i.priceRupees;
+                return {
+                  ...i,
+                  stockStatus: newStatus,
+                  priceRupees: newPrice,
+                  name: meta.name || i.name,
+                };
+              }
+              return i;
+            })
           );
         }
       }

@@ -27,9 +27,10 @@ import {
   type AdminMenuItem,
   type AdminCategoryOption,
 } from "@/app/admin/menu-actions";
-import { broadcastSyncEvent } from "@/lib/sync-events";
+import { broadcastSyncEvent, subscribeToSyncEvents } from "@/lib/sync-events";
 import { getFoodImage } from "@/lib/food-images";
 import { DishImagePicker } from "@/components/common/DishImagePicker";
+import { useSupabaseRealtime } from "@/hooks/useSupabaseRealtime";
 
 interface AdminMenuManagerProps {
   onItemChange?: () => void;
@@ -77,6 +78,69 @@ export const AdminMenuManager: React.FC<AdminMenuManagerProps> = ({ onItemChange
   useEffect(() => {
     loadMenu();
   }, [loadMenu]);
+
+  // Realtime Supabase CDC WebSocket subscription for Postgres menu_items changes
+  useSupabaseRealtime({
+    table: "menu_items",
+    onData: (payload: any) => {
+      const item = payload?.new;
+      if (item && item.id) {
+        setItems((prev) => {
+          const exists = prev.some((i) => i.id === item.id);
+          if (exists) {
+            return prev.map((i) =>
+              i.id === item.id
+                ? {
+                    ...i,
+                    name: item.name || i.name,
+                    status: item.status === "SOLD_OUT" ? "SOLD_OUT" : "AVAILABLE",
+                    priceRupees: item.price_snapshot ? Math.round(item.price_snapshot / 100) : i.priceRupees,
+                  }
+                : i
+            );
+          }
+          return prev;
+        });
+      }
+    },
+  });
+
+  // Subscribe to real-time sync broadcast events across all stations & tabs (KDS <-> Admin <-> Customer)
+  useEffect(() => {
+    const unsub = subscribeToSyncEvents((event) => {
+      if (event.type === "ITEM_AVAILABILITY_CHANGED" || event.type === "INVENTORY_UPDATED") {
+        if (event.itemId) {
+          const meta = (event.metadata as any) || {};
+          setItems((prev) =>
+            prev.map((i) => {
+              if (i.id === event.itemId) {
+                const isSoldOut =
+                  event.stockStatus === "SOLD_OUT" ||
+                  event.availability === "SOLD_OUT" ||
+                  meta.status === "SOLD_OUT" ||
+                  meta.stockStatus === "SOLD_OUT";
+                const newStatus = isSoldOut ? "SOLD_OUT" : "AVAILABLE";
+                const newPrice =
+                  event.priceRupees !== undefined
+                    ? event.priceRupees
+                    : meta.priceRupees !== undefined
+                    ? meta.priceRupees
+                    : i.priceRupees;
+                return {
+                  ...i,
+                  status: newStatus,
+                  priceRupees: newPrice,
+                  name: meta.name || i.name,
+                };
+              }
+              return i;
+            })
+          );
+        }
+      }
+    });
+    return () => unsub();
+  }, []);
 
   // Open modal for New Item
   const handleOpenAdd = () => {

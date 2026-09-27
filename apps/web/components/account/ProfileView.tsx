@@ -281,48 +281,16 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
         </div>
       </header>
 
-      <main className="mx-auto max-w-md px-4 pt-4 space-y-4">
-        {/* SMOL CLUB LOYALTY - COMING SOON HERO BANNER */}
-        <div className="relative overflow-hidden rounded-3xl border border-[#B72E35]/40 dark:border-amber-500/30 bg-gradient-to-br from-[#FAF4EB] via-[#FFFBEB] to-[#F3E7D3] dark:from-[#201A17] dark:via-[#1A1513] dark:to-[#151110] p-5 shadow-md text-center space-y-2.5">
-          <div className="inline-flex items-center gap-1.5 rounded-full bg-[#B72E35] text-white px-3.5 py-1 font-mono text-[10.5px] font-black uppercase tracking-widest shadow-xs">
-            <Sparkles className="h-3.5 w-3.5" />
-            <span>SMOL CLUB LOYALTY • COMING SOON</span>
-          </div>
-
-          <h2 className="font-serif text-xl font-bold text-[#241F1C] dark:text-[#FAF4EB] leading-tight pt-1">
-            Exclusive Patron Pass &amp; Rewards Launching Soon
-          </h2>
-
-          <p className="font-serif italic text-xs text-[#725039] dark:text-[#C9AE8B] max-w-xs mx-auto leading-relaxed">
-            We are hand-crafting an exclusive loyalty experience for smol café regulars! Earn points on every artisan sip, unlock birthday gifts, secret menu perks &amp; slow-period multipliers.
-          </p>
-
-          <div className="pt-1 flex items-center justify-center gap-2 font-mono text-[10px] font-bold text-[#B72E35] dark:text-[#FF5B52]">
-            <span className="rounded-md bg-[#EFE7DC] dark:bg-white/10 px-2 py-0.5">Tier Rewards</span>
-            <span>•</span>
-            <span className="rounded-md bg-[#EFE7DC] dark:bg-white/10 px-2 py-0.5">Cashback Off Bills</span>
-            <span>•</span>
-            <span className="rounded-md bg-[#EFE7DC] dark:bg-white/10 px-2 py-0.5">Bonus Quests</span>
-          </div>
-        </div>
-
-        {/* Smol Loyalty Pass Card (Teaser View) */}
-        <div className="relative overflow-hidden rounded-3xl border border-[#C9AE8B]/50 dark:border-white/10 bg-[#FAF4EB] dark:bg-[#201A17] p-5 shadow-xs transition-colors space-y-3">
-          <div className="flex items-start justify-between">
-            <div>
-              <div className="flex items-center gap-1.5">
-                <span className="inline-block rounded-full bg-[#EFE7DC] dark:bg-white/10 px-2.5 py-0.5 font-mono text-[9.5px] font-bold text-[#725039] dark:text-[#C9AE8B] uppercase tracking-wider">
-                  SMOL REWARDS PASS
-                </span>
-                <span className="rounded-full bg-[#B72E35] text-white px-2 py-0.5 font-mono text-[9.5px] font-bold shadow-2xs">
-                  ₹10 = 1 pt
-                </span>
-              </div>
-              <h2 className="font-serif text-2xl font-bold text-[#241F1C] dark:text-[#FAF4EB] mt-1">
-                {cleanDisplayName}
-              </h2>
-              <div className="flex flex-wrap items-center gap-1.5 mt-0.5 font-mono text-[11px] text-[#725039] dark:text-[#C9AE8B]">
-                <span>{localPhone || profile?.phone || "+91 98765 43210"}</span>
+      <main className="mx-auto max-w-md px-4 pt-4 space-y-5">
+        {/* USER PROFILE CARD (Active & Editable: Name, Phone, Profile Avatar & Edit Option) */}
+        <div className="relative overflow-hidden rounded-3xl border border-[#C9AE8B]/60 dark:border-white/10 bg-[#FAF4EB] dark:bg-[#201A17] p-5 shadow-sm transition-all space-y-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3.5">
+              {/* Profile Avatar / Photo */}
+              <div className="relative group">
+                <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-[#B72E35] to-[#7D1217] text-white font-serif font-bold text-xl shadow-md border-2 border-white dark:border-stone-800 overflow-hidden">
+                  {cleanDisplayName.charAt(0).toUpperCase()}
+                </div>
                 <button
                   type="button"
                   onClick={() => {
@@ -330,343 +298,89 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                     setNameInput(cleanDisplayName);
                     setShowPhoneModal(true);
                   }}
-                  className="text-[10.5px] font-bold text-[#B72E35] dark:text-[#FF5B52] hover:underline flex items-center gap-0.5 cursor-pointer ml-0.5"
-                  title="Link or change mobile number"
+                  className="absolute -bottom-1 -right-1 flex h-6 w-6 items-center justify-center rounded-full bg-[#241F1C] dark:bg-white text-white dark:text-[#241F1C] shadow-xs hover:scale-105 transition cursor-pointer"
+                  title="Change avatar or profile details"
                 >
-                  <Edit3 className="w-2.5 h-2.5" />
-                  <span>{localPhone || profile?.phone ? "Edit" : "Link Phone"}</span>
+                  <Edit3 className="h-3 w-3" />
                 </button>
-                <span>•</span>
-                <span className="rounded-md bg-[#EFE7DC] dark:bg-white/10 px-1.5 py-0.2 font-mono text-[9.5px] font-bold text-[#725039] dark:text-[#C9AE8B]">
-                  {loyalty?.totalVisits ?? 1} Visits
-                </span>
-                <span>•</span>
-                <strong className="text-[#B72E35] dark:text-[#FF5B52]">{tierName}</strong>
+              </div>
+
+              <div>
+                <h2 className="font-serif text-xl font-bold text-[#241F1C] dark:text-[#FAF4EB] capitalize leading-snug">
+                  {cleanDisplayName}
+                </h2>
+                <p className="font-mono text-xs text-[#725039] dark:text-[#C9AE8B] mt-0.5">
+                  {localPhone || profile?.phone || "+91 93050 84332"}
+                </p>
               </div>
             </div>
 
-            <div className="rounded-2xl border border-[#F2C84B]/80 dark:border-amber-500/30 bg-[#FDF6E2] dark:bg-amber-950/20 px-3.5 py-2 text-right">
-              <span className="block font-mono text-[9px] font-bold uppercase text-[#725039] dark:text-[#C9AE8B] tracking-wider">
-                POINTS BALANCE
-              </span>
-              <span className="font-mono text-2xl font-black text-[#241F1C] dark:text-[#FAF4EB] flex items-center justify-end gap-1">
-                <Coins className="h-5 w-5 text-[#B72E35] dark:text-[#FF5B52]" /> {currentBalance}
-              </span>
-              <span className="block font-mono text-[9.5px] text-[#059669] dark:text-emerald-400 font-bold">
-                Worth ₹{currentBalance} on bills
-              </span>
-            </div>
-          </div>
-
-          {/* Redemption Rule Banner */}
-          <div className="rounded-2xl bg-[#F3E7D3]/60 dark:bg-stone-900/60 p-2.5 border border-[#C9AE8B]/30 flex items-center justify-between text-xs text-[#725039] dark:text-stone-300">
-            <span className="font-serif italic">
-              Claim on next order: <strong>Max 20% of bill value</strong>
-            </span>
-            <span className="font-mono text-[10px] font-bold text-[#B72E35] dark:text-[#F87171] uppercase">
-              1 pt = ₹1 off
-            </span>
-          </div>
-
-          {/* Points Progress Bar */}
-          <div className="pt-1 space-y-1.5">
-            <div className="flex justify-between font-mono text-[10px] text-[#725039] dark:text-[#C9AE8B]">
-              <span>Tier: <strong>{tierName}</strong></span>
-              <span>{currentBalance} / {nextTierMax} pts</span>
-            </div>
-            <div className="h-2 w-full rounded-full bg-[#E8DFD3] dark:bg-[#2F2520] overflow-hidden">
-              <div
-                className="h-full rounded-full bg-[#B72E35] dark:bg-[#FF5B52] transition-all duration-300"
-                style={{ width: `${progressPercent}%` }}
-              />
-            </div>
+            {/* Edit Profile Button */}
+            <button
+              type="button"
+              onClick={() => {
+                setPhoneInput((localPhone || profile?.phone || "").replace(/\D/g, "").slice(-10));
+                setNameInput(cleanDisplayName);
+                setShowPhoneModal(true);
+              }}
+              className="flex items-center gap-1.5 rounded-xl border border-[#B72E35]/40 bg-[#B72E35]/10 dark:bg-[#B72E35]/20 px-3 py-1.5 font-serif text-xs font-bold text-[#B72E35] dark:text-[#FF5B52] hover:bg-[#B72E35] hover:text-white transition active:scale-95 cursor-pointer"
+            >
+              <Edit3 className="h-3.5 w-3.5" />
+              <span>Edit</span>
+            </button>
           </div>
         </div>
 
-        {redeemFeedback && (
-          <div className="rounded-2xl border border-emerald-300 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/50 p-3 text-xs text-emerald-900 dark:text-emerald-300 font-serif flex items-center justify-between animate-scale-in">
-            <span>{redeemFeedback}</span>
-            <button onClick={() => setRedeemFeedback(null)} className="text-emerald-700 font-bold ml-2">✕</button>
-          </div>
-        )}
-
-        {/* SECTION: BONUS SMOL POINTS QUESTS (From Specification & Screenshot) */}
-        <section className="space-y-3">
-          <div className="flex items-center justify-between px-1">
-            <div>
-              <div className="flex items-center gap-1.5">
-                <Sparkles className="h-4 w-4 text-[#B72E35]" />
-                <h3 className="font-serif text-sm font-bold text-[#241F1C] dark:text-[#FAF4EB] uppercase tracking-wider">
-                  Bonus Smol Points
-                </h3>
+        {/* LOWER SECTION: BLURRED WITH CENTERING "COMING SOON" OVERLAY */}
+        <div className="relative rounded-3xl overflow-hidden min-h-[380px]">
+          {/* Blurred Background Layer */}
+          <div className="filter blur-[5px] opacity-35 pointer-events-none select-none space-y-4">
+            {/* Smol Loyalty Pass Card (Blurred Teaser) */}
+            <div className="rounded-3xl border border-[#C9AE8B]/50 bg-[#FAF4EB] p-5 space-y-3">
+              <div className="flex justify-between items-center">
+                <span className="font-mono text-xs font-bold text-[#725039]">SMOL REWARDS PASS</span>
+                <span className="font-mono text-xs font-bold text-[#B72E35]">₹10 = 1 pt</span>
               </div>
-              <p className="font-serif italic text-xs text-[#725039] dark:text-[#C9AE8B]">
-                Don&apos;t award points only for money. Complete behaviours to unlock:
+              <div className="h-4 bg-[#E8DFD3] rounded-full w-3/4" />
+              <div className="h-2 bg-[#E8DFD3] rounded-full w-full" />
+            </div>
+
+            {/* Bonus Smol Points Quests (Blurred Teaser) */}
+            <div className="rounded-3xl border border-[#C9AE8B]/50 bg-[#FAF4EB] p-4 space-y-2">
+              <div className="h-4 bg-[#E8DFD3] rounded-full w-1/2" />
+              <div className="h-3 bg-[#E8DFD3] rounded-full w-2/3" />
+              <div className="h-3 bg-[#E8DFD3] rounded-full w-3/4" />
+            </div>
+
+            {/* Perk Vouchers (Blurred Teaser) */}
+            <div className="grid grid-cols-3 gap-2">
+              <div className="h-20 bg-[#FAF4EB] rounded-2xl border border-[#C9AE8B]/40" />
+              <div className="h-20 bg-[#FAF4EB] rounded-2xl border border-[#C9AE8B]/40" />
+              <div className="h-20 bg-[#FAF4EB] rounded-2xl border border-[#C9AE8B]/40" />
+            </div>
+          </div>
+
+          {/* Centered High-Visibility Coming Soon Overlay */}
+          <div className="absolute inset-0 flex items-center justify-center p-4 z-20">
+            <div className="w-full max-w-sm rounded-3xl border border-[#B72E35]/40 dark:border-amber-500/30 bg-[#FAF4EB]/95 dark:bg-[#1E1A17]/95 p-6 shadow-2xl backdrop-blur-md text-center space-y-3 animate-fade-in">
+              <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-[#B72E35]/15 text-[#B72E35] dark:text-[#FF5B52]">
+                <Sparkles className="h-6 w-6" />
+              </div>
+
+              <div className="inline-flex items-center gap-1.5 rounded-full bg-[#B72E35] text-white px-3.5 py-1 font-mono text-[10px] font-black uppercase tracking-widest shadow-xs">
+                <span>COMING SOON 🚀</span>
+              </div>
+
+              <h3 className="font-serif text-lg font-bold text-[#241F1C] dark:text-[#FAF4EB] leading-tight">
+                Smol Patron Rewards &amp; Full Dashboard Coming Soon
+              </h3>
+
+              <p className="font-serif italic text-xs text-[#725039] dark:text-[#C9AE8B] leading-relaxed">
+                We are perfecting patron rewards, digital invoices, milestone badges, and order history for smol café regulars!
               </p>
             </div>
           </div>
-
-          {/* Happy Hour Slow Period Callout */}
-          <div className="rounded-2xl border border-amber-300 dark:border-amber-800/60 bg-gradient-to-r from-amber-50 via-[#FFFBEB] to-amber-100 dark:from-amber-950/40 dark:to-stone-900 p-3.5 flex items-center justify-between shadow-2xs">
-            <div className="flex items-center gap-2.5">
-              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-amber-400 text-amber-950 font-black shadow-xs text-sm">
-                2×
-              </div>
-              <div>
-                <span className="block font-serif text-xs font-bold text-[#78350F] dark:text-amber-300">
-                  Happy Hour: 2× Points Active!
-                </span>
-                <span className="font-mono text-[10px] text-[#92400E] dark:text-amber-400/80">
-                  Order between 2:00 PM – 5:00 PM to double all points
-                </span>
-              </div>
-            </div>
-            <span className="rounded-full bg-[#B72E35] text-white px-2.5 py-0.5 font-mono text-[10px] font-bold shadow-2xs">
-              Active
-            </span>
-          </div>
-
-          {/* Bonus Quests List */}
-          <div className="space-y-2">
-            {bonusRulesList.map((rule) => {
-              const isClaimed = claimedQuests.has(rule.id);
-              return (
-                <div
-                  key={rule.id}
-                  className="rounded-2xl border border-[#E2D7C7] dark:border-stone-800 bg-[#FAF4EB] dark:bg-[#1E1A17] p-3 flex items-center justify-between gap-2 shadow-2xs hover:bg-white dark:hover:bg-[#25201D] transition"
-                >
-                  <div className="space-y-0.5 min-w-0 flex-1">
-                    <div className="flex items-center gap-1.5">
-                      <span className="font-serif text-xs font-bold text-[#241F1C] dark:text-white truncate">
-                        {rule.behaviour}
-                      </span>
-                      {isClaimed && (
-                        <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
-                      )}
-                    </div>
-                    <p className="font-serif italic text-[11px] text-[#725039] dark:text-[#C9AE8B] line-clamp-1">
-                      {rule.description}
-                    </p>
-                  </div>
-
-                  <div className="shrink-0 flex items-center gap-2">
-                    <span className="rounded-full bg-[#EFE7DC] dark:bg-stone-800 border border-[#C9AE8B]/40 dark:border-stone-700 px-2.5 py-1 font-mono text-xs font-black text-[#B72E35] dark:text-[#FF5B52]">
-                      {rule.isMultiplier ? rule.multiplierText : `+${rule.points}`}
-                    </span>
-
-                    {rule.id === "complete_profile" && !isClaimed && (
-                      <button
-                        type="button"
-                        onClick={() => setShowBirthdayPicker(true)}
-                        className="rounded-xl bg-[#B72E35] text-white px-2.5 py-1 text-[10px] font-mono font-bold hover:bg-[#9E242B] active:scale-95 transition cursor-pointer"
-                      >
-                        Add B&apos;day
-                      </button>
-                    )}
-
-                    {rule.id === "refer_friend" && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (navigator.share) {
-                            navigator.share({
-                              title: "Join me at smol café!",
-                              text: `Use my invite code SMOL${localPhone.slice(-4) || "2026"} to get 50 bonus points at smol café!`,
-                              url: window.location.origin,
-                            });
-                          } else {
-                            navigator.clipboard.writeText(`https://smolcafe.com?ref=SMOL${localPhone.slice(-4) || "2026"}`);
-                            setRedeemFeedback("Referral link copied to clipboard!");
-                          }
-                        }}
-                        className="flex items-center gap-1 rounded-xl bg-[#241F1C] dark:bg-white text-[#FAF4EB] dark:text-[#241F1C] px-2.5 py-1 text-[10px] font-mono font-bold hover:opacity-90 active:scale-95 transition cursor-pointer"
-                      >
-                        <Share2 className="h-3 w-3" />
-                        <span>Invite</span>
-                      </button>
-                    )}
-
-                    {!rule.isMultiplier && rule.id !== "complete_profile" && rule.id !== "refer_friend" && !isClaimed && (
-                      <button
-                        type="button"
-                        onClick={() => handleClaimBonusQuest(rule.id, rule.points)}
-                        className="rounded-xl bg-[#B72E35] text-white px-2.5 py-1 text-[10px] font-mono font-bold hover:bg-[#9E242B] active:scale-95 transition cursor-pointer"
-                      >
-                        Claim
-                      </button>
-                    )}
-
-                    {isClaimed && (
-                      <span className="font-mono text-[10px] font-bold text-emerald-700 dark:text-emerald-400">
-                        Earned ✓
-                      </span>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </section>
-
-        {/* Phone Verification / Loyalty Linking Modal */}
-        {showPhoneModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4 animate-fade-in">
-            <div className="w-full max-w-sm rounded-3xl border border-[#C9AE8B] bg-[#FAF4EB] dark:bg-[#1E1A17] p-5 shadow-2xl space-y-4">
-              <div className="flex items-center justify-between border-b border-[#C9AE8B]/30 pb-2">
-                <div className="flex items-center gap-2">
-                  <Smartphone className="h-5 w-5 text-[#B72E35]" />
-                  <h3 className="font-serif text-base font-bold">Link Mobile &amp; Loyalty</h3>
-                </div>
-                <button onClick={() => setShowPhoneModal(false)} className="text-stone-500 cursor-pointer">✕</button>
-              </div>
-
-              <p className="font-serif italic text-xs text-[#725039] dark:text-[#C9AE8B]">
-                Enter your mobile number to link your visits, points balance, and claim milestones across smol café!
-              </p>
-
-              {phoneFeedback && (
-                <div className="rounded-xl border border-rose-300 bg-rose-50 dark:bg-rose-950/40 p-2.5 text-xs text-rose-800 dark:text-rose-300 font-serif">
-                  {phoneFeedback}
-                </div>
-              )}
-
-              <form onSubmit={handleSaveCustomerPhone} className="space-y-3">
-                <div>
-                  <label className="block font-mono text-[11px] font-bold uppercase text-[#725039] dark:text-[#C9AE8B] mb-1">
-                    Your Name
-                  </label>
-                  <input
-                    type="text"
-                    value={nameInput}
-                    onChange={(e) => setNameInput(e.target.value)}
-                    placeholder="e.g. Sonu"
-                    className="w-full p-2.5 rounded-xl border border-[#C9AE8B]/60 bg-white dark:bg-stone-900 font-serif text-sm focus:outline-none focus:border-[#B72E35]"
-                  />
-                </div>
-
-                <div>
-                  <label className="block font-mono text-[11px] font-bold uppercase text-[#725039] dark:text-[#C9AE8B] mb-1">
-                    10-Digit Mobile Number
-                  </label>
-                  <div className="flex items-center rounded-xl border border-[#C9AE8B]/60 bg-white dark:bg-stone-900 px-3 py-2">
-                    <span className="font-mono text-xs text-stone-400 font-bold mr-1.5">+91</span>
-                    <input
-                      type="tel"
-                      maxLength={10}
-                      value={phoneInput}
-                      onChange={(e) => setPhoneInput(e.target.value.replace(/\D/g, ""))}
-                      placeholder="9876543210"
-                      className="w-full bg-transparent font-mono text-sm focus:outline-none tracking-wider"
-                      required
-                    />
-                  </div>
-                </div>
-
-                <div className="flex gap-2 pt-1">
-                  <button
-                    type="submit"
-                    disabled={phoneSubmitting}
-                    className="flex-1 py-2.5 rounded-xl bg-[#B72E35] text-white font-serif font-bold text-xs shadow-sm hover:bg-[#9E242B] disabled:opacity-50 transition cursor-pointer"
-                  >
-                    {phoneSubmitting ? "Linking..." : "Save & Verify Visit"}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setShowPhoneModal(false)}
-                    className="px-4 py-2.5 rounded-xl border border-stone-300 dark:border-stone-700 text-xs font-serif cursor-pointer"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>
-        )}
-
-        {/* Birthday Picker Modal */}
-        {showBirthdayPicker && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4 animate-fade-in">
-            <div className="w-full max-w-sm rounded-3xl border border-[#C9AE8B] bg-[#FAF4EB] dark:bg-[#1E1A17] p-5 shadow-2xl space-y-4">
-              <div className="flex items-center justify-between border-b border-[#C9AE8B]/30 pb-2">
-                <div className="flex items-center gap-2">
-                  <Gift className="h-5 w-5 text-[#B72E35]" />
-                  <h3 className="font-serif text-base font-bold">Add Birthday for +10 Pts</h3>
-                </div>
-                <button onClick={() => setShowBirthdayPicker(false)} className="text-stone-500 cursor-pointer">✕</button>
-              </div>
-              <p className="font-serif italic text-xs text-[#725039] dark:text-[#C9AE8B]">
-                We&apos;ll send you a complimentary artisanal brew on your birthday!
-              </p>
-              <div>
-                <label className="block font-mono text-[11px] font-bold uppercase text-[#725039] mb-1">
-                  Select Birth Date
-                </label>
-                <input
-                  type="date"
-                  value={birthday}
-                  onChange={(e) => setBirthday(e.target.value)}
-                  className="w-full p-2.5 rounded-xl border border-[#C9AE8B] bg-white dark:bg-stone-900 font-mono text-sm"
-                />
-              </div>
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={handleSaveBirthday}
-                  className="flex-1 py-2.5 rounded-xl bg-[#B72E35] text-white font-serif font-bold text-xs shadow-sm hover:bg-[#9E242B] transition cursor-pointer"
-                >
-                  Save &amp; Claim +10 Pts
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setShowBirthdayPicker(false)}
-                  className="px-4 py-2.5 rounded-xl border border-stone-300 text-xs font-serif cursor-pointer"
-                >
-                  Cancel
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Redeemable Rewards Catalog */}
-        <section className="space-y-2.5">
-          <div className="flex items-center justify-between px-1">
-            <h3 className="font-serif text-xs font-bold text-[#241F1C] dark:text-[#FAF4EB] uppercase tracking-wider">
-              Redeemable Perk Vouchers
-            </h3>
-            <span className="font-serif italic text-xs text-[#725039] dark:text-[#C9AE8B]">
-              1 pt = ₹1 on bill
-            </span>
-          </div>
-
-          <div className="grid grid-cols-3 gap-2">
-            {rewardCoupons.map((coupon) => (
-              <div
-                key={coupon.title}
-                className="rounded-2xl border border-[#C9AE8B]/40 dark:border-white/10 bg-[#FAF4EB] dark:bg-[#201A17] p-3 text-center shadow-xs flex flex-col justify-between transition-colors"
-              >
-                <div className="flex justify-center text-[#B72E35] dark:text-[#FF5B52]">
-                  <coupon.icon className="h-6 w-6" />
-                </div>
-                <div className="my-1">
-                  <p className="font-serif text-[11px] font-bold text-[#1C1917] dark:text-[#FAF4EB] line-clamp-2">
-                    {coupon.title}
-                  </p>
-                  <span className="font-mono text-[9px] text-[#059669] dark:text-emerald-400 font-bold">
-                    {coupon.value}
-                  </span>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => handleRedeemCoupon(coupon.id, coupon.title, coupon.cost)}
-                  className="rounded-full bg-[#A62B34] dark:bg-[#B72E35] py-1 text-[10px] font-serif font-bold text-white shadow-xs hover:bg-[#91242C] active:scale-95 transition cursor-pointer"
-                >
-                  {coupon.cost} pts
-                </button>
-              </div>
-            ))}
-          </div>
-        </section>
+        </div>
 
         {/* Active Session Claim Card (if seated) */}
         {activeSession && (
