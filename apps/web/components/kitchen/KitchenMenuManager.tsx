@@ -8,13 +8,13 @@ import {
   AlertTriangle,
   Sparkles,
   Edit3,
-  Edit2,
   X,
   Plus,
   Check,
   RefreshCw,
   Ban,
   CheckCheck,
+  Trash2,
 } from "lucide-react";
 import {
   type KitchenMenuItem,
@@ -23,7 +23,7 @@ import {
   updateMenuItemStockAction,
   updateChefItemNotesAction,
 } from "@/app/kitchen/menu-actions";
-import { saveMenuItemAction } from "@/app/admin/menu-actions";
+import { saveMenuItemAction, deleteMenuItemAction } from "@/app/admin/menu-actions";
 import { broadcastSyncEvent, subscribeToSyncEvents } from "@/lib/sync-events";
 import { getFoodImage } from "@/lib/food-images";
 import { DishImagePicker } from "@/components/common/DishImagePicker";
@@ -89,9 +89,12 @@ export const KitchenMenuManager: React.FC<KitchenMenuManagerProps> = () => {
     onData: (payload: any) => {
       const item = payload?.new;
       if (item && item.id) {
-        let exists = false;
+        if (item.status === "ARCHIVED") {
+          setItems((prev) => prev.filter((i) => i.id !== item.id));
+          return;
+        }
         setItems((prev) => {
-          exists = prev.some((i) => i.id === item.id);
+          const exists = prev.some((i) => i.id === item.id);
           if (exists) {
             return prev.map((i) =>
               i.id === item.id
@@ -106,9 +109,6 @@ export const KitchenMenuManager: React.FC<KitchenMenuManagerProps> = () => {
           }
           return prev;
         });
-        if (!exists) {
-          loadData();
-        }
       }
     },
   });
@@ -119,31 +119,66 @@ export const KitchenMenuManager: React.FC<KitchenMenuManagerProps> = () => {
       if (event.type === "ITEM_AVAILABILITY_CHANGED" || event.type === "INVENTORY_UPDATED") {
         if (event.itemId) {
           const meta = (event.metadata as any) || {};
-          setItems((prev) =>
-            prev.map((i) => {
-              if (i.id === event.itemId) {
-                const isSoldOut =
-                  event.stockStatus === "SOLD_OUT" ||
-                  event.availability === "SOLD_OUT" ||
-                  meta.status === "SOLD_OUT" ||
-                  meta.stockStatus === "SOLD_OUT";
-                const newStatus = isSoldOut ? "SOLD_OUT" : "IN_STOCK";
-                const newPrice =
-                  event.priceRupees !== undefined
-                    ? event.priceRupees
-                    : meta.priceRupees !== undefined
-                    ? meta.priceRupees
-                    : i.priceRupees;
-                return {
-                  ...i,
-                  stockStatus: newStatus,
-                  priceRupees: newPrice,
-                  name: meta.name || i.name,
-                };
-              }
-              return i;
-            })
-          );
+          const isDeleted =
+            event.stockStatus === "ARCHIVED" ||
+            event.availability === "ARCHIVED" ||
+            meta.status === "ARCHIVED" ||
+            meta.deleted;
+
+          if (isDeleted) {
+            setItems((prev) => prev.filter((i) => i.id !== event.itemId));
+            return;
+          }
+
+          setItems((prev) => {
+            const exists = prev.some((i) => i.id === event.itemId);
+            const isSoldOut =
+              event.stockStatus === "SOLD_OUT" ||
+              event.availability === "SOLD_OUT" ||
+              meta.status === "SOLD_OUT" ||
+              meta.stockStatus === "SOLD_OUT";
+            const newStatus = isSoldOut ? "SOLD_OUT" : "IN_STOCK";
+            const newPrice =
+              event.priceRupees !== undefined
+                ? event.priceRupees
+                : meta.priceRupees !== undefined
+                ? meta.priceRupees
+                : 100;
+
+            if (exists) {
+              return prev.map((i) => {
+                if (i.id === event.itemId) {
+                  return {
+                    ...i,
+                    stockStatus: newStatus,
+                    priceRupees: newPrice,
+                    name: meta.name || i.name,
+                  };
+                }
+                return i;
+              });
+            }
+
+            // Newly added dish — append to KDS in 0ms!
+            if (meta.name) {
+              const newItem: KitchenMenuItem = {
+                id: event.itemId!,
+                name: meta.name,
+                category: meta.categoryId || "Slow Mornings",
+                station: "Hot Kitchen & Grill",
+                priceRupees: meta.priceRupees || newPrice,
+                stockStatus: newStatus as "IN_STOCK" | "SOLD_OUT",
+                isChefSpecial: false,
+                chefNotes: meta.description || "",
+                imageUrl: meta.imageUrl || null,
+                coreIngredients: meta.description || "",
+                dietary: meta.dietary || "veg",
+              };
+              return [newItem, ...prev];
+            }
+
+            return prev;
+          });
         }
       }
     });
@@ -240,6 +275,8 @@ export const KitchenMenuManager: React.FC<KitchenMenuManagerProps> = () => {
     }
   };
 
+  const [deletingDishId, setDeletingDishId] = useState<string | null>(null);
+
   // Open Add Dish modal
   const handleOpenAddDish = () => {
     setEditingDish(null);
@@ -253,20 +290,7 @@ export const KitchenMenuManager: React.FC<KitchenMenuManagerProps> = () => {
     setIsDishModalOpen(true);
   };
 
-  // Open Edit Dish modal
-  const handleOpenEditDish = (item: KitchenMenuItem) => {
-    setEditingDish(item);
-    setDishName(item.name);
-    setDishCategory(item.category);
-    setDishPrice(item.priceRupees);
-    setDishDescription(item.coreIngredients || "");
-    setDishDietary((item.dietary as any) || "veg");
-    setDishStatus(item.stockStatus === "SOLD_OUT" ? "SOLD_OUT" : "AVAILABLE");
-    setDishImageUrl(item.imageUrl || "");
-    setIsDishModalOpen(true);
-  };
-
-  // Save Dish (Add or Edit) with 0ms Optimistic UI update & Rollback
+  // Add New Dish with 0ms Optimistic UI update & Realtime Broadcast to Customers & Admin
   const handleSaveDish = async (e: React.FormEvent) => {
     e.preventDefault();
     if (isSavingDish) return; // Prevent duplicate submissions
@@ -281,7 +305,7 @@ export const KitchenMenuManager: React.FC<KitchenMenuManagerProps> = () => {
     }
 
     const prevItems = items;
-    const targetId = editingDish?.id || `item_custom_${Date.now()}`;
+    const targetId = `item_custom_${Date.now()}`;
     const targetPrice = Number(dishPrice);
     const targetStatus = dishStatus === "SOLD_OUT" ? "SOLD_OUT" : "IN_STOCK";
 
@@ -289,36 +313,29 @@ export const KitchenMenuManager: React.FC<KitchenMenuManagerProps> = () => {
       id: targetId,
       name: dishName.trim(),
       category: dishCategory || "Slow Mornings",
-      station: editingDish?.station || "Hot Kitchen & Grill",
+      station: "Hot Kitchen & Grill",
       priceRupees: targetPrice,
       stockStatus: targetStatus as "IN_STOCK" | "SOLD_OUT",
-      isChefSpecial: editingDish?.isChefSpecial || false,
-      chefNotes: dishDescription.trim() || editingDish?.chefNotes || "",
+      isChefSpecial: false,
+      chefNotes: dishDescription.trim(),
       imageUrl: dishImageUrl.trim() || null,
       coreIngredients: dishDescription.trim(),
       dietary: dishDietary,
     };
 
-    // 1. Instant Optimistic UI Update (0ms)
-    setItems((prev) => {
-      const exists = prev.some((i) => i.id === targetId);
-      if (exists) {
-        return prev.map((i) => (i.id === targetId ? optimisticItem : i));
-      }
-      return [optimisticItem, ...prev];
-    });
+    // 1. Instant 0ms Optimistic UI Update (Prepend to menu list)
+    setItems((prev) => [optimisticItem, ...prev]);
 
     // 2. Close modal & show instant feedback
     setIsDishModalOpen(false);
     setIsSavingDish(true);
     setFeedback({
       type: "success",
-      text: editingDish ? `Saving changes to "${dishName}"...` : `Adding "${dishName}" to menu...`,
+      text: `Adding "${dishName.trim()}" to menu...`,
     });
 
     try {
       const res = await saveMenuItemAction({
-        id: editingDish?.id,
         name: dishName.trim(),
         categoryId: dishCategory,
         priceRupees: targetPrice,
@@ -329,12 +346,7 @@ export const KitchenMenuManager: React.FC<KitchenMenuManagerProps> = () => {
       });
 
       if (res.success) {
-        setFeedback({ type: "success", text: res.message });
-        broadcastSyncEvent({
-          type: "ITEM_AVAILABILITY_CHANGED",
-          itemId: res.itemId || targetId,
-          stockStatus: targetStatus,
-        });
+        setFeedback({ type: "success", text: `Dish "${dishName.trim()}" added to menu successfully!` });
       } else {
         setItems(prevItems); // Rollback on failure
         setFeedback({ type: "error", text: res.message || "Failed to save dish." });
@@ -344,6 +356,28 @@ export const KitchenMenuManager: React.FC<KitchenMenuManagerProps> = () => {
       setFeedback({ type: "error", text: "Failed to save dish." });
     } finally {
       setIsSavingDish(false);
+    }
+  };
+
+  // Delete Dish from Kitchen GDS with 0ms Optimistic UI Update & Realtime Sync
+  const handleDeleteDish = async (itemId: string) => {
+    const prevItems = items;
+    // Instant 0ms removal
+    setItems((prev) => prev.filter((i) => i.id !== itemId));
+    setDeletingDishId(null);
+    setFeedback({ type: "success", text: "Removing dish from menu..." });
+
+    try {
+      const res = await deleteMenuItemAction(itemId);
+      if (res.success) {
+        setFeedback({ type: "success", text: "Dish removed from menu." });
+      } else {
+        setItems(prevItems); // Rollback
+        setFeedback({ type: "error", text: res.message || "Failed to delete dish." });
+      }
+    } catch {
+      setItems(prevItems); // Rollback
+      setFeedback({ type: "error", text: "Failed to delete dish." });
     }
   };
 
@@ -579,15 +613,32 @@ export const KitchenMenuManager: React.FC<KitchenMenuManagerProps> = () => {
                       </div>
                     </div>
 
-                    {/* Action Buttons: Edit Dish & Chef Note */}
+                    {/* Action Buttons: Delete Dish & Chef Note */}
                     <div className="flex items-center gap-1 shrink-0">
-                      <button
-                        onClick={() => handleOpenEditDish(item)}
-                        className="p-1.5 rounded-xl border border-[#C9AE8B]/40 dark:border-stone-700 hover:bg-[#F3E7D3] dark:hover:bg-stone-800 transition text-[#725039] dark:text-stone-300 cursor-pointer"
-                        title="Edit dish name, price & details"
-                      >
-                        <Edit2 className="h-3.5 w-3.5" />
-                      </button>
+                      {deletingDishId === item.id ? (
+                        <div className="flex items-center gap-1">
+                          <button
+                            onClick={() => handleDeleteDish(item.id)}
+                            className="px-2 py-1 bg-red-600 text-white text-[11px] font-bold rounded-lg hover:bg-red-700 cursor-pointer"
+                          >
+                            Confirm
+                          </button>
+                          <button
+                            onClick={() => setDeletingDishId(null)}
+                            className="p-1 text-stone-500 hover:text-stone-800 text-xs cursor-pointer"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => setDeletingDishId(item.id)}
+                          className="p-1.5 rounded-xl border border-rose-200 dark:border-stone-700 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-rose-500 hover:text-rose-700 transition cursor-pointer"
+                          title="Delete Dish"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      )}
                       <button
                         onClick={() => handleOpenNoteModal(item)}
                         className="p-1.5 rounded-xl border border-[#C9AE8B]/40 dark:border-stone-700 hover:bg-[#F3E7D3] dark:hover:bg-stone-800 transition text-[#725039] dark:text-stone-300 cursor-pointer"
