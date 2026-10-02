@@ -152,12 +152,16 @@ export const StaffBackdoorPortal: React.FC = () => {
 
         <div className="flex items-center gap-2 shrink-0">
           <ThemeToggle variant="pill" />
-          <Link
-            href="/"
-            className="rounded-full border border-[#C9AE8B]/50 dark:border-stone-700 bg-white dark:bg-stone-800 px-3.5 py-1.5 text-xs font-serif font-bold text-[#725039] dark:text-[#F3E7D3] hover:bg-[#F3E7D3] dark:hover:bg-stone-700 transition active:scale-95 shadow-xs"
+          <button
+            type="button"
+            onClick={() => {
+              setPin("");
+              setErrorMessage(null);
+            }}
+            className="rounded-full border border-[#C9AE8B]/50 dark:border-stone-700 bg-white dark:bg-stone-800 px-3.5 py-1.5 text-xs font-serif font-bold text-[#725039] dark:text-[#F3E7D3] hover:bg-[#F3E7D3] dark:hover:bg-stone-700 transition active:scale-95 shadow-xs cursor-pointer"
           >
-            OUT →
-          </Link>
+            RESET
+          </button>
         </div>
       </header>
 
