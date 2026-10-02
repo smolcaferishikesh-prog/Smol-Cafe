@@ -2,6 +2,8 @@ import React from "react";
 import { AdminClientWrapper } from "@/components/admin/AdminClientWrapper";
 import { fetchAdminOverviewAction } from "./actions";
 
+export const dynamic = "force-dynamic";
+
 export const metadata = {
   title: "Admin Control Tower — smol café",
   description: "Master operations dashboard for smol café staff, managers, and owners.",

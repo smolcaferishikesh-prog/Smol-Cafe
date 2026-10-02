@@ -1,5 +1,7 @@
 import { ObservabilityDashboard } from "@/components/admin/ObservabilityDashboard";
 
+export const dynamic = "force-dynamic";
+
 export const metadata = {
   title: "Observability & Alert Monitoring — smol café Admin",
   description:

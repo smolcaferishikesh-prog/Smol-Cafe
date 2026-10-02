@@ -3,6 +3,8 @@ import { getTableSessionCookie, isValidUuid } from "@/lib/session";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { TableClientView, type TableItemView } from "@/components/table/TableClientView";
 
+export const dynamic = "force-dynamic";
+
 export const metadata = {
   title: "Your Table — smol café",
   description: "View current seated table items, active rounds, and bill summary.",

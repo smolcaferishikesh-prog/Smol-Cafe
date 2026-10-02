@@ -5,6 +5,8 @@ import { TableActionBar } from "@/components/table/TableActionBar";
 import { TableGuestOnboardingForm } from "@/components/table/TableGuestOnboardingForm";
 import { ThemeToggle } from "@/components/common/ThemeToggle";
 
+export const dynamic = "force-dynamic";
+
 interface PageProps {
   params: Promise<{ tableToken: string }>;
 }

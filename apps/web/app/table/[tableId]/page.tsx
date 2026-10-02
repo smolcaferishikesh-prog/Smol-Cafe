@@ -4,6 +4,8 @@ interface PageProps {
   params: Promise<{ tableId: string }>;
 }
 
+export const dynamic = "force-dynamic";
+
 export const metadata = {
   title: "Table Service — smol café",
   description: "Direct customer ordering interface for your table at smol café.",

@@ -1,6 +1,8 @@
 import { fetchProcurementDataAction } from "./actions";
 import { ProcurementManager } from "@/components/admin/ProcurementManager";
 
+export const dynamic = "force-dynamic";
+
 export const metadata = {
   title: "Admin Procurement & GRN — smol café",
   description: "Manage purchase orders, goods receipt notes, and vendor directories.",
