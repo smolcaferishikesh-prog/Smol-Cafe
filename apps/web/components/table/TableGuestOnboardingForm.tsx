@@ -174,6 +174,18 @@ export function TableGuestOnboardingForm({
           <ArrowRight className="relative z-10 h-4 w-4 stroke-[2.5] transition-transform duration-300 group-hover:translate-x-1 drop-shadow-[0_1px_2px_rgba(0,0,0,0.35)]" />
         </button>
 
+        <button
+          type="button"
+          onClick={() => {
+            if (typeof window !== "undefined") {
+              localStorage.setItem("smol_current_table", tableLabel);
+            }
+            router.push("/home");
+          }}
+          className="w-full mt-2 text-center text-xs font-mono text-[#725039] dark:text-[#C9AE8B] hover:text-[#B72E35] dark:hover:text-[#F2C84B] transition-colors cursor-pointer"
+        >
+          Skip &amp; order as guest →
+        </button>
       </div>
     </form>
   );

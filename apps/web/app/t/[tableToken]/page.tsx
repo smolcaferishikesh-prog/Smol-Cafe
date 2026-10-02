@@ -20,7 +20,7 @@ function getDisplayTableNumber(tableLabel?: string, tableToken?: string): string
 
 export default async function TableEntryPage({ params }: PageProps) {
   const { tableToken } = await params;
-  const result = await resolveQrToken(tableToken, false);
+  const result = await resolveQrToken(tableToken, true);
 
   // 1. Invalid or Revoked QR Error Screen (Strictly on-brand colors)
   if (!result.success || !result.session) {

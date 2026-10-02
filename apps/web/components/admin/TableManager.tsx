@@ -313,7 +313,8 @@ export const TableManager: React.FC<TableManagerProps> = ({
   const handlePrintAllStands = (originUrl: string) => {
     const cards = tables
       .map((table) => {
-        const tableUrl = `${originUrl}/t/table-${table.label.toLowerCase()}`;
+        const cleanLabel = table.label.toLowerCase().replace(/^(table|t)[-\s_]*/i, "");
+        const tableUrl = `${originUrl}/table/${cleanLabel || table.label.toLowerCase()}`;
         const qrUrl = allQrDataUrls[table.label] || "";
         return `
           <div class="batch-card">
@@ -372,7 +373,8 @@ export const TableManager: React.FC<TableManagerProps> = ({
   useEffect(() => {
     if (isAddModalOpen && tableLabel.trim()) {
       const origin = (qrDomain || (typeof window !== "undefined" ? window.location.origin : "https://smol-cafe-web.vercel.app")).replace(/\/$/, "");
-      const tableUrl = `${origin}/t/table-${tableLabel.trim().toLowerCase()}`;
+      const cleanLabel = tableLabel.trim().toLowerCase().replace(/^(table|t)[-\s_]*/i, "");
+      const tableUrl = `${origin}/table/${cleanLabel || tableLabel.trim().toLowerCase()}`;
       QRCode.toDataURL(tableUrl, {
         width: 320,
         margin: 1,
@@ -390,7 +392,8 @@ export const TableManager: React.FC<TableManagerProps> = ({
   useEffect(() => {
     if (viewingQrTable) {
       const origin = (qrDomain || (typeof window !== "undefined" ? window.location.origin : "https://smol-cafe-web.vercel.app")).replace(/\/$/, "");
-      const tableUrl = `${origin}/t/table-${viewingQrTable.label.toLowerCase()}`;
+      const cleanLabel = viewingQrTable.label.toLowerCase().replace(/^(table|t)[-\s_]*/i, "");
+      const tableUrl = `${origin}/table/${cleanLabel || viewingQrTable.label.toLowerCase()}`;
       QRCode.toDataURL(tableUrl, {
         width: 480,
         margin: 2,
@@ -413,7 +416,8 @@ export const TableManager: React.FC<TableManagerProps> = ({
     if (isBatchQrModalOpen && tables.length > 0) {
       const origin = (qrDomain || (typeof window !== "undefined" ? window.location.origin : "https://smol-cafe-web.vercel.app")).replace(/\/$/, "");
       const promises = tables.map(async (t) => {
-        const tableUrl = `${origin}/t/table-${t.label.toLowerCase()}`;
+        const cleanLabel = t.label.toLowerCase().replace(/^(table|t)[-\s_]*/i, "");
+        const tableUrl = `${origin}/table/${cleanLabel || t.label.toLowerCase()}`;
         const url = await QRCode.toDataURL(tableUrl, {
           width: 360,
           margin: 2,
@@ -1200,7 +1204,7 @@ export const TableManager: React.FC<TableManagerProps> = ({
                       </span>
                     </div>
                     <p className="font-mono text-[11px] text-[#725039] dark:text-stone-300 truncate mt-0.5">
-                      {qrDomain.replace(/\/$/, "")}/t/table-{tableLabel.trim().toLowerCase()}
+                      {qrDomain.replace(/\/$/, "")}/table/{tableLabel.trim().toLowerCase().replace(/^(table|t)[-\s_]*/i, "")}
                     </p>
                     <p className="text-[10px] text-stone-500 mt-0.5">
                       Stand card, print sheet & token generated automatically on save.
@@ -1566,7 +1570,8 @@ export const TableManager: React.FC<TableManagerProps> = ({
       {/* ========================================================================= */}
       {viewingQrTable && (() => {
         const origin = (qrDomain || (typeof window !== "undefined" ? window.location.origin : "https://smol-cafe-web.vercel.app")).replace(/\/$/, "");
-        const tableUrl = `${origin}/t/table-${viewingQrTable.label.toLowerCase()}`;
+        const cleanLabel = viewingQrTable.label.toLowerCase().replace(/^(table|t)[-\s_]*/i, "");
+        const tableUrl = `${origin}/table/${cleanLabel || viewingQrTable.label.toLowerCase()}`;
 
         return (
           <div
@@ -1735,7 +1740,7 @@ export const TableManager: React.FC<TableManagerProps> = ({
               {/* Action Buttons Toolbar (Hidden on Print) */}
               <div className="grid grid-cols-3 gap-2 pt-1 print:hidden">
                 <Link
-                  href={`/t/table-${viewingQrTable.label.toLowerCase()}`}
+                  href={`/table/${viewingQrTable.label.toLowerCase().replace(/^(table|t)[-\s_]*/i, "")}`}
                   target="_blank"
                   className="flex flex-col items-center justify-center gap-1 rounded-2xl bg-[#241F1C] dark:bg-stone-800 text-white p-2.5 text-[11px] font-mono font-bold hover:bg-stone-800 dark:hover:bg-stone-700 transition"
                 >
@@ -1868,7 +1873,8 @@ export const TableManager: React.FC<TableManagerProps> = ({
               {/* 2-Column Grid on Print for Perfect A4 Page Fit (No Side Cutoff) */}
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 overflow-y-auto pr-2 pb-4 print:grid-cols-2 print:gap-4 print:overflow-visible print:p-0 print:w-full print:m-0">
                 {tables.map((table) => {
-                  const tableUrl = `${origin}/t/table-${table.label.toLowerCase()}`;
+                  const cleanLabel = table.label.toLowerCase().replace(/^(table|t)[-\s_]*/i, "");
+                  const tableUrl = `${origin}/table/${cleanLabel || table.label.toLowerCase()}`;
                   const qrUrl = allQrDataUrls[table.label];
 
                   return (

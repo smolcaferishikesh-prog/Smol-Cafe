@@ -133,7 +133,7 @@ export const RoleSwitcherBar: React.FC = () => {
               localStorage.setItem("smol_current_table", tableLabel);
             }
             setIsScannerOpen(false);
-            router.push(`/t/table-${tableLabel}`);
+            router.push(`/table/${tableLabel}`);
           }}
         />
       )}

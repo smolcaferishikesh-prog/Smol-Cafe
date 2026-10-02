@@ -45,8 +45,14 @@ export async function resolveQrToken(
     };
   }
 
-  const tokenHash = hashToken(rawToken.trim());
-  const plainToken = rawToken.trim();
+  const cleanedRaw = rawToken.trim();
+  let plainToken = cleanedRaw;
+  try {
+    plainToken = decodeURIComponent(cleanedRaw);
+  } catch {
+    plainToken = cleanedRaw;
+  }
+  const tokenHash = hashToken(plainToken);
 
   let supabase;
   try {
