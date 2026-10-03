@@ -251,7 +251,7 @@ export const TableManager: React.FC<TableManagerProps> = ({
   const [isEditSectionDropdownOpen, setIsEditSectionDropdownOpen] = useState<boolean>(false);
 
   // QR Generation States
-  const [qrDomain, setQrDomain] = useState<string>("https://smol-cafe-web.vercel.app");
+  const [qrDomain, setQrDomain] = useState<string>("");
   const [qrDataUrl, setQrDataUrl] = useState<string>("");
   const [addQrPreviewUrl, setAddQrPreviewUrl] = useState<string>("");
   const [allQrDataUrls, setAllQrDataUrls] = useState<Record<string, string>>({});
@@ -267,6 +267,14 @@ export const TableManager: React.FC<TableManagerProps> = ({
   // Feedback banner
   const [feedback, setFeedback] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
+
+  // Auto-detect active host/origin on mount
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const activeOrigin = process.env.NEXT_PUBLIC_APP_URL || window.location.origin;
+      setQrDomain(activeOrigin);
+    }
+  }, []);
 
   const handlePrintSingleStand = (table: DiningTableRecord, qrUrl: string, url: string) => {
     const content = `
@@ -314,7 +322,7 @@ export const TableManager: React.FC<TableManagerProps> = ({
     const cards = tables
       .map((table) => {
         const cleanLabel = table.label.toLowerCase().replace(/^(table|t)[-\s_]*/i, "");
-        const tableUrl = `${originUrl}/table/${cleanLabel || table.label.toLowerCase()}`;
+        const tableUrl = `${originUrl}/t/table-${cleanLabel || table.label.toLowerCase()}`;
         const qrUrl = allQrDataUrls[table.label] || "";
         return `
           <div class="batch-card">
@@ -372,9 +380,9 @@ export const TableManager: React.FC<TableManagerProps> = ({
   // Real-time QR Generation for Add Table Modal preview
   useEffect(() => {
     if (isAddModalOpen && tableLabel.trim()) {
-      const origin = (qrDomain || (typeof window !== "undefined" ? window.location.origin : "https://smol-cafe-web.vercel.app")).replace(/\/$/, "");
+      const origin = (qrDomain || (typeof window !== "undefined" ? window.location.origin : "http://localhost:3000")).replace(/\/$/, "");
       const cleanLabel = tableLabel.trim().toLowerCase().replace(/^(table|t)[-\s_]*/i, "");
-      const tableUrl = `${origin}/table/${cleanLabel || tableLabel.trim().toLowerCase()}`;
+      const tableUrl = `${origin}/t/table-${cleanLabel || tableLabel.trim().toLowerCase()}`;
       QRCode.toDataURL(tableUrl, {
         width: 320,
         margin: 1,
@@ -391,9 +399,9 @@ export const TableManager: React.FC<TableManagerProps> = ({
   // Real-time QR Generation for selected table
   useEffect(() => {
     if (viewingQrTable) {
-      const origin = (qrDomain || (typeof window !== "undefined" ? window.location.origin : "https://smol-cafe-web.vercel.app")).replace(/\/$/, "");
+      const origin = (qrDomain || (typeof window !== "undefined" ? window.location.origin : "http://localhost:3000")).replace(/\/$/, "");
       const cleanLabel = viewingQrTable.label.toLowerCase().replace(/^(table|t)[-\s_]*/i, "");
-      const tableUrl = `${origin}/table/${cleanLabel || viewingQrTable.label.toLowerCase()}`;
+      const tableUrl = `${origin}/t/table-${cleanLabel || viewingQrTable.label.toLowerCase()}`;
       QRCode.toDataURL(tableUrl, {
         width: 480,
         margin: 2,
@@ -414,10 +422,10 @@ export const TableManager: React.FC<TableManagerProps> = ({
   // Batch QR Generation for all tables
   useEffect(() => {
     if (isBatchQrModalOpen && tables.length > 0) {
-      const origin = (qrDomain || (typeof window !== "undefined" ? window.location.origin : "https://smol-cafe-web.vercel.app")).replace(/\/$/, "");
+      const origin = (qrDomain || (typeof window !== "undefined" ? window.location.origin : "http://localhost:3000")).replace(/\/$/, "");
       const promises = tables.map(async (t) => {
         const cleanLabel = t.label.toLowerCase().replace(/^(table|t)[-\s_]*/i, "");
-        const tableUrl = `${origin}/table/${cleanLabel || t.label.toLowerCase()}`;
+        const tableUrl = `${origin}/t/table-${cleanLabel || t.label.toLowerCase()}`;
         const url = await QRCode.toDataURL(tableUrl, {
           width: 360,
           margin: 2,
@@ -1204,7 +1212,7 @@ export const TableManager: React.FC<TableManagerProps> = ({
                       </span>
                     </div>
                     <p className="font-mono text-[11px] text-[#725039] dark:text-stone-300 truncate mt-0.5">
-                      {qrDomain.replace(/\/$/, "")}/table/{tableLabel.trim().toLowerCase().replace(/^(table|t)[-\s_]*/i, "")}
+                      {(qrDomain || (typeof window !== "undefined" ? window.location.origin : "http://localhost:3000")).replace(/\/$/, "")}/t/table-{tableLabel.trim().toLowerCase().replace(/^(table|t)[-\s_]*/i, "")}
                     </p>
                     <p className="text-[10px] text-stone-500 mt-0.5">
                       Stand card, print sheet & token generated automatically on save.
@@ -1569,9 +1577,9 @@ export const TableManager: React.FC<TableManagerProps> = ({
       {/* MODAL 5: REAL ARTISANAL TABLE QR STAND VIEWER                             */}
       {/* ========================================================================= */}
       {viewingQrTable && (() => {
-        const origin = (qrDomain || (typeof window !== "undefined" ? window.location.origin : "https://smol-cafe-web.vercel.app")).replace(/\/$/, "");
+        const origin = (qrDomain || (typeof window !== "undefined" ? window.location.origin : "http://localhost:3000")).replace(/\/$/, "");
         const cleanLabel = viewingQrTable.label.toLowerCase().replace(/^(table|t)[-\s_]*/i, "");
-        const tableUrl = `${origin}/table/${cleanLabel || viewingQrTable.label.toLowerCase()}`;
+        const tableUrl = `${origin}/t/table-${cleanLabel || viewingQrTable.label.toLowerCase()}`;
 
         return (
           <div
@@ -1599,7 +1607,7 @@ export const TableManager: React.FC<TableManagerProps> = ({
               </button>
 
               {/* Modal Header (Hidden on Print) */}
-              <div className="print:hidden space-y-1 pr-6">
+              <div className="print:hidden space-y-2 pr-6">
                 <span className="text-[10px] font-mono uppercase tracking-widest text-[#B72E35] dark:text-[#F2C84B] font-bold">
                   Official Table QR Stand
                 </span>
@@ -1610,29 +1618,59 @@ export const TableManager: React.FC<TableManagerProps> = ({
                   {viewingQrTable.section} • {viewingQrTable.seats} Seater
                 </p>
 
-                {/* Domain Selector Pill */}
-                <div className="flex items-center justify-center gap-1.5 pt-1 text-[10.5px] font-mono">
-                  <span className="text-stone-500 font-bold">Domain:</span>
-                  <button
-                    onClick={() => setQrDomain("https://smol-cafe-web.vercel.app")}
-                    className={`px-2.5 py-0.5 rounded-full border transition font-bold ${
-                      qrDomain === "https://smol-cafe-web.vercel.app"
-                        ? "bg-[#B72E35] text-white border-[#B72E35] shadow-xs"
-                        : "bg-white dark:bg-stone-800 text-stone-600 dark:text-stone-300 border-stone-300 dark:border-stone-700 hover:border-stone-400"
-                    }`}
-                  >
-                    ⚡ Vercel Live
-                  </button>
-                  <button
-                    onClick={() => setQrDomain(typeof window !== "undefined" ? window.location.origin : "http://localhost:3000")}
-                    className={`px-2.5 py-0.5 rounded-full border transition font-bold ${
-                      qrDomain !== "https://smol-cafe-web.vercel.app"
-                        ? "bg-[#241F1C] text-white border-[#241F1C] shadow-xs"
-                        : "bg-white dark:bg-stone-800 text-stone-600 dark:text-stone-300 border-stone-300 dark:border-stone-700 hover:border-stone-400"
-                    }`}
-                  >
-                    💻 Localhost
-                  </button>
+                {/* Domain & Host Target Input Selector */}
+                <div className="rounded-2xl border border-[#C9AE8B]/40 dark:border-stone-800 bg-[#F3E7D3]/40 dark:bg-stone-900/60 p-3 space-y-2 text-left">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10.5px] font-mono font-bold text-[#241F1C] dark:text-stone-300 uppercase tracking-wider flex items-center gap-1.5">
+                      <QrCode className="h-3.5 w-3.5 text-[#B72E35]" />
+                      Target QR Host URL
+                    </span>
+                    <span className="text-[10px] font-mono text-stone-500">Phone scan target</span>
+                  </div>
+                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                    <input
+                      type="text"
+                      value={qrDomain}
+                      onChange={(e) => setQrDomain(e.target.value)}
+                      placeholder="e.g. http://192.168.1.100:3000"
+                      className="flex-1 rounded-xl border border-[#C9AE8B]/50 dark:border-stone-700 bg-white dark:bg-stone-900 px-3 py-1.5 text-xs font-mono text-[#241F1C] dark:text-white focus:outline-none focus:ring-1 focus:ring-[#B72E35]"
+                    />
+                    <div className="flex items-center gap-1 shrink-0 overflow-x-auto">
+                      <button
+                        type="button"
+                        onClick={() => setQrDomain(typeof window !== "undefined" ? window.location.origin : "http://localhost:3000")}
+                        className={`px-2.5 py-1 rounded-xl text-[10.5px] font-mono font-bold transition cursor-pointer ${
+                          qrDomain === (typeof window !== "undefined" ? window.location.origin : "http://localhost:3000")
+                            ? "bg-[#241F1C] text-white dark:bg-white dark:text-[#241F1C]"
+                            : "bg-white dark:bg-stone-800 text-stone-700 dark:text-stone-300 border border-stone-300 dark:border-stone-700 hover:bg-[#F3E7D3]"
+                        }`}
+                      >
+                        📍 Active App
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setQrDomain("http://localhost:3000")}
+                        className={`px-2.5 py-1 rounded-xl text-[10.5px] font-mono font-bold transition cursor-pointer ${
+                          qrDomain === "http://localhost:3000"
+                            ? "bg-[#241F1C] text-white dark:bg-white dark:text-[#241F1C]"
+                            : "bg-white dark:bg-stone-800 text-stone-700 dark:text-stone-300 border border-stone-300 dark:border-stone-700 hover:bg-[#F3E7D3]"
+                        }`}
+                      >
+                        💻 Localhost
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setQrDomain("https://smol-cafe-web.vercel.app")}
+                        className={`px-2.5 py-1 rounded-xl text-[10.5px] font-mono font-bold transition cursor-pointer ${
+                          qrDomain === "https://smol-cafe-web.vercel.app"
+                            ? "bg-[#B72E35] text-white"
+                            : "bg-white dark:bg-stone-800 text-stone-700 dark:text-stone-300 border border-stone-300 dark:border-stone-700 hover:bg-[#F3E7D3]"
+                        }`}
+                      >
+                        🌐 Vercel
+                      </button>
+                    </div>
+                  </div>
                 </div>
               </div>
 
@@ -1794,7 +1832,7 @@ export const TableManager: React.FC<TableManagerProps> = ({
       {/* MODAL 6: BATCH PRINT ALL TABLE STANDS                                      */}
       {/* ========================================================================= */}
       {isBatchQrModalOpen && (() => {
-        const origin = (qrDomain || (typeof window !== "undefined" ? window.location.origin : "https://smol-cafe-web.vercel.app")).replace(/\/$/, "");
+        const origin = (qrDomain || (typeof window !== "undefined" ? window.location.origin : "http://localhost:3000")).replace(/\/$/, "");
 
         return (
           <div
@@ -1814,45 +1852,75 @@ export const TableManager: React.FC<TableManagerProps> = ({
 
             <div className="smol-printable-root relative w-full max-w-5xl rounded-3xl border border-[#C9AE8B]/50 dark:border-stone-700 bg-[#FAF4EB] dark:bg-[#1A1715] p-6 shadow-2xl space-y-6 my-auto max-h-[90vh] flex flex-col print:my-0 print:p-0 print:border-none print:shadow-none print:bg-transparent print:max-h-none print:max-w-none print:w-full">
               {/* Header (Hidden on Print) */}
-              <div className="flex items-center justify-between border-b border-[#C9AE8B]/30 dark:border-stone-800 pb-4 print:hidden">
-                <div>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#C9AE8B]/30 dark:border-stone-800 pb-4 print:hidden">
+                <div className="space-y-1.5 flex-1">
                   <div className="flex items-center gap-2">
                     <QrCode className="h-5 w-5 text-[#B72E35] dark:text-[#F2C84B]" />
                     <h3 className="font-serif text-2xl font-bold text-[#241F1C] dark:text-white">
                       All Dining Table QR Stands ({tables.length} Tables)
                     </h3>
                   </div>
-                  <p className="text-xs font-mono text-[#725039] dark:text-stone-400 mt-0.5">
+                  <p className="text-xs font-mono text-[#725039] dark:text-stone-400">
                     Real scannable table stand cards formatted for printing and cafe deployment
                   </p>
                   
-                  {/* Domain Selector Pill */}
-                  <div className="flex items-center gap-1.5 pt-2 text-[10.5px] font-mono">
-                    <span className="text-stone-500 font-bold">Domain:</span>
-                    <button
-                      onClick={() => setQrDomain("https://smol-cafe-web.vercel.app")}
-                      className={`px-2.5 py-0.5 rounded-full border transition font-bold ${
-                        qrDomain === "https://smol-cafe-web.vercel.app"
-                          ? "bg-[#B72E35] text-white border-[#B72E35] shadow-xs"
-                          : "bg-white dark:bg-stone-800 text-stone-600 dark:text-stone-300 border-stone-300 dark:border-stone-700 hover:border-stone-400"
-                      }`}
-                    >
-                      ⚡ Vercel Live (smol-cafe-web.vercel.app)
-                    </button>
-                    <button
-                      onClick={() => setQrDomain(typeof window !== "undefined" ? window.location.origin : "http://localhost:3000")}
-                      className={`px-2.5 py-0.5 rounded-full border transition font-bold ${
-                        qrDomain !== "https://smol-cafe-web.vercel.app"
-                          ? "bg-[#241F1C] text-white border-[#241F1C] shadow-xs"
-                          : "bg-white dark:bg-stone-800 text-stone-600 dark:text-stone-300 border-stone-300 dark:border-stone-700 hover:border-stone-400"
-                      }`}
-                    >
-                      💻 Localhost
-                    </button>
+                  {/* Domain & Host Target Input Selector */}
+                  <div className="mt-2 rounded-2xl border border-[#C9AE8B]/40 dark:border-stone-800 bg-[#F3E7D3]/40 dark:bg-stone-900/60 p-3 space-y-2 text-left">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10.5px] font-mono font-bold text-[#241F1C] dark:text-stone-300 uppercase tracking-wider flex items-center gap-1.5">
+                        <QrCode className="h-3.5 w-3.5 text-[#B72E35]" />
+                        Target QR Host URL
+                      </span>
+                      <span className="text-[10px] font-mono text-stone-500">Phone scan target</span>
+                    </div>
+                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                      <input
+                        type="text"
+                        value={qrDomain}
+                        onChange={(e) => setQrDomain(e.target.value)}
+                        placeholder="e.g. http://192.168.1.100:3000"
+                        className="flex-1 rounded-xl border border-[#C9AE8B]/50 dark:border-stone-700 bg-white dark:bg-stone-900 px-3 py-1.5 text-xs font-mono text-[#241F1C] dark:text-white focus:outline-none focus:ring-1 focus:ring-[#B72E35]"
+                      />
+                      <div className="flex items-center gap-1 shrink-0 overflow-x-auto">
+                        <button
+                          type="button"
+                          onClick={() => setQrDomain(typeof window !== "undefined" ? window.location.origin : "http://localhost:3000")}
+                          className={`px-2.5 py-1 rounded-xl text-[10.5px] font-mono font-bold transition cursor-pointer ${
+                            qrDomain === (typeof window !== "undefined" ? window.location.origin : "http://localhost:3000")
+                              ? "bg-[#241F1C] text-white dark:bg-white dark:text-[#241F1C]"
+                              : "bg-white dark:bg-stone-800 text-stone-700 dark:text-stone-300 border border-stone-300 dark:border-stone-700 hover:bg-[#F3E7D3]"
+                          }`}
+                        >
+                          📍 Active App
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setQrDomain("http://localhost:3000")}
+                          className={`px-2.5 py-1 rounded-xl text-[10.5px] font-mono font-bold transition cursor-pointer ${
+                            qrDomain === "http://localhost:3000"
+                              ? "bg-[#241F1C] text-white dark:bg-white dark:text-[#241F1C]"
+                              : "bg-white dark:bg-stone-800 text-stone-700 dark:text-stone-300 border border-stone-300 dark:border-stone-700 hover:bg-[#F3E7D3]"
+                          }`}
+                        >
+                          💻 Localhost
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setQrDomain("https://smol-cafe-web.vercel.app")}
+                          className={`px-2.5 py-1 rounded-xl text-[10.5px] font-mono font-bold transition cursor-pointer ${
+                            qrDomain === "https://smol-cafe-web.vercel.app"
+                              ? "bg-[#B72E35] text-white"
+                              : "bg-white dark:bg-stone-800 text-stone-700 dark:text-stone-300 border border-stone-300 dark:border-stone-700 hover:bg-[#F3E7D3]"
+                          }`}
+                        >
+                          🌐 Vercel
+                        </button>
+                      </div>
+                    </div>
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 shrink-0">
                   <button
                     onClick={() => handlePrintAllStands(origin)}
                     className="flex items-center gap-1.5 rounded-xl bg-[#B72E35] hover:bg-[#9B252B] text-white px-4 py-2 text-xs font-mono font-bold shadow-md transition cursor-pointer"
@@ -1863,7 +1931,7 @@ export const TableManager: React.FC<TableManagerProps> = ({
 
                   <button
                     onClick={() => setIsBatchQrModalOpen(false)}
-                    className="p-2 text-stone-400 hover:text-stone-600 dark:hover:text-white rounded-xl hover:bg-black/5"
+                    className="p-2 text-stone-400 hover:text-stone-600 dark:hover:text-white rounded-xl hover:bg-black/5 cursor-pointer"
                   >
                     <X className="h-5 w-5" />
                   </button>
@@ -1874,7 +1942,7 @@ export const TableManager: React.FC<TableManagerProps> = ({
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 overflow-y-auto pr-2 pb-4 print:grid-cols-2 print:gap-4 print:overflow-visible print:p-0 print:w-full print:m-0">
                 {tables.map((table) => {
                   const cleanLabel = table.label.toLowerCase().replace(/^(table|t)[-\s_]*/i, "");
-                  const tableUrl = `${origin}/table/${cleanLabel || table.label.toLowerCase()}`;
+                  const tableUrl = `${origin}/t/table-${cleanLabel || table.label.toLowerCase()}`;
                   const qrUrl = allQrDataUrls[table.label];
 
                   return (
