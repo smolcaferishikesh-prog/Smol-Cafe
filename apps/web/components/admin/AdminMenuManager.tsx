@@ -250,8 +250,13 @@ export const AdminMenuManager: React.FC<AdminMenuManagerProps> = ({ onItemChange
     }
   };
 
+  const togglingItemIdsRef = React.useRef<Set<string>>(new Set());
+
   // Explicit status control (In Stock / Out Of Stock) with instant 0ms optimistic UI update & cross-station sync
   const handleSetStockStatus = async (item: AdminMenuItem, targetStatus: "AVAILABLE" | "SOLD_OUT") => {
+    if (togglingItemIdsRef.current.has(item.id)) return;
+    togglingItemIdsRef.current.add(item.id);
+
     const prevItems = items;
     // 1. Instant 0ms Optimistic UI update
     setItems((prev) =>
@@ -301,6 +306,8 @@ export const AdminMenuManager: React.FC<AdminMenuManagerProps> = ({ onItemChange
     } catch {
       setItems(prevItems); // Rollback
       setFeedback({ type: "error", text: "Failed to update stock status." });
+    } finally {
+      togglingItemIdsRef.current.delete(item.id);
     }
   };
 

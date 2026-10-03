@@ -204,8 +204,13 @@ export const KitchenMenuManager: React.FC<KitchenMenuManagerProps> = () => {
     });
   }, [items, selectedStation, stockFilter, searchQuery]);
 
+  const togglingItemIdsRef = React.useRef<Set<string>>(new Set());
+
   // Toggle Item Stock Status (IN_STOCK / SOLD_OUT) with instant optimistic update & rollback
   const handleSetStock = async (itemId: string, newStatus: "IN_STOCK" | "SOLD_OUT") => {
+    if (togglingItemIdsRef.current.has(itemId)) return;
+    togglingItemIdsRef.current.add(itemId);
+
     const prevItems = items;
 
     // Instant 0ms Optimistic UI Update
@@ -234,6 +239,8 @@ export const KitchenMenuManager: React.FC<KitchenMenuManagerProps> = () => {
     } catch {
       setItems(prevItems); // Rollback on network exception
       setFeedback({ type: "error", text: "Failed to update item availability." });
+    } finally {
+      togglingItemIdsRef.current.delete(itemId);
     }
   };
 

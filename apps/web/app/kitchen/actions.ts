@@ -130,61 +130,52 @@ export async function fetchKitchenOrdersAction(): Promise<FetchKitchenOrdersResu
       .map((o) => o.table_session_id)
       .filter((id): id is string => Boolean(id));
 
-    // 2. Fetch Dining Table Labels via Table Sessions
-    const tableLabelMap = new Map<string, { label: string; tableId: string }>();
+    // 2. Parallelize Table Sessions & Order Items queries concurrently
+    const [sessionsRes, orderItemsRes] = await Promise.all([
+      sessionIds.length > 0
+        ? supabase.from("table_sessions").select("id, table_id").in("id", sessionIds)
+        : Promise.resolve({ data: [] }),
+      supabase.from("order_items").select("*").in("order_id", orderIds),
+    ]);
 
-    if (sessionIds.length > 0) {
-      const { data: sessions } = await supabase
-        .from("table_sessions")
-        .select("id, table_id")
-        .in("id", sessionIds);
+    const sessions = sessionsRes.data || [];
+    const orderItems = orderItemsRes.data || [];
 
-      const tableIds = (sessions || [])
-        .map((s) => s.table_id)
-        .filter((id): id is string => Boolean(id));
+    const tableIds = sessions
+      .map((s) => s.table_id)
+      .filter((id): id is string => Boolean(id));
 
-      if (tableIds.length > 0) {
-        const { data: tables } = await supabase
-          .from("dining_tables")
-          .select("id, label")
-          .in("id", tableIds);
-
-        const tableMap = new Map<string, string>();
-        for (const t of tables || []) {
-          tableMap.set(t.id, t.label);
-        }
-
-        for (const s of sessions || []) {
-          if (s.table_id && tableMap.has(s.table_id)) {
-            tableLabelMap.set(s.id, {
-              label: tableMap.get(s.table_id)!,
-              tableId: s.table_id,
-            });
-          }
-        }
-      }
-    }
-
-    // 3. Fetch order items for ticket breakdown
-    const { data: orderItems } = await supabase
-      .from("order_items")
-      .select("*")
-      .in("order_id", orderIds);
-
-    // Resolve real names for generic name snapshots
     const missingNameIds = (orderItems || [])
       .filter((it: any) => (!it.name_snapshot || it.name_snapshot === "Smol Item" || it.name_snapshot === "Artisanal Item") && it.menu_item_id)
       .map((it: any) => it.menu_item_id);
 
-    const nameLookup = new Map<string, string>();
-    if (missingNameIds.length > 0) {
-      const { data: dbMenuItems } = await supabase
-        .from("menu_items")
-        .select("id, name")
-        .in("id", missingNameIds);
-      for (const m of dbMenuItems || []) {
-        nameLookup.set(m.id, m.name);
+    // 3. Parallelize Dining Tables & Menu Items lookup concurrently
+    const [tablesRes, dbMenuItemsRes] = await Promise.all([
+      tableIds.length > 0
+        ? supabase.from("dining_tables").select("id, label").in("id", tableIds)
+        : Promise.resolve({ data: [] }),
+      missingNameIds.length > 0
+        ? supabase.from("menu_items").select("id, name").in("id", missingNameIds)
+        : Promise.resolve({ data: [] }),
+    ]);
+
+    const tableLabelMap = new Map<string, { label: string; tableId: string }>();
+    const tableMap = new Map<string, string>();
+    for (const t of tablesRes.data || []) {
+      tableMap.set(t.id, t.label);
+    }
+    for (const s of sessions) {
+      if (s.table_id && tableMap.has(s.table_id)) {
+        tableLabelMap.set(s.id, {
+          label: tableMap.get(s.table_id)!,
+          tableId: s.table_id,
+        });
       }
+    }
+
+    const nameLookup = new Map<string, string>();
+    for (const m of dbMenuItemsRes.data || []) {
+      nameLookup.set(m.id, m.name);
     }
 
     const itemsByOrder = new Map<string, KitchenOrderItem[]>();

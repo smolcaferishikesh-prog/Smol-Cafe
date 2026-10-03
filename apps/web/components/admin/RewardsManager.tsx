@@ -78,15 +78,34 @@ export const RewardsManager: React.FC<RewardsManagerProps> = ({ initialRewards }
     }
   };
 
+  const togglingIdsRef = React.useRef<Set<string>>(new Set());
+
   const handleToggle = async (reward: Reward) => {
+    if (togglingIdsRef.current.has(reward.id)) return;
+    togglingIdsRef.current.add(reward.id);
+
+    const targetActive = !reward.active;
+    const prevRewards = rewards;
+
+    // Instant 0ms Optimistic UI Update
+    setRewards((prev) =>
+      prev.map((r) => (r.id === reward.id ? { ...r, active: targetActive } : r))
+    );
+
     try {
-      const res = await toggleRewardActiveAction(reward.id, !reward.active);
+      const res = await toggleRewardActiveAction(reward.id, targetActive);
       if (res.success && res.reward) {
         setRewards((prev) => prev.map((r) => (r.id === reward.id ? res.reward! : r)));
         broadcastSyncEvent({ type: "LOYALTY_UPDATED", timestamp: Date.now() });
+      } else {
+        setRewards(prevRewards); // Rollback
+        setFeedback({ type: "error", text: res.message || "Failed to toggle reward status." });
       }
     } catch {
-      setFeedback({ type: "error", text: "Failed to toggle reward." });
+      setRewards(prevRewards); // Rollback
+      setFeedback({ type: "error", text: "Failed to toggle reward status." });
+    } finally {
+      togglingIdsRef.current.delete(reward.id);
     }
   };
 

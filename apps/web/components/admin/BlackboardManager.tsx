@@ -9,6 +9,7 @@ import {
   deleteBlackboardPostAction,
   type CreateBlackboardInput,
 } from "@/app/admin/blackboard/actions";
+import { broadcastSyncEvent } from "@/lib/sync-events";
 
 interface BlackboardManagerProps {
   initialPosts: BlackboardPost[];
@@ -20,6 +21,7 @@ export const BlackboardManager: React.FC<BlackboardManagerProps> = ({ initialPos
   const [feedback, setFeedback] = useState<{ type: "success" | "error"; text: string } | null>(
     null
   );
+  const togglingIdsRef = React.useRef<Set<string>>(new Set());
 
   // Form state
   const [title, setTitle] = useState("");
@@ -60,6 +62,7 @@ export const BlackboardManager: React.FC<BlackboardManagerProps> = ({ initialPos
           type: "success",
           text: res.message || "Announcement published to blackboard!",
         });
+        broadcastSyncEvent({ type: "SETTINGS_UPDATED", timestamp: Date.now() });
       } else {
         setFeedback({ type: "error", text: res.message || "Failed to create announcement." });
       }
@@ -71,13 +74,31 @@ export const BlackboardManager: React.FC<BlackboardManagerProps> = ({ initialPos
   };
 
   const handleToggle = async (post: BlackboardPost) => {
+    if (togglingIdsRef.current.has(post.id)) return;
+    togglingIdsRef.current.add(post.id);
+
+    const targetActive = !post.active;
+    const prevPosts = posts;
+
+    // Instant 0ms Optimistic UI Update
+    setPosts((prev) =>
+      prev.map((p) => (p.id === post.id ? { ...p, active: targetActive } : p))
+    );
+
     try {
-      const res = await toggleBlackboardActiveAction(post.id, !post.active);
+      const res = await toggleBlackboardActiveAction(post.id, targetActive);
       if (res.success && res.post) {
         setPosts((prev) => prev.map((p) => (p.id === post.id ? res.post! : p)));
+        broadcastSyncEvent({ type: "SETTINGS_UPDATED", timestamp: Date.now() });
+      } else {
+        setPosts(prevPosts); // Rollback
+        setFeedback({ type: "error", text: res.message || "Failed to toggle status." });
       }
     } catch {
+      setPosts(prevPosts); // Rollback
       setFeedback({ type: "error", text: "Failed to toggle status." });
+    } finally {
+      togglingIdsRef.current.delete(post.id);
     }
   };
 

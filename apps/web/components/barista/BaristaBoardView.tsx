@@ -23,7 +23,7 @@ import {
   Search,
 } from "lucide-react";
 import { useSupabaseRealtime } from "@/hooks/useSupabaseRealtime";
-import { subscribeToSyncEvents } from "@/lib/sync-events";
+import { broadcastSyncEvent, subscribeToSyncEvents } from "@/lib/sync-events";
 import { ThemeToggle } from "@/components/common/ThemeToggle";
 import { soundManager } from "@/lib/sound";
 
@@ -155,6 +155,10 @@ export const BaristaBoardView: React.FC<BaristaBoardViewProps> = ({ initialOrder
 
   const handleIncomingTicket = useCallback(
     (orderId: string, newStatus?: OrderStatus) => {
+      if (newStatus === "CANCELLED" || newStatus === "REJECTED") {
+        setOrders((prev) => prev.filter((o) => o.id !== orderId));
+        return;
+      }
       let exists = false;
       setOrders((prev) => {
         exists = prev.some((o) => o.id === orderId);
@@ -234,7 +238,20 @@ export const BaristaBoardView: React.FC<BaristaBoardViewProps> = ({ initialOrder
     );
 
     const result = await transitionBaristaOrderStatusAction(orderId, fromStatus, toStatus);
-    if (!result.success) {
+    if (result.success) {
+      broadcastSyncEvent({
+        type: "BARISTA_TICKET_CHANGED",
+        orderId,
+        status: toStatus,
+        timestamp: Date.now(),
+      });
+      broadcastSyncEvent({
+        type: "STATUS_CHANGED",
+        orderId,
+        status: toStatus,
+        timestamp: Date.now(),
+      });
+    } else {
       optimisticLocksRef.current.delete(orderId);
       refreshOrders();
     }

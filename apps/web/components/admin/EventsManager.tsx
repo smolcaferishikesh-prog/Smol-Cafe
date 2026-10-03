@@ -8,6 +8,7 @@ import {
   toggleCafeEventActiveAction,
   deleteCafeEventAction,
 } from "@/app/events/actions";
+import { broadcastSyncEvent } from "@/lib/sync-events";
 
 interface EventsManagerProps {
   initialEvents: AdminEventWithRsvps[];
@@ -19,6 +20,7 @@ export const EventsManager: React.FC<EventsManagerProps> = ({ initialEvents }) =
   const [feedback, setFeedback] = useState<{ type: "success" | "error"; text: string } | null>(
     null
   );
+  const togglingIdsRef = React.useRef<Set<string>>(new Set());
 
   // Form state
   const [title, setTitle] = useState("");
@@ -62,6 +64,7 @@ export const EventsManager: React.FC<EventsManagerProps> = ({ initialEvents }) =
         setCapacity("20");
         setJoinUrlOrNote("");
         setFeedback({ type: "success", text: res.message || "Event created!" });
+        broadcastSyncEvent({ type: "SETTINGS_UPDATED", timestamp: Date.now() });
       } else {
         setFeedback({ type: "error", text: res.message || "Failed to create event." });
       }
@@ -73,15 +76,33 @@ export const EventsManager: React.FC<EventsManagerProps> = ({ initialEvents }) =
   };
 
   const handleToggle = async (event: AdminEventWithRsvps) => {
+    if (togglingIdsRef.current.has(event.id)) return;
+    togglingIdsRef.current.add(event.id);
+
+    const targetActive = !event.active;
+    const prevEvents = events;
+
+    // Instant 0ms Optimistic UI Update
+    setEvents((prev) =>
+      prev.map((e) => (e.id === event.id ? { ...e, active: targetActive } : e))
+    );
+
     try {
-      const res = await toggleCafeEventActiveAction(event.id, !event.active);
+      const res = await toggleCafeEventActiveAction(event.id, targetActive);
       if (res.success && res.event) {
         setEvents((prev) =>
           prev.map((e) => (e.id === event.id ? { ...e, active: res.event!.active } : e))
         );
+        broadcastSyncEvent({ type: "SETTINGS_UPDATED", timestamp: Date.now() });
+      } else {
+        setEvents(prevEvents); // Rollback
+        setFeedback({ type: "error", text: res.message || "Failed to toggle event status." });
       }
     } catch {
-      setFeedback({ type: "error", text: "Failed to toggle status." });
+      setEvents(prevEvents); // Rollback
+      setFeedback({ type: "error", text: "Failed to toggle event status." });
+    } finally {
+      togglingIdsRef.current.delete(event.id);
     }
   };
 

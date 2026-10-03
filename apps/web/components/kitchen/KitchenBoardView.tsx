@@ -169,6 +169,10 @@ export const KitchenBoardView: React.FC<KitchenBoardViewProps> = ({ initialOrder
 
   const handleIncomingTicket = useCallback(
     (orderId: string, newStatus?: OrderStatus) => {
+      if (newStatus === "CANCELLED" || newStatus === "REJECTED") {
+        setOrders((prev) => prev.filter((o) => o.id !== orderId));
+        return;
+      }
       let exists = false;
       setOrders((prev) => {
         exists = prev.some((o) => o.id === orderId);

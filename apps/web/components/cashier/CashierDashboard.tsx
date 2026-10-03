@@ -223,7 +223,19 @@ export const CashierDashboard: React.FC<CashierDashboardProps> = ({
 
     try {
       const res = await confirmCashierOrderAction(orderId, stationTarget, staffName);
-      if (!res.success) {
+      if (res.success) {
+        broadcastSyncEvent({
+          type: "ORDER_CONFIRMED",
+          orderId,
+          orderNo: targetOrder?.orderNo,
+          status: "ACCEPTED",
+          timestamp: Date.now(),
+          metadata: {
+            stationTarget,
+            staffName,
+          },
+        });
+      } else {
         confirmedOrderIdsRef.current.delete(orderId);
         setActionFeedback({ type: "error", text: res.message || "Failed to confirm order." });
         refreshData();
@@ -256,7 +268,14 @@ export const CashierDashboard: React.FC<CashierDashboardProps> = ({
 
     try {
       const res = await rejectCashierOrderAction(orderId, reason, staffName);
-      if (!res.success) {
+      if (res.success) {
+        broadcastSyncEvent({
+          type: "STATUS_CHANGED",
+          orderId,
+          status: "CANCELLED",
+          timestamp: Date.now(),
+        });
+      } else {
         confirmedOrderIdsRef.current.delete(orderId);
         setActionFeedback({ type: "error", text: res.message || "Failed to reject order." });
         refreshData();
@@ -295,6 +314,15 @@ export const CashierDashboard: React.FC<CashierDashboardProps> = ({
     try {
       const res = await clearAllPendingCashierOrdersAction("CANCEL", staffName);
       if (res.success) {
+        broadcastSyncEvent({
+          type: "STATUS_CHANGED",
+          timestamp: Date.now(),
+          metadata: {
+            clearedCount: orderIds.length,
+            status: "CANCELLED",
+            staffName,
+          },
+        });
         setActionFeedback({
           type: "success",
           text: res.message || `Cleared ${orderIds.length} orders from queue.`,
