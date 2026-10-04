@@ -4,6 +4,7 @@ import { cookies } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { createAdminClient, isMockDatabase } from "@/lib/supabase/admin";
 import { broadcastSyncEvent } from "@/lib/sync-events";
+import { isBeverageItem } from "@/lib/station-utils";
 import type { OrderStatus } from "@smol-cafe/db";
 import { generateRequestId, logger } from "@/lib/observability/logger";
 import { recordKdsHeartbeat, evaluateKdsSilence } from "@/lib/observability/alerts";
@@ -52,8 +53,13 @@ export interface TransitionOrderResult {
 export async function fetchSingleKitchenTicketAction(orderId: string): Promise<{ success: boolean; ticket?: KitchenTicket }> {
   const supabase = createAdminClient();
   try {
-    const { data: order } = await supabase.from("orders").select("*").eq("id", orderId).maybeSingle();
-    if (!order) return { success: false };
+    const { data: order, error: orderErr } = await supabase.from("orders").select("*").eq("id", orderId).maybeSingle();
+    if (orderErr || !order) return { success: false };
+
+    // Do not return unconfirmed / cashier pending orders to kitchen KDS
+    if (order.status === "PENDING_CONFIRMATION" || order.status === "DRAFT" || order.status === "SUBMITTED" || order.status === "CANCELLED" || order.status === "REJECTED") {
+      return { success: false };
+    }
 
     let tableLabel = "01";
     let tableId = "table-01";
@@ -68,12 +74,37 @@ export async function fetchSingleKitchenTicketAction(orderId: string): Promise<{
     }
 
     const { data: orderItems } = await supabase.from("order_items").select("*").eq("order_id", orderId);
-    const items: KitchenOrderItem[] = (orderItems || []).map((it: any) => ({
-      id: it.id,
-      name: it.name_snapshot || "Smol Item",
-      qty: it.qty || 1,
-      itemStatus: it.item_status || "PENDING",
-    }));
+    
+    // Resolve any missing name snapshots from menu_items table
+    const missingNameIds = (orderItems || [])
+      .filter((it: any) => (!it.name_snapshot || it.name_snapshot === "Smol Item" || it.name_snapshot === "Artisanal Item") && it.menu_item_id)
+      .map((it: any) => it.menu_item_id);
+
+    let nameMap = new Map<string, string>();
+    if (missingNameIds.length > 0) {
+      const { data: items } = await supabase.from("menu_items").select("id, name").in("id", missingNameIds);
+      (items || []).forEach((m) => nameMap.set(m.id, m.name));
+    }
+
+    const allItems: KitchenOrderItem[] = (orderItems || []).map((it: any) => {
+      const resolvedName =
+        it.name_snapshot && it.name_snapshot !== "Smol Item" && it.name_snapshot !== "Artisanal Item"
+          ? it.name_snapshot
+          : (it.menu_item_id && nameMap.get(it.menu_item_id)) || it.name_snapshot || "Artisanal Item";
+
+      return {
+        id: it.id,
+        name: resolvedName,
+        qty: it.qty || 1,
+        itemStatus: it.item_status || "PENDING",
+      };
+    });
+
+    // Filter to ONLY food items (drinks belong exclusively to Barista)
+    const foodItems = allItems.filter((it) => !isBeverageItem(it.name));
+    if (foodItems.length === 0) {
+      return { success: false };
+    }
 
     const ticket: KitchenTicket = {
       id: order.id,
@@ -84,12 +115,13 @@ export async function fetchSingleKitchenTicketAction(orderId: string): Promise<{
       submittedAt: order.submitted_at || order.created_at,
       acceptedAt: order.accepted_at,
       readyAt: order.ready_at,
-      instructions: order.notes,
-      items,
+      instructions: order.instructions || order.notes || null,
+      items: foodItems,
     };
 
     return { success: true, ticket };
-  } catch {
+  } catch (err) {
+    console.error("Error in fetchSingleKitchenTicketAction:", err);
     return { success: false };
   }
 }
@@ -102,8 +134,8 @@ export async function fetchKitchenOrdersAction(): Promise<FetchKitchenOrdersResu
   recordKdsHeartbeat();
 
   try {
-    // 1. Fetch active orders across confirmed KDS phases: Submitted, Accepted, Preparing, Ready, and Served
-    const activeStatuses = ["SUBMITTED", "ACCEPTED", "PREPARING", "READY", "SERVED"];
+    // 1. Fetch active orders across confirmed KDS phases: Accepted, Preparing, Ready, and Served
+    const activeStatuses = ["ACCEPTED", "PREPARING", "READY", "SERVED"];
 
     const { data: orders, error: ordersError } = await supabase
       .from("orders")
@@ -203,25 +235,33 @@ export async function fetchKitchenOrdersAction(): Promise<FetchKitchenOrdersResu
       });
     }
 
-    // 4. Assemble structured kitchen tickets
-    const tickets: KitchenTicket[] = orders.map((o) => {
-      const tableInfo = o.table_session_id ? tableLabelMap.get(o.table_session_id) : null;
+    // 4. Assemble structured kitchen tickets (Food items ONLY)
+    const tickets: KitchenTicket[] = [];
 
-      return {
-        id: o.id,
-        orderNo: o.order_no,
-        tableLabel: tableInfo?.label || "Direct / Takeaway",
-        tableId: tableInfo?.tableId || "",
-        guestName: null,
-        guestPhone: null,
-        status: o.status,
-        submittedAt: o.submitted_at || o.created_at,
-        acceptedAt: o.accepted_at,
-        readyAt: o.ready_at,
-        instructions: (o as { instructions?: string | null }).instructions || null,
-        items: itemsByOrder.get(o.id) || [],
-      };
-    });
+    for (const o of orders) {
+      const allItems = itemsByOrder.get(o.id) || [];
+      const foodItems = allItems.filter((i) => !isBeverageItem(i.name));
+
+      // If the order has food items, include it on the kitchen board
+      if (foodItems.length > 0) {
+        const tableInfo = o.table_session_id ? tableLabelMap.get(o.table_session_id) : null;
+
+        tickets.push({
+          id: o.id,
+          orderNo: o.order_no,
+          tableLabel: tableInfo?.label || "Direct / Takeaway",
+          tableId: tableInfo?.tableId || "",
+          guestName: null,
+          guestPhone: null,
+          status: o.status,
+          submittedAt: o.submitted_at || o.created_at,
+          acceptedAt: o.accepted_at,
+          readyAt: o.ready_at,
+          instructions: (o as { instructions?: string | null }).instructions || null,
+          items: foodItems,
+        });
+      }
+    }
 
     return {
       success: true,

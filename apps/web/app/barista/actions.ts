@@ -50,8 +50,8 @@ export async function fetchBaristaOrdersAction(): Promise<FetchBaristaOrdersResu
   const supabase = createAdminClient();
 
   try {
-    // 1. Fetch active orders (submitted, accepted, preparing, ready, served)
-    const activeStatuses = ["SUBMITTED", "ACCEPTED", "PREPARING", "READY", "SERVED"];
+    // 1. Fetch active orders (accepted, preparing, ready, served)
+    const activeStatuses = ["ACCEPTED", "PREPARING", "READY", "SERVED"];
     const { data: orders, error: ordersError } = await supabase
       .from("orders")
       .select("*")
@@ -228,20 +228,8 @@ export async function transitionBaristaOrderStatusAction(
       return { success: false, message: "Failed to update order status." };
     }
 
-    // Broadcast sync events to all open panels
-    broadcastSyncEvent({
-      type: "BARISTA_TICKET_CHANGED",
-      orderId,
-      status: toStatus,
-      timestamp: Date.now(),
-    });
-
-    broadcastSyncEvent({
-      type: "STATUS_CHANGED",
-      orderId,
-      status: toStatus,
-      timestamp: Date.now(),
-    });
+    // NOTE: Client-side BaristaBoardView handles broadcastSyncEvent after this server action returns.
+    // broadcastSyncEvent is a no-op on the server (typeof window === "undefined").
 
     return { success: true, currentStatus: toStatus, message: `Brew status updated to ${toStatus}` };
   } catch (err: any) {
@@ -262,25 +250,30 @@ export async function fetchSingleBaristaTicketAction(
       .from("orders")
       .select("*")
       .eq("id", orderId)
-      .single();
+      .maybeSingle();
 
     if (error || !o) return { success: false };
 
+    // Do not return unconfirmed / cashier pending orders to barista desk
+    if (o.status === "PENDING_CONFIRMATION" || o.status === "DRAFT" || o.status === "SUBMITTED" || o.status === "CANCELLED" || o.status === "REJECTED") {
+      return { success: false };
+    }
+
     let tableLabel = "01";
-    let tableId = "";
+    let tableId = "table-01";
     if (o.table_session_id) {
       const { data: session } = await supabase
         .from("table_sessions")
         .select("table_id")
         .eq("id", o.table_session_id)
-        .single();
+        .maybeSingle();
       if (session?.table_id) {
         tableId = session.table_id;
         const { data: table } = await supabase
           .from("dining_tables")
           .select("label")
           .eq("id", session.table_id)
-          .single();
+          .maybeSingle();
         if (table?.label) tableLabel = table.label;
       }
     }
@@ -290,16 +283,36 @@ export async function fetchSingleBaristaTicketAction(
       .select("*")
       .eq("order_id", orderId);
 
+    // Resolve any missing name snapshots from menu_items table
+    const missingNameIds = (orderItems || [])
+      .filter((it: any) => (!it.name_snapshot || it.name_snapshot === "Smol Item" || it.name_snapshot === "Artisanal Item") && it.menu_item_id)
+      .map((it: any) => it.menu_item_id);
+
+    let nameMap = new Map<string, string>();
+    if (missingNameIds.length > 0) {
+      const { data: items } = await supabase.from("menu_items").select("id, name").in("id", missingNameIds);
+      (items || []).forEach((m) => nameMap.set(m.id, m.name));
+    }
+
     const items: BaristaOrderItem[] = (orderItems || []).map((item: any) => {
-      const resolvedName = item.name_snapshot || "Artisanal Item";
+      const resolvedName =
+        item.name_snapshot && item.name_snapshot !== "Smol Item" && item.name_snapshot !== "Artisanal Item"
+          ? item.name_snapshot
+          : (item.menu_item_id && nameMap.get(item.menu_item_id)) || item.name_snapshot || "Artisanal Item";
+
       return {
         id: item.id,
         name: resolvedName,
-        qty: item.qty,
+        qty: item.qty || 1,
         itemStatus: item.item_status || "PENDING",
         isBeverage: isBeverageItem(resolvedName),
       };
     });
+
+    const beverageItems = items.filter((item) => item.isBeverage);
+    if (beverageItems.length === 0) {
+      return { success: false };
+    }
 
     const ticket: BaristaTicket = {
       id: o.id,
@@ -312,12 +325,13 @@ export async function fetchSingleBaristaTicketAction(
       submittedAt: o.submitted_at || o.created_at,
       acceptedAt: o.accepted_at,
       readyAt: o.ready_at,
-      instructions: o.special_instructions || null,
-      items,
+      instructions: o.instructions || o.special_instructions || o.notes || null,
+      items: beverageItems,
     };
 
     return { success: true, ticket };
-  } catch {
+  } catch (err) {
+    console.error("Error in fetchSingleBaristaTicketAction:", err);
     return { success: false };
   }
 }

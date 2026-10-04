@@ -218,9 +218,12 @@ export const EventsClientView: React.FC<EventsClientViewProps> = ({ initialEvent
                 </label>
                 <input
                   type="tel"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  maxLength={10}
                   value={guestPhone}
-                  onChange={(e) => setGuestPhone(e.target.value)}
-                  placeholder="+91 98765 43210"
+                  onChange={(e) => setGuestPhone(e.target.value.replace(/\D/g, "").slice(0, 10))}
+                  placeholder="9876543210"
                   className="w-full rounded-xl border border-[#D8CEBF] bg-[#FCF8F2] px-3 py-2 text-xs text-[#1C1917] placeholder-[#A89D91] focus:outline-hidden focus:ring-1 focus:ring-[#A62B34]"
                 />
               </div>

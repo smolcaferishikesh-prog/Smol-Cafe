@@ -10,6 +10,7 @@ import {
   staffLogoutAction,
 } from "@/app/kitchen/actions";
 import type { OrderStatus } from "@smol-cafe/db";
+import { isBeverageItem } from "@/lib/station-utils";
 import { KitchenTicketCard } from "./KitchenTicketCard";
 import { EtaAccuracyReview } from "./EtaAccuracyReview";
 import { KitchenMenuManager } from "./KitchenMenuManager";
@@ -55,6 +56,11 @@ export const KitchenBoardView: React.FC<KitchenBoardViewProps> = ({ initialOrder
   );
   // Track ongoing optimistic transitions to prevent polling flicker/snap-back
   const optimisticLocksRef = useRef<Map<string, { status: OrderStatus; timestamp: number }>>(new Map());
+  // Deduplication guard: prevent concurrent refreshOrders server action calls
+  const isRefreshingRef = useRef(false);
+  const pendingRefreshRef = useRef(false);
+  // Debounce timer for sync-triggered refreshes
+  const syncRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     setMounted(true);
@@ -120,18 +126,28 @@ export const KitchenBoardView: React.FC<KitchenBoardViewProps> = ({ initialOrder
     soundManager.playOrderPlacedChime();
   }, [soundEnabled]);
 
+  const isInitialLoadedRef = useRef(false);
+
   const refreshOrders = useCallback(async () => {
+    // If a refresh is currently running, queue this refresh so we don't drop updates
+    if (isRefreshingRef.current) {
+      pendingRefreshRef.current = true;
+      return;
+    }
+    isRefreshingRef.current = true;
     setIsRefreshing(true);
     try {
       const result = await fetchKitchenOrdersAction();
       if (result && result.success && Array.isArray(result.orders)) {
-        const unchimedOrder = result.orders.find(
-          (o) => !playedChimeTicketIdsRef.current.has(o.id)
+        // Chime for any incoming new/confirmed orders that haven't chimed yet
+        const unchimedOrders = result.orders.filter(
+          (o) => !playedChimeTicketIdsRef.current.has(o.id) && ["ACCEPTED", "CONFIRMED"].includes(o.status)
         );
-        if (unchimedOrder && result.orders.length > prevOrderCountRef.current) {
-          playChime(unchimedOrder.id);
+        if (unchimedOrders.length > 0 && isInitialLoadedRef.current) {
+          unchimedOrders.forEach((o) => playChime(o.id));
         }
         result.orders.forEach((o) => playedChimeTicketIdsRef.current.add(o.id));
+        isInitialLoadedRef.current = true;
         prevOrderCountRef.current = result.orders.length;
 
         // Clean up expired optimistic locks (> 8000ms)
@@ -157,20 +173,51 @@ export const KitchenBoardView: React.FC<KitchenBoardViewProps> = ({ initialOrder
           return serverOrder;
         });
 
-        setOrders(mergedOrders);
+        setOrders((prev) => {
+          const serverOrderIds = new Set(result.orders.map((o) => o.id));
+          // Retain any locally ingested tickets that are in-flight or protected by optimisticLocks
+          const uncommittedLocalOrders = prev.filter(
+            (local) => !serverOrderIds.has(local.id) && (optimisticLocksRef.current.has(local.id) || ["ACCEPTED", "PREPARING", "READY"].includes(local.status))
+          );
+          return [...uncommittedLocalOrders, ...mergedOrders];
+        });
         setLastRefreshedAt(new Date());
       }
     } catch (err) {
       console.warn("Kitchen orders sync retry scheduled:", err);
     } finally {
+      isRefreshingRef.current = false;
       setIsRefreshing(false);
+      if (pendingRefreshRef.current) {
+        pendingRefreshRef.current = false;
+        refreshOrders();
+      }
     }
   }, [playChime]);
 
+  // Debounced version for sync events — coalesces rapid-fire events into a single refresh
+  const debouncedRefresh = useCallback(() => {
+    if (syncRefreshTimerRef.current) clearTimeout(syncRefreshTimerRef.current);
+    syncRefreshTimerRef.current = setTimeout(() => {
+      syncRefreshTimerRef.current = null;
+      refreshOrders();
+    }, 1000); // 1000ms debounce allows server DB write to complete before refreshing
+  }, [refreshOrders]);
+
   const handleIncomingTicket = useCallback(
     (orderId: string, newStatus?: OrderStatus) => {
-      if (newStatus === "CANCELLED" || newStatus === "REJECTED") {
-        setOrders((prev) => prev.filter((o) => o.id !== orderId));
+      // 1. Ignore orders awaiting cashier approval or drafts - Kitchen must NOT receive or chime for these!
+      if (
+        !newStatus ||
+        newStatus === "PENDING_CONFIRMATION" ||
+        newStatus === "DRAFT" ||
+        newStatus === "SUBMITTED" ||
+        newStatus === "CANCELLED" ||
+        newStatus === "REJECTED"
+      ) {
+        if (newStatus === "CANCELLED" || newStatus === "REJECTED" || newStatus === "DRAFT") {
+          setOrders((prev) => prev.filter((o) => o.id !== orderId));
+        }
         return;
       }
       let exists = false;
@@ -185,18 +232,32 @@ export const KitchenBoardView: React.FC<KitchenBoardViewProps> = ({ initialOrder
       });
 
       if (!exists) {
-        fetchSingleKitchenTicketAction(orderId).then((result) => {
-          if (result && result.success && result.ticket) {
-            const newTicket = result.ticket;
-            setOrders((prev) => {
-              if (prev.some((o) => o.id === newTicket.id)) return prev;
-              return [newTicket, ...prev];
-            });
-            playChime(newTicket.id);
-          } else {
+        fetchSingleKitchenTicketAction(orderId)
+          .then((result) => {
+            if (result && result.success && result.ticket) {
+              const newTicket = result.ticket;
+              if (
+                newTicket.status === "PENDING_CONFIRMATION" ||
+                newTicket.status === "DRAFT" ||
+                newTicket.status === "SUBMITTED" ||
+                newTicket.status === "CANCELLED" ||
+                newTicket.status === "REJECTED"
+              ) {
+                return;
+              }
+              setOrders((prev) => {
+                if (prev.some((o) => o.id === newTicket.id)) return prev;
+                return [newTicket, ...prev];
+              });
+              playChime(newTicket.id);
+            } else {
+              // Instant fallback: If single fetch didn't return, refresh immediately (0ms delay)
+              refreshOrders();
+            }
+          })
+          .catch(() => {
             refreshOrders();
-          }
-        });
+          });
       }
     },
     [playChime, refreshOrders]
@@ -208,41 +269,118 @@ export const KitchenBoardView: React.FC<KitchenBoardViewProps> = ({ initialOrder
     onData: (payload: any) => {
       const newRow = payload?.new;
       if (newRow && newRow.id) {
+        // Do not chime or ingest orders awaiting cashier approval
+        if (
+          newRow.status === "PENDING_CONFIRMATION" ||
+          newRow.status === "DRAFT" ||
+          newRow.status === "SUBMITTED"
+        ) {
+          return;
+        }
         handleIncomingTicket(newRow.id, newRow.status as OrderStatus);
+        debouncedRefresh();
       } else {
-        refreshOrders();
+        debouncedRefresh();
       }
     },
   });
 
   // Real-Time Event Listener & Polling Fallback Loop
   useEffect(() => {
-    // 1. Smart Fallback Polling (30s background heartbeat, WebSocket handles instant push)
-    const interval = setInterval(() => {
-      if (document.visibilityState === "visible") {
-        refreshOrders();
-      }
-    }, 30000);
+    // 1. Self-scheduling poll loop (avoids setInterval background tab throttling pile-up)
+    let pollActive = true;
+    const schedulePoll = () => {
+      if (!pollActive) return;
+      setTimeout(() => {
+        if (!pollActive) return;
+        refreshOrders().finally(() => {
+          if (pollActive) schedulePoll();
+        });
+      }, 3000);
+    };
+    schedulePoll();
 
     // 2. Cross-Interface Real-Time Sync Subscription
     const unsubscribe = subscribeToSyncEvents((event) => {
+      // Ignore orders awaiting cashier approval in Kitchen KDS
+      if (
+        event.type === "ORDER_PENDING_CASHIER" ||
+        event.type === "ORDER_PLACED" ||
+        event.status === "PENDING_CONFIRMATION" ||
+        event.status === "SUBMITTED" ||
+        event.status === "DRAFT"
+      ) {
+        return;
+      }
+      // If confirmed specifically for Barista only or no food items, kitchen ignores
+      if (
+        event.type === "ORDER_CONFIRMED" &&
+        (event.metadata?.stationTarget === "BARISTA" || event.metadata?.hasFoodItems === false)
+      ) {
+        return;
+      }
+
+      // 1. Direct Instant Ingestion (0ms) if full ticket payload is attached from Cashier confirmation
+      if (event.type === "ORDER_CONFIRMED") {
+        const ticketData = event.metadata?.ticket as any;
+        if (ticketData && Array.isArray(ticketData.items)) {
+          const foodItems = ticketData.items.filter((it: any) => !isBeverageItem(it.name));
+          if (foodItems.length > 0) {
+            const newTicket: KitchenTicket = {
+              id: ticketData.id || event.orderId!,
+              orderNo: ticketData.orderNo || event.orderNo || 0,
+              tableLabel: ticketData.tableLabel || event.tableLabel || "01",
+              tableId: ticketData.tableId || "table-01",
+              status: "ACCEPTED",
+              submittedAt: ticketData.submittedAt || new Date().toISOString(),
+              acceptedAt: ticketData.acceptedAt || new Date().toISOString(),
+              readyAt: null,
+              instructions: ticketData.instructions || null,
+              items: foodItems.map((f: any) => ({
+                id: f.id || crypto.randomUUID(),
+                name: f.name,
+                qty: f.qty || 1,
+                itemStatus: f.itemStatus || "PENDING",
+              })),
+            };
+            optimisticLocksRef.current.set(newTicket.id, { status: "ACCEPTED", timestamp: Date.now() });
+            setOrders((prev) => {
+              if (prev.some((o) => o.id === newTicket.id)) {
+                return prev.map((o) => (o.id === newTicket.id ? { ...o, status: "ACCEPTED" } : o));
+              }
+              return [newTicket, ...prev];
+            });
+            playChime(newTicket.id);
+            debouncedRefresh();
+            return;
+          }
+        }
+      }
+
       if (event.orderId) {
         handleIncomingTicket(event.orderId, event.status as OrderStatus);
-      } else {
-        refreshOrders();
       }
+      // Debounced refresh to coalesce rapid-fire sync events
+      debouncedRefresh();
     });
 
-    // 3. Window Focus Listener
-    const handleFocus = () => refreshOrders();
-    window.addEventListener("focus", handleFocus);
+    // 3. Tab Visibility & Focus Listeners (Instant refresh on tab switch)
+    const handleActive = () => {
+      if (document.visibilityState === "visible" || document.hasFocus()) {
+        refreshOrders();
+      }
+    };
+    window.addEventListener("focus", handleActive);
+    document.addEventListener("visibilitychange", handleActive);
 
     return () => {
-      clearInterval(interval);
+      pollActive = false;
+      if (syncRefreshTimerRef.current) clearTimeout(syncRefreshTimerRef.current);
       unsubscribe();
-      window.removeEventListener("focus", handleFocus);
+      window.removeEventListener("focus", handleActive);
+      document.removeEventListener("visibilitychange", handleActive);
     };
-  }, [handleIncomingTicket, refreshOrders]);
+  }, [handleIncomingTicket, refreshOrders, debouncedRefresh]);
 
   // Optimistic Transition Handler
   const handleTransition = async (
