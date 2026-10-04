@@ -33,6 +33,10 @@ import {
   UtensilsCrossed,
   Layers,
   Trash2,
+  Smartphone,
+  Banknote,
+  Gift,
+  X,
 } from "lucide-react";
 import { useSupabaseRealtime } from "@/hooks/useSupabaseRealtime";
 import { broadcastSyncEvent, subscribeToSyncEvents } from "@/lib/sync-events";
@@ -41,6 +45,7 @@ import { JsonTagInspectorModal } from "@/components/table/JsonTagInspectorModal"
 import { UpiPaymentDrawer } from "@/components/payment/UpiPaymentDrawer";
 import { DigitalReceiptModal, type ReceiptData } from "@/components/payment/DigitalReceiptModal";
 import { ThemeToggle } from "@/components/common/ThemeToggle";
+import { soundManager } from "@/lib/sound";
 import { CashierOrderEditorModal } from "./CashierOrderEditorModal";
 
 interface CashierDashboardProps {
@@ -60,6 +65,9 @@ export const CashierDashboard: React.FC<CashierDashboardProps> = ({
   const [paidHistory, setPaidHistory] = useState<PaidHistoryRecord[]>(initialPaidHistory);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isMounted, setIsMounted] = useState(false);
+  const playedChimeOrderIdsRef = useRef<Set<string>>(
+    new Set(initialPendingOrders.map((o) => o.id))
+  );
 
   useEffect(() => {
     setIsMounted(true);
@@ -69,6 +77,11 @@ export const CashierDashboard: React.FC<CashierDashboardProps> = ({
   const [activeUpiTable, setActiveUpiTable] = useState<ActiveCashierTable | null>(null);
   const [activeReceipt, setActiveReceipt] = useState<ReceiptData | null>(null);
   const [editingOrder, setEditingOrder] = useState<PendingOrderVerification | null>(null);
+  const [paymentPromptOrder, setPaymentPromptOrder] = useState<{
+    order: PendingOrderVerification;
+    stationTarget: "KITCHEN" | "BARISTA" | "ALL";
+    selectedMethod: "UPI" | "CASH" | "CARD" | "COMPLIMENTARY";
+  } | null>(null);
   const [amountTendered, setAmountTendered] = useState("");
   const [staffName, setStaffName] = useState("Cashier");
   const [submittingOrderIds, setSubmittingOrderIds] = useState<Set<string>>(new Set());
@@ -95,13 +108,22 @@ export const CashierDashboard: React.FC<CashierDashboardProps> = ({
       ]);
       setTables(tableData);
       if (pendingData.success) {
-        setPendingOrders(
-          pendingData.orders.filter(
-            (o) =>
-              !submittingOrderIdsRef.current.has(o.id) &&
-              !confirmedOrderIdsRef.current.has(o.id)
-          )
+        const filteredPending = pendingData.orders.filter(
+          (o) =>
+            !submittingOrderIdsRef.current.has(o.id) &&
+            !confirmedOrderIdsRef.current.has(o.id)
         );
+
+        // Check if any incoming order hasn't played audio chime yet
+        const hasNewOrder = filteredPending.some(
+          (o) => !playedChimeOrderIdsRef.current.has(o.id)
+        );
+        if (hasNewOrder) {
+          soundManager.playCashierIncomingOrderAlert();
+        }
+        filteredPending.forEach((o) => playedChimeOrderIdsRef.current.add(o.id));
+
+        setPendingOrders(filteredPending);
       }
       if (paidData.success) {
         setPaidHistory(paidData.records);
@@ -135,6 +157,12 @@ export const CashierDashboard: React.FC<CashierDashboardProps> = ({
         ) {
           setPendingOrders((prev) => prev.filter((o) => o.id !== newRow.id));
         } else {
+          if (newRow.status === "PENDING_CONFIRMATION") {
+            if (!playedChimeOrderIdsRef.current.has(newRow.id)) {
+              playedChimeOrderIdsRef.current.add(newRow.id);
+              soundManager.playCashierIncomingOrderAlert();
+            }
+          }
           refreshData();
         }
       } else {
@@ -161,9 +189,18 @@ export const CashierDashboard: React.FC<CashierDashboardProps> = ({
       if (document.visibilityState === "visible") {
         refreshData();
       }
-    }, 30000);
+    }, 3000);
 
     const unsubscribe = subscribeToSyncEvents((event) => {
+      if (event.type === "ORDER_PENDING_CASHIER" || event.status === "PENDING_CONFIRMATION") {
+        if (event.orderId && !playedChimeOrderIdsRef.current.has(event.orderId)) {
+          playedChimeOrderIdsRef.current.add(event.orderId);
+          soundManager.playCashierIncomingOrderAlert();
+        }
+        refreshData();
+        return;
+      }
+
       if (event.orderId && event.status && ["ACCEPTED", "PREPARING", "READY", "SERVED", "COMPLETED", "CANCELLED"].includes(event.status)) {
         setPendingOrders((prev) => prev.filter((o) => o.id !== event.orderId));
       } else {
@@ -178,25 +215,38 @@ export const CashierDashboard: React.FC<CashierDashboardProps> = ({
     };
   }, [refreshData, instantRefresh]);
 
+  const handleInitiateConfirm = (
+    order: PendingOrderVerification,
+    stationTarget: "KITCHEN" | "BARISTA" | "ALL" = "ALL"
+  ) => {
+    setPaymentPromptOrder({
+      order,
+      stationTarget,
+      selectedMethod: "UPI",
+    });
+  };
+
   const handleConfirmOrder = async (
     orderId: string,
-    stationTarget: "KITCHEN" | "BARISTA" | "ALL" = "ALL"
+    stationTarget: "KITCHEN" | "BARISTA" | "ALL" = "ALL",
+    paymentMethod: "UPI" | "CASH" | "CARD" | "COMPLIMENTARY" = "UPI"
   ) => {
     if (submittingOrderIdsRef.current.has(orderId)) return;
 
     // 1. Instant Optimistic UI Update (0ms instant feedback)
-    const targetOrder = pendingOrders.find((o) => o.id === orderId);
+    const targetOrder = (paymentPromptOrder && paymentPromptOrder.order.id === orderId ? paymentPromptOrder.order : null) || pendingOrders.find((o) => o.id === orderId);
     submittingOrderIdsRef.current.add(orderId);
     confirmedOrderIdsRef.current.add(orderId);
     setSubmittingOrderIds((prev) => new Set(prev).add(orderId));
     setPendingOrders((prev) => prev.filter((o) => o.id !== orderId));
+    setPaymentPromptOrder(null);
 
     if (targetOrder) {
       const optimisticPaidRecord: PaidHistoryRecord = {
         id: `ORD-${targetOrder.orderNo || targetOrder.id.slice(-4)}`,
         tableLabel: targetOrder.tableLabel,
         totalRupees: Math.round(targetOrder.totalPaise / 100),
-        paymentMethod: "CASH",
+        paymentMethod: paymentMethod,
         paidAt: new Date().toISOString(),
         itemsCount: targetOrder.items.reduce((acc, i) => acc + i.qty, 0) || 1,
         items: targetOrder.items.map((i) => ({
@@ -218,21 +268,48 @@ export const CashierDashboard: React.FC<CashierDashboardProps> = ({
 
     setActionFeedback({
       type: "success",
-      text: `Order #${targetOrder?.orderNo || ""} confirmed and dispatched to ${stationLabel}!`,
+      text: `Order #${targetOrder?.orderNo || ""} confirmed (${paymentMethod}) and dispatched to ${stationLabel}!`,
     });
 
     try {
-      const res = await confirmCashierOrderAction(orderId, stationTarget, staffName);
+      const res = await confirmCashierOrderAction(orderId, stationTarget, staffName, paymentMethod);
       if (res.success) {
+        const ticketPayload = targetOrder
+          ? {
+              id: targetOrder.id,
+              orderNo: targetOrder.orderNo,
+              tableLabel: targetOrder.tableLabel,
+              tableId: targetOrder.tableId,
+              status: "ACCEPTED" as const,
+              submittedAt: targetOrder.submittedAt || new Date().toISOString(),
+              acceptedAt: new Date().toISOString(),
+              readyAt: null,
+              instructions: targetOrder.instructions,
+              items: targetOrder.items.map((it) => ({
+                id: it.id,
+                name: it.name,
+                qty: it.qty,
+                itemStatus: "PENDING",
+                isBeverage: it.isBeverage,
+              })),
+            }
+          : undefined;
+
         broadcastSyncEvent({
           type: "ORDER_CONFIRMED",
           orderId,
           orderNo: targetOrder?.orderNo,
+          tableLabel: targetOrder?.tableLabel,
+          tableId: targetOrder?.tableId,
           status: "ACCEPTED",
           timestamp: Date.now(),
           metadata: {
             stationTarget,
             staffName,
+            paymentMethod,
+            hasFoodItems: targetOrder ? targetOrder.hasFoodItems : true,
+            hasBeverageItems: targetOrder ? targetOrder.hasBeverageItems : true,
+            ticket: ticketPayload,
           },
         });
       } else {
@@ -679,7 +756,7 @@ export const CashierDashboard: React.FC<CashierDashboardProps> = ({
                               <button
                                 type="button"
                                 disabled={submittingOrderIds.has(order.id)}
-                                onClick={() => handleConfirmOrder(order.id, "KITCHEN")}
+                                onClick={() => handleInitiateConfirm(order, "KITCHEN")}
                                 className="flex items-center justify-center gap-1 rounded-xl bg-orange-600 hover:bg-orange-500 text-white px-2.5 py-2 text-[11px] font-bold shadow-xs active:scale-95 transition cursor-pointer"
                                 title="Send only Food items to Kitchen KDS"
                               >
@@ -690,7 +767,7 @@ export const CashierDashboard: React.FC<CashierDashboardProps> = ({
                               <button
                                 type="button"
                                 disabled={submittingOrderIds.has(order.id)}
-                                onClick={() => handleConfirmOrder(order.id, "BARISTA")}
+                                onClick={() => handleInitiateConfirm(order, "BARISTA")}
                                 className="flex items-center justify-center gap-1 rounded-xl bg-amber-600 hover:bg-amber-500 text-white px-2.5 py-2 text-[11px] font-bold shadow-xs active:scale-95 transition cursor-pointer"
                                 title="Send only Beverage items to Barista Desk"
                               >
@@ -701,7 +778,7 @@ export const CashierDashboard: React.FC<CashierDashboardProps> = ({
                               <button
                                 type="button"
                                 disabled={submittingOrderIds.has(order.id)}
-                                onClick={() => handleConfirmOrder(order.id, "ALL")}
+                                onClick={() => handleInitiateConfirm(order, "ALL")}
                                 className="col-span-2 flex items-center justify-center gap-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white py-2 text-xs font-bold shadow-md active:scale-95 transition cursor-pointer"
                               >
                                 <Check className="h-4 w-4" />
@@ -712,7 +789,7 @@ export const CashierDashboard: React.FC<CashierDashboardProps> = ({
                             <button
                               type="button"
                               disabled={submittingOrderIds.has(order.id)}
-                              onClick={() => handleConfirmOrder(order.id, "KITCHEN")}
+                              onClick={() => handleInitiateConfirm(order, "KITCHEN")}
                               className="flex items-center justify-center gap-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white py-2.5 text-xs font-bold shadow-md active:scale-95 transition cursor-pointer"
                             >
                               <UtensilsCrossed className="h-4 w-4" />
@@ -722,7 +799,7 @@ export const CashierDashboard: React.FC<CashierDashboardProps> = ({
                             <button
                               type="button"
                               disabled={submittingOrderIds.has(order.id)}
-                              onClick={() => handleConfirmOrder(order.id, "BARISTA")}
+                              onClick={() => handleInitiateConfirm(order, "BARISTA")}
                               className="flex items-center justify-center gap-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white py-2.5 text-xs font-bold shadow-md active:scale-95 transition cursor-pointer"
                             >
                               <Coffee className="h-4 w-4" />
@@ -732,7 +809,7 @@ export const CashierDashboard: React.FC<CashierDashboardProps> = ({
                             <button
                               type="button"
                               disabled={submittingOrderIds.has(order.id)}
-                              onClick={() => handleConfirmOrder(order.id, "ALL")}
+                              onClick={() => handleInitiateConfirm(order, "ALL")}
                               className="flex items-center justify-center gap-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white py-2.5 text-xs font-bold shadow-md active:scale-95 transition cursor-pointer"
                             >
                               <Check className="h-4 w-4" />
@@ -830,6 +907,10 @@ export const CashierDashboard: React.FC<CashierDashboardProps> = ({
                               className="h-3.5 w-auto object-contain drop-shadow-2xs"
                             />
                             <span>CARD</span>
+                          </span>
+                        ) : rec.paymentMethod === "COMPLIMENTARY" ? (
+                          <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-purple-100 dark:bg-purple-950 text-purple-800 dark:text-purple-300 border border-purple-300 dark:border-purple-800/50">
+                            COMPLIMENTARY
                           </span>
                         ) : (
                           <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800/50">
@@ -956,6 +1037,10 @@ export const CashierDashboard: React.FC<CashierDashboardProps> = ({
                                     className="h-3.5 w-auto object-contain drop-shadow-2xs"
                                   />
                                   <span>CARD</span>
+                                </span>
+                              ) : rec.paymentMethod === "COMPLIMENTARY" ? (
+                                <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-purple-100 dark:bg-purple-950 text-purple-800 dark:text-purple-300 border border-purple-300 dark:border-purple-800/50">
+                                  COMPLIMENTARY
                                 </span>
                               ) : (
                                 <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800/50">
@@ -1141,6 +1226,160 @@ export const CashierDashboard: React.FC<CashierDashboardProps> = ({
             refreshData();
           }}
         />
+      )}
+
+      {/* Payment Method Confirmation Popup Modal before Dispatch */}
+      {paymentPromptOrder && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-md animate-fade-in"
+          onClick={() => setPaymentPromptOrder(null)}
+        >
+          <div
+            className="w-full max-w-lg rounded-3xl border-2 border-[#F2C84B] dark:border-amber-500/60 bg-[#FAF4EB] dark:bg-[#1C1917] p-6 shadow-2xl transition-colors space-y-5 animate-scale-in"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="flex items-start justify-between border-b border-[#C9AE8B]/30 dark:border-stone-800 pb-3.5">
+              <div className="space-y-1">
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-100 dark:bg-emerald-950/80 border border-emerald-300 dark:border-emerald-800/60 px-2.5 py-0.5 font-mono text-[10px] font-black uppercase tracking-wider text-emerald-800 dark:text-emerald-300">
+                  <Receipt className="h-3 w-3" />
+                  Select Payment Method
+                </span>
+                <h3 className="text-xl font-black text-[#241F1C] dark:text-white flex items-center gap-2">
+                  Confirm Table {paymentPromptOrder.order.tableLabel}
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPaymentPromptOrder(null)}
+                className="flex h-8 w-8 items-center justify-center rounded-full bg-[#F3E7D3] dark:bg-stone-800 text-[#725039] dark:text-stone-400 hover:bg-[#EBDDC8] dark:hover:bg-stone-700 transition cursor-pointer"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            {/* Order & Dispatch Summary Banner */}
+            <div className="grid grid-cols-2 gap-2.5 rounded-2xl border border-[#C9AE8B]/40 dark:border-stone-800 bg-[#F3E7D3]/70 dark:bg-stone-900/80 p-3.5">
+              <div>
+                <span className="block font-mono text-[9px] uppercase font-bold text-[#8C6D53] dark:text-stone-400">
+                  Order Details
+                </span>
+                <p className="font-mono text-xs font-black text-[#241F1C] dark:text-stone-200">
+                  #{paymentPromptOrder.order.orderNo} • {paymentPromptOrder.order.items.reduce((a, b) => a + b.qty, 0)} Items
+                </p>
+                <p className="font-sans text-[11px] text-[#725039] dark:text-stone-400">
+                  Target: <strong className="text-emerald-700 dark:text-emerald-400">
+                    {paymentPromptOrder.stationTarget === "KITCHEN"
+                      ? "Kitchen (Food)"
+                      : paymentPromptOrder.stationTarget === "BARISTA"
+                      ? "Barista (Drinks)"
+                      : "Kitchen & Barista"}
+                  </strong>
+                </p>
+              </div>
+              <div className="text-right">
+                <span className="block font-mono text-[9px] uppercase font-bold text-[#8C6D53] dark:text-stone-400">
+                  Total Payable
+                </span>
+                <p className="font-mono text-2xl font-black text-[#B72E35] dark:text-[#F6AD55]">
+                  ₹{Math.round(paymentPromptOrder.order.totalPaise / 100)}
+                </p>
+              </div>
+            </div>
+
+            {/* Payment Method Selector (4 Big Rich Cards) */}
+            <div className="space-y-2">
+              <label className="block text-xs font-bold text-[#725039] dark:text-stone-300">
+                Choose How Guest Paid:
+              </label>
+              <div className="grid grid-cols-2 gap-2.5">
+                {[
+                  {
+                    id: "UPI" as const,
+                    label: "UPI / QR Code",
+                    sub: "GPay, PhonePe, Paytm",
+                    icon: Smartphone,
+                    activeClass: "border-emerald-600 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-900 dark:text-emerald-200 shadow-md",
+                  },
+                  {
+                    id: "CASH" as const,
+                    label: "Cash / Counter",
+                    sub: "Direct Cash Received",
+                    icon: Banknote,
+                    activeClass: "border-amber-600 bg-amber-50 dark:bg-amber-950/40 text-amber-900 dark:text-amber-200 shadow-md",
+                  },
+                  {
+                    id: "CARD" as const,
+                    label: "POS / Card",
+                    sub: "Credit / Debit Swipe",
+                    icon: CreditCard,
+                    activeClass: "border-blue-600 bg-blue-50 dark:bg-blue-950/40 text-blue-900 dark:text-blue-200 shadow-md",
+                  },
+                  {
+                    id: "COMPLIMENTARY" as const,
+                    label: "Complimentary",
+                    sub: "House / Owner Promo",
+                    icon: Gift,
+                    activeClass: "border-purple-600 bg-purple-50 dark:bg-purple-950/40 text-purple-900 dark:text-purple-200 shadow-md",
+                  },
+                ].map((item) => {
+                  const isSelected = paymentPromptOrder.selectedMethod === item.id;
+                  const Icon = item.icon;
+                  return (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() =>
+                        setPaymentPromptOrder((prev) =>
+                          prev ? { ...prev, selectedMethod: item.id } : null
+                        )
+                      }
+                      className={`flex flex-col items-start p-3 rounded-2xl border-2 text-left transition-all cursor-pointer ${
+                        isSelected
+                          ? item.activeClass
+                          : "border-[#C9AE8B]/40 dark:border-stone-800 bg-[#F3E7D3]/40 dark:bg-stone-900/50 hover:bg-[#EBDDC8]/60 dark:hover:bg-stone-800 text-[#241F1C] dark:text-stone-300"
+                      }`}
+                    >
+                      <div className="flex items-center justify-between w-full mb-1">
+                        <Icon className="h-4 w-4 shrink-0" />
+                        {isSelected && (
+                          <span className="h-2 w-2 rounded-full bg-current animate-pulse" />
+                        )}
+                      </div>
+                      <span className="text-xs font-black">{item.label}</span>
+                      <span className="text-[10px] opacity-75">{item.sub}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex items-center gap-2.5 pt-2">
+              <button
+                type="button"
+                onClick={() => setPaymentPromptOrder(null)}
+                className="rounded-2xl border border-[#C9AE8B]/50 dark:border-stone-700 bg-[#F3E7D3] dark:bg-stone-800 px-4 py-3 text-xs font-bold text-[#725039] dark:text-stone-300 hover:bg-[#EBDDC8] dark:hover:bg-stone-700 transition cursor-pointer shrink-0"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  handleConfirmOrder(
+                    paymentPromptOrder.order.id,
+                    paymentPromptOrder.stationTarget,
+                    paymentPromptOrder.selectedMethod
+                  )
+                }
+                className="flex-1 flex items-center justify-center gap-2 rounded-2xl bg-[#B72E35] hover:bg-[#9B242A] text-white px-3 sm:px-4 py-3 text-xs sm:text-sm font-bold shadow-lg active:scale-[0.98] transition cursor-pointer min-w-0"
+              >
+                <Check className="h-4 w-4 shrink-0" />
+                <span className="truncate">Confirm &amp; Dispatch ({paymentPromptOrder.selectedMethod})</span>
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* JSON Table Tag Inspector Modal */}

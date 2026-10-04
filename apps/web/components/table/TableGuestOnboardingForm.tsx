@@ -34,9 +34,14 @@ export function TableGuestOnboardingForm({
       const savedPhone = localStorage.getItem("smol_guest_phone");
       if (savedName && !name) setName(savedName);
       if (savedPhone && !phone) {
-        setPhone(savedPhone);
         const matched = COUNTRY_CODES.find((c) => savedPhone.startsWith(c.code));
-        if (matched) setCountryCode(matched.code);
+        if (matched) {
+          setCountryCode(matched.code);
+          const rawLocal = savedPhone.slice(matched.code.length).replace(/\D/g, "").slice(0, 10);
+          setPhone(rawLocal);
+        } else {
+          setPhone(savedPhone.replace(/\D/g, "").slice(0, 10));
+        }
       }
     }
   }, []);
@@ -46,10 +51,16 @@ export function TableGuestOnboardingForm({
     setError(null);
 
     const trimmedName = name.trim();
-    const normalizedPhone = normalizePhoneNumber(phone, countryCode);
+    const cleanDigits = phone.replace(/\D/g, "").slice(0, 10);
+    const normalizedPhone = normalizePhoneNumber(cleanDigits, countryCode);
 
     if (!trimmedName || trimmedName.length < 2) {
       setError("Please enter your name to continue.");
+      return;
+    }
+
+    if (!cleanDigits || cleanDigits.length !== 10) {
+      setError("Please enter a valid 10-digit mobile number.");
       return;
     }
 
@@ -138,12 +149,17 @@ export function TableGuestOnboardingForm({
         {/* Local Mobile Number Input */}
         <input
           type="tel"
+          inputMode="numeric"
+          pattern="[0-9]*"
           name="guestPhone"
           value={phone}
-          onChange={(e) => setPhone(e.target.value)}
+          onChange={(e) => {
+            const digits = e.target.value.replace(/\D/g, "").slice(0, 10);
+            setPhone(digits);
+          }}
           placeholder={selectedCountry.example}
           required
-          maxLength={16}
+          maxLength={10}
           autoComplete="tel"
           className="flex-1 px-3 py-3 bg-transparent text-[#241F1C] dark:text-[#FAF4EB] placeholder-[#725039]/60 dark:placeholder-[#C9AE8B]/50 font-mono text-xs sm:text-sm focus:outline-none"
         />

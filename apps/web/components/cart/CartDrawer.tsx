@@ -34,6 +34,7 @@ import {
   Gift,
   Award,
   Loader2,
+  Send,
 } from "lucide-react";
 
 import { normalizePhoneNumber } from "@/lib/customer-phone";
@@ -416,11 +417,8 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ tableLabel = "07", guest
         return;
       }
 
-      // 2. Settle backend bill
-      await bypassPaymentAction({
-        tableLabel: displayTable,
-        amountPaise: orderRes.totalPaise,
-      }).catch((err) => console.warn("Cashier bill settle notice:", err));
+      // Order created in PENDING_CONFIRMATION status for cashier desk.
+      // Settle bill will happen when Cashier clicks confirm & collects payment.
 
       // 3. Clear cart
       clearCart();
@@ -734,30 +732,72 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ tableLabel = "07", guest
                 </div>
               )}
 
-              {/* Payment Method Cards */}
-              <div className="space-y-2.5 pt-1">
-                {/* Instant Test Payment Shortcut for Laptop/Dev Testing */}
-                <button
-                  type="button"
-                  onClick={handleTestBypassPayment}
-                  disabled={isBypassing}
-                  className="w-full rounded-[1.25rem] border border-amber-500/60 bg-amber-50 dark:bg-amber-950/40 p-3.5 flex items-center justify-between hover:bg-amber-100 dark:hover:bg-amber-900/60 active:scale-[0.99] transition shadow-xs cursor-pointer text-left"
-                >
-                  <div className="flex items-center gap-3.5">
-                    <div className="w-10 h-10 flex items-center justify-center shrink-0 rounded-xl bg-amber-500 text-white font-bold text-lg shadow-sm">
-                      ⚡
+              {/* Direct Cashier & Kitchen Order Dispatch Card */}
+              <div className="pt-1">
+                <div className="rounded-3xl border border-[#B72E35]/30 dark:border-[#FF5B52]/25 bg-gradient-to-br from-[#FAF4EB] via-[#F6ECE0] to-[#EFE2D2] dark:from-[#251E1A] dark:via-[#1E1815] dark:to-[#171311] p-4 shadow-[0_4px_20px_rgba(183,46,53,0.08)] dark:shadow-[0_4px_24px_rgba(0,0,0,0.4)] transition-all">
+                  {/* Card Header with Live Dispatch Badge */}
+                  <div className="flex items-center justify-between pb-3 border-b border-[#C9AE8B]/30 dark:border-white/10">
+                    <div className="flex items-center gap-2">
+                      <span className="relative flex h-2.5 w-2.5">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                        <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500" />
+                      </span>
+                      <span className="font-mono text-[11px] font-bold tracking-wider uppercase text-[#725039] dark:text-[#C9AE8B]">
+                        Live Counter Order
+                      </span>
                     </div>
-                    <div>
-                      <h3 className="font-sans font-bold text-[15px] text-amber-900 dark:text-amber-200 leading-tight">
-                        {isBypassing ? "Processing Test Order..." : "⚡ Instant Test Payment (Laptop Mode)"}
-                      </h3>
-                      <p className="font-sans text-[12px] text-amber-800 dark:text-amber-300 mt-0.5">
-                        Simulate UPI payment &amp; dispatch order live to Cashier &amp; KDS
-                      </p>
+                    <span className="inline-flex items-center gap-1 rounded-full bg-[#B72E35]/10 dark:bg-[#FF5B52]/15 px-2.5 py-0.5 font-mono text-[10.5px] font-bold text-[#B72E35] dark:text-[#FF8080]">
+                      <Receipt className="w-3 h-3" /> Pay at Counter / Table
+                    </span>
+                  </div>
+
+                  {/* Primary CTA Dispatch Button */}
+                  <button
+                    type="button"
+                    onClick={handleTestBypassPayment}
+                    disabled={isBypassing}
+                    className="group relative w-full mt-3 overflow-hidden rounded-2xl bg-gradient-to-r from-[#B72E35] via-[#A0242B] to-[#7D1217] dark:from-[#B72E35] dark:via-[#952229] dark:to-[#6C1217] p-4 text-left text-white shadow-[0_4px_16px_rgba(183,46,53,0.35)] hover:shadow-[0_6px_22px_rgba(183,46,53,0.5)] hover:scale-[1.01] active:scale-[0.99] transition-all duration-200 cursor-pointer disabled:opacity-60"
+                  >
+                    {/* Ambient shine overlay on hover */}
+                    <span className="absolute inset-0 -translate-x-full group-hover:translate-x-full bg-gradient-to-r from-transparent via-white/20 to-transparent transition-transform duration-700 ease-in-out pointer-events-none" />
+
+                    <div className="relative z-10 flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-3.5">
+                        <div className="w-11 h-11 rounded-xl bg-white/15 border border-white/25 flex items-center justify-center shrink-0 shadow-xs backdrop-blur-xs">
+                          {isBypassing ? (
+                            <Loader2 className="w-5 h-5 text-white animate-spin" />
+                          ) : (
+                            <Send className="w-5 h-5 text-white transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
+                          )}
+                        </div>
+                        <div>
+                          <h3 className="font-serif font-bold text-[16px] sm:text-[17px] text-white leading-tight">
+                            {isBypassing ? "Sending Order to Cashier..." : "Send Order to Cashier"}
+                          </h3>
+                          <p className="font-sans text-[12px] text-[#F3E7D3]/90 mt-0.5 leading-snug">
+                            Instant live dispatch to Cashier Counter &amp; Kitchen
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="w-8 h-8 rounded-full bg-white/15 flex items-center justify-center shrink-0 group-hover:bg-white/25 transition-colors">
+                        <ChevronRight className="w-4 h-4 text-white group-hover:translate-x-0.5 transition-transform" />
+                      </div>
+                    </div>
+                  </button>
+
+                  {/* Key Highlights */}
+                  <div className="mt-3 grid grid-cols-2 gap-2 pt-2.5 border-t border-[#C9AE8B]/25 dark:border-white/5 text-[11px] font-mono text-[#725039] dark:text-[#C9AE8B]">
+                    <div className="flex items-center gap-1.5">
+                      <Sparkles className="w-3.5 h-3.5 text-[#B72E35] dark:text-[#F2C84B] shrink-0" />
+                      <span>Instant Kitchen Prep</span>
+                    </div>
+                    <div className="flex items-center justify-end gap-1.5">
+                      <CreditCard className="w-3.5 h-3.5 text-[#725039] dark:text-[#C9AE8B] shrink-0" />
+                      <span>Cash, UPI or Card</span>
                     </div>
                   </div>
-                  <ChevronRight className="w-5 h-5 text-amber-700 dark:text-amber-300" />
-                </button>
+                </div>
               </div>
 
               {/* 100% Secure Payments Assurance */}

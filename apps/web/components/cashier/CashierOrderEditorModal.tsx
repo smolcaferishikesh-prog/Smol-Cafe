@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useMemo } from "react";
-import { X, Plus, Minus, Trash2, Search, Coffee, UtensilsCrossed, AlertCircle, Check, Loader2, Sparkles } from "lucide-react";
+import { X, Plus, Minus, Trash2, Search, Coffee, UtensilsCrossed, AlertCircle, Check, Loader2, Sparkles, CreditCard, Smartphone, Banknote, Gift } from "lucide-react";
 import {
   fetchAllMenuItemsForCashierAction,
   type PendingOrderVerification,
@@ -33,6 +33,7 @@ export const CashierOrderEditorModal: React.FC<CashierOrderEditorModalProps> = (
 }) => {
   const [items, setItems] = useState<EditableItem[]>([]);
   const [instructions, setInstructions] = useState<string>("");
+  const [paymentMethod, setPaymentMethod] = useState<"UPI" | "CASH" | "CARD" | "COMPLIMENTARY">("UPI");
   const [catalog, setCatalog] = useState<MenuCatalogItem[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<string>("ALL");
@@ -54,6 +55,8 @@ export const CashierOrderEditorModal: React.FC<CashierOrderEditorModalProps> = (
         }))
       );
       setInstructions(order.instructions || "");
+      const currentMethod = (order.paymentMethod?.toUpperCase() as any) || "UPI";
+      setPaymentMethod(["UPI", "CASH", "CARD", "COMPLIMENTARY"].includes(currentMethod) ? currentMethod : "UPI");
       setErrorMessage(null);
       setSearchQuery("");
       setSelectedCategory("ALL");
@@ -165,7 +168,7 @@ export const CashierOrderEditorModal: React.FC<CashierOrderEditorModalProps> = (
       }));
 
       const { editCashierOrderAction } = await import("@/app/cashier/actions");
-      const res = await editCashierOrderAction(order.id, payload, instructions);
+      const res = await editCashierOrderAction(order.id, payload, instructions, paymentMethod);
 
       if (res.success) {
         onSaveSuccess();
@@ -415,6 +418,51 @@ export const CashierOrderEditorModal: React.FC<CashierOrderEditorModalProps> = (
                   );
                 })
               )}
+            </div>
+          </div>
+
+          {/* Payment Method Selector */}
+          <div className="space-y-1.5">
+            <label className="text-xs font-bold uppercase tracking-wider text-[#8C6D53] dark:text-stone-400 flex items-center gap-1.5">
+              <CreditCard className="w-3.5 h-3.5 text-[#B72E35] dark:text-[#F6AD55]" />
+              <span>Payment Method</span>
+            </label>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              {[
+                { id: "UPI", label: "UPI / QR", icon: Smartphone, desc: "GPay, PhonePe, Paytm" },
+                { id: "CASH", label: "Cash", icon: Banknote, desc: "Counter Cash" },
+                { id: "CARD", label: "Card", icon: CreditCard, desc: "POS Terminal" },
+                { id: "COMPLIMENTARY", label: "Complimentary", icon: Gift, desc: "Staff / VIP / House" },
+              ].map((pm) => {
+                const isSelected = paymentMethod === pm.id;
+                const Icon = pm.icon;
+                return (
+                  <button
+                    key={pm.id}
+                    type="button"
+                    onClick={() => setPaymentMethod(pm.id as any)}
+                    className={`flex items-center gap-2.5 p-2.5 rounded-xl border text-left transition cursor-pointer ${
+                      isSelected
+                        ? "border-[#B72E35] dark:border-[#FF5B52] bg-[#B72E35]/10 dark:bg-[#B72E35]/25 text-[#B72E35] dark:text-[#FF8080] font-bold shadow-xs ring-1 ring-[#B72E35]/30"
+                        : "border-[#C9AE8B]/40 dark:border-stone-800 bg-[#FAF4EB] dark:bg-stone-900 text-[#241F1C] dark:text-stone-300 hover:bg-[#F3E7D3]/60 dark:hover:bg-stone-800"
+                    }`}
+                  >
+                    <div
+                      className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
+                        isSelected
+                          ? "bg-[#B72E35] text-white"
+                          : "bg-[#C9AE8B]/20 dark:bg-stone-800 text-[#725039] dark:text-stone-400"
+                      }`}
+                    >
+                      <Icon className="w-3.5 h-3.5" />
+                    </div>
+                    <div className="min-w-0">
+                      <span className="text-xs block leading-tight truncate">{pm.label}</span>
+                      <span className="text-[9.5px] font-mono opacity-70 block truncate">{pm.desc}</span>
+                    </div>
+                  </button>
+                );
+              })}
             </div>
           </div>
 

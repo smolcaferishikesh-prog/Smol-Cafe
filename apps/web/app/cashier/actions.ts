@@ -264,7 +264,8 @@ export interface EditCashierOrderItemInput {
 export async function editCashierOrderAction(
   orderId: string,
   items: EditCashierOrderItemInput[],
-  instructions?: string
+  instructions?: string,
+  paymentMethod?: string
 ): Promise<{ success: boolean; message?: string; totalPaise?: number }> {
   if (!items || items.length === 0) {
     return { success: false, message: "Order must contain at least one item." };
@@ -297,34 +298,64 @@ export async function editCashierOrderAction(
     const totalPaise = subtotalPaise + taxPaise;
 
     // 1. Update order totals
+    const updatePayload: Record<string, any> = {
+      subtotal_snapshot: subtotalPaise,
+      tax_snapshot: taxPaise,
+      total_snapshot: totalPaise,
+      updated_at: nowIso,
+    };
+    if (instructions !== undefined) {
+      updatePayload.instructions = instructions;
+    }
+
     const { error: orderUpdateErr } = await supabase
       .from("orders")
-      .update({
-        subtotal_snapshot: subtotalPaise,
-        tax_snapshot: taxPaise,
-        total_snapshot: totalPaise,
-        updated_at: nowIso,
-      })
+      .update(updatePayload)
       .eq("id", orderId);
 
     if (orderUpdateErr) {
       console.error("Failed to update order snapshot in editCashierOrderAction:", orderUpdateErr);
     }
 
-    // 2. Delete old order items & insert updated ones
+    // 2. If paymentMethod provided and order has session, update payment_attempts
+    if (paymentMethod && paymentMethod.trim().length > 0) {
+      const cleanMethod = paymentMethod.trim().toUpperCase();
+      try {
+        const { data: ord } = await supabase
+          .from("orders")
+          .select("table_session_id")
+          .eq("id", orderId)
+          .single();
+
+        if (ord?.table_session_id) {
+          const { data: b } = await supabase
+            .from("bills")
+            .select("id")
+            .eq("table_session_id", ord.table_session_id)
+            .maybeSingle();
+
+          if (b?.id) {
+            await supabase.from("payment_attempts").insert({
+              bill_id: b.id,
+              provider: cleanMethod,
+              amount: totalPaise,
+              currency: "INR",
+              status: "CAPTURED",
+              idempotency_key: `cashier_edit_${orderId}_${Date.now()}`,
+              created_at: nowIso,
+              captured_at: nowIso,
+            });
+          }
+        }
+      } catch (err) {
+        console.warn("Notice updating payment attempt in editCashierOrderAction:", err);
+      }
+    }
+
+    // 3. Delete old order items & insert updated ones
     await supabase.from("order_items").delete().eq("order_id", orderId);
     await supabase.from("order_items").insert(orderItemsPayload);
 
-    // 3. Broadcast sync event across boards
-    broadcastSyncEvent({
-      type: "ORDER_PLACED",
-      orderId,
-      timestamp: Date.now(),
-      metadata: {
-        amountPaise: totalPaise,
-        itemsCount: items.length,
-      },
-    });
 
     return {
       success: true,
@@ -344,10 +375,12 @@ export async function editCashierOrderAction(
 export async function confirmCashierOrderAction(
   orderId: string,
   stationTarget: "KITCHEN" | "BARISTA" | "ALL" = "ALL",
-  staffName = "Cashier"
+  staffName = "Cashier",
+  paymentMethod = "UPI"
 ): Promise<ConfirmOrderResult> {
   const supabase = createAdminClient();
   const nowIso = new Date().toISOString();
+  const cleanMethod = (paymentMethod || "UPI").toUpperCase();
 
   try {
     // 1. Fetch current order with totals and items
@@ -410,7 +443,7 @@ export async function confirmCashierOrderAction(
         if (billId) {
           await supabase.from("payment_attempts").insert({
             bill_id: billId,
-            provider: "CASH",
+            provider: cleanMethod,
             amount: orderTotalPaise,
             currency: "INR",
             status: "CAPTURED",
@@ -438,18 +471,8 @@ export async function confirmCashierOrderAction(
       console.warn("status history insert notice:", histErr);
     }
 
-    // 4. Single broadcast instant real-time event to wake up Kitchen KDS, Barista Desk, and Customer Tracker
-    broadcastSyncEvent({
-      type: "ORDER_CONFIRMED",
-      orderId,
-      orderNo: currentOrder?.order_no,
-      status: "ACCEPTED",
-      timestamp: Date.now(),
-      metadata: {
-        stationTarget,
-        staffName,
-      },
-    });
+    // NOTE: Client-side CashierDashboard handles broadcastSyncEvent after this server action returns.
+    // broadcastSyncEvent is a no-op on the server (typeof window === "undefined").
 
     const destinationLabel =
       stationTarget === "KITCHEN"
@@ -461,7 +484,7 @@ export async function confirmCashierOrderAction(
     return {
       success: true,
       orderId,
-      message: `Order #${currentOrder?.order_no || ""} confirmed and dispatched to ${destinationLabel}!`,
+      message: `Order #${currentOrder?.order_no || ""} confirmed as ${cleanMethod} & dispatched to ${destinationLabel}!`,
     };
   } catch (err) {
     console.error("Error in confirmCashierOrderAction:", err);
@@ -506,12 +529,7 @@ export async function rejectCashierOrderAction(
       console.warn("status history reject insert notice:", histErr);
     }
 
-    broadcastSyncEvent({
-      type: "STATUS_CHANGED",
-      orderId,
-      status: "CANCELLED",
-      timestamp: Date.now(),
-    });
+    // NOTE: Client-side handles broadcastSyncEvent after this server action returns.
 
     return {
       success: true,
@@ -569,15 +587,7 @@ export async function clearAllPendingCashierOrdersAction(
       }
     }
 
-    broadcastSyncEvent({
-      type: "STATUS_CHANGED",
-      timestamp: Date.now(),
-      metadata: {
-        clearedCount: orderIds.length,
-        status: targetStatus,
-        staffName,
-      },
-    });
+    // NOTE: Client-side handles broadcastSyncEvent after this server action returns.
 
     return {
       success: true,
@@ -604,7 +614,7 @@ export interface PaidHistoryRecord {
   id: string;
   tableLabel: string;
   totalRupees: number;
-  paymentMethod: "UPI" | "CASH" | "CARD";
+  paymentMethod: "UPI" | "CASH" | "CARD" | "COMPLIMENTARY" | string;
   paidAt: string;
   itemsCount: number;
   items?: PaidHistoryItem[];
@@ -731,7 +741,7 @@ export async function fetchPaidCashierHistoryAction(): Promise<FetchPaidHistoryR
 
     // Also fetch payment attempts for session bills if available
     const billSessionIds = Array.from(tableLabelMap.keys());
-    const sessionPaymentMap = new Map<string, "UPI" | "CASH" | "CARD">();
+    const sessionPaymentMap = new Map<string, "UPI" | "CASH" | "CARD" | "COMPLIMENTARY" | string>();
     if (billSessionIds.length > 0) {
       try {
         const { data: bills } = await supabase
@@ -757,6 +767,8 @@ export async function fetchPaidCashierHistoryAction(): Promise<FetchPaidHistoryR
               sessionPaymentMap.set(b.table_session_id, "CASH");
             } else if (prov === "CARD") {
               sessionPaymentMap.set(b.table_session_id, "CARD");
+            } else if (prov === "COMPLIMENTARY" || prov?.includes("COMPLIMENTARY")) {
+              sessionPaymentMap.set(b.table_session_id, "COMPLIMENTARY");
             } else if (prov) {
               sessionPaymentMap.set(b.table_session_id, "UPI");
             }
@@ -773,8 +785,14 @@ export async function fetchPaidCashierHistoryAction(): Promise<FetchPaidHistoryR
         const orderItemsList = itemsByOrder.get(o.id) || [];
         const totalItemsCount = orderItemsList.reduce((acc, i) => acc + i.qty, 0) || 1;
         
-        let method: "UPI" | "CASH" | "CARD" = "CASH";
-        if (o.table_session_id && sessionPaymentMap.has(o.table_session_id)) {
+        let method: "UPI" | "CASH" | "CARD" | "COMPLIMENTARY" | string = "UPI";
+        const orderRawMethod = (o as unknown as { payment_method?: string }).payment_method?.toUpperCase();
+        if (orderRawMethod) {
+          if (orderRawMethod.includes("CASH")) method = "CASH";
+          else if (orderRawMethod.includes("CARD")) method = "CARD";
+          else if (orderRawMethod.includes("COMPLIMENTARY") || orderRawMethod.includes("PROMO")) method = "COMPLIMENTARY";
+          else method = "UPI";
+        } else if (o.table_session_id && sessionPaymentMap.has(o.table_session_id)) {
           method = sessionPaymentMap.get(o.table_session_id)!;
         }
 

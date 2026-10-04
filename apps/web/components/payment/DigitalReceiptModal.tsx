@@ -21,7 +21,7 @@ export interface ReceiptData {
   subtotalRupees: number;
   taxRupees: number;
   totalRupees: number;
-  paymentMethod: "UPI" | "CASH" | "CARD";
+  paymentMethod: "UPI" | "CASH" | "CARD" | "COMPLIMENTARY" | string;
   transactionId?: string;
   paidAt: string;
   merchantName?: string;

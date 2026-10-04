@@ -478,7 +478,7 @@ export async function placePaidOrderAction(
   const result = await placeOrderAction(items, idempotencyKey, rewardId, instructions, sessionOverride);
 
   const isCashierPayment = paymentMethod === "CASHIER" || paymentMethod === "COUNTER";
-  const targetStatus = isCashierPayment ? "DRAFT" : "SUBMITTED";
+  const targetStatus = isCashierPayment ? "DRAFT" : "ACCEPTED";
   const targetPaymentStatus = isCashierPayment ? "PENDING" : "PAID";
 
   if (result.success && result.orderId) {

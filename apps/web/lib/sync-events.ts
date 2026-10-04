@@ -10,6 +10,7 @@ export type SyncEventType =
   | "ORDER_PLACED"
   | "ORDER_CONFIRMED"
   | "ORDER_REJECTED"
+  | "ORDER_PENDING_CASHIER"
   | "STATUS_CHANGED"
   | "TICKET_STATUS_CHANGED"
   | "ITEM_AVAILABILITY_CHANGED"
@@ -47,6 +48,32 @@ const SUPABASE_BROADCAST_CHANNEL = "smol_orders_live";
 
 // Set of active event listeners across the application
 const syncListeners = new Set<(event: SyncPayload) => void>();
+
+// Singleton BroadcastChannel reference
+let globalBroadcastChannel: BroadcastChannel | null = null;
+
+function getOrInitBroadcastChannel(): BroadcastChannel | null {
+  if (typeof window === "undefined" || !("BroadcastChannel" in window)) return null;
+  if (!globalBroadcastChannel) {
+    try {
+      globalBroadcastChannel = new BroadcastChannel(CHANNEL_NAME);
+      globalBroadcastChannel.onmessage = (e) => {
+        if (e.data && e.data.type) {
+          syncListeners.forEach((listener) => {
+            try {
+              listener(e.data);
+            } catch (err) {
+              console.error("Error in BroadcastChannel listener:", err);
+            }
+          });
+        }
+      };
+    } catch {
+      globalBroadcastChannel = null;
+    }
+  }
+  return globalBroadcastChannel;
+}
 
 // Singleton Supabase broadcast channel reference
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -167,7 +194,7 @@ export function broadcastSyncEvent(event: SyncPayload): void {
     timestamp: Date.now(),
   };
 
-  // 1. Dispatch locally to all registered listeners in current page
+  // 1. Dispatch locally to all registered listeners in current page (0ms)
   syncListeners.forEach((listener) => {
     try {
       listener(payload);
@@ -176,12 +203,11 @@ export function broadcastSyncEvent(event: SyncPayload): void {
     }
   });
 
-  // 2. BroadcastChannel for active tabs in same origin
+  // 2. BroadcastChannel for active tabs in same origin (0ms across tabs - PERSISTENT, NEVER CLOSED PREMATURELY)
   try {
-    if ("BroadcastChannel" in window) {
-      const bc = new BroadcastChannel(CHANNEL_NAME);
+    const bc = getOrInitBroadcastChannel();
+    if (bc) {
       bc.postMessage(payload);
-      bc.close();
     }
   } catch {
     // BroadcastChannel error ignored
@@ -189,7 +215,7 @@ export function broadcastSyncEvent(event: SyncPayload): void {
 
   // 3. LocalStorage trigger for cross-window / background tabs in same origin
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...payload, _nonce: Date.now() + "_" + Math.random() }));
   } catch {
     // LocalStorage error ignored
   }
@@ -227,22 +253,9 @@ export function subscribeToSyncEvents(
   // Register in local listener set
   syncListeners.add(callback);
 
-  // Initialize Supabase WebSocket broadcast channel
+  // Initialize persistent BroadcastChannel and Supabase WebSocket broadcast channel
+  getOrInitBroadcastChannel();
   getOrInitSupabaseChannel();
-
-  let bc: BroadcastChannel | null = null;
-  try {
-    if ("BroadcastChannel" in window) {
-      bc = new BroadcastChannel(CHANNEL_NAME);
-      bc.onmessage = (e) => {
-        if (e.data && e.data.type) {
-          callback(e.data as SyncPayload);
-        }
-      };
-    }
-  } catch {
-    bc = null;
-  }
 
   const storageHandler = (e: StorageEvent) => {
     if (e.key === STORAGE_KEY && e.newValue) {
@@ -259,9 +272,6 @@ export function subscribeToSyncEvents(
 
   return () => {
     syncListeners.delete(callback);
-    if (bc) {
-      bc.close();
-    }
     window.removeEventListener("storage", storageHandler);
   };
 }
