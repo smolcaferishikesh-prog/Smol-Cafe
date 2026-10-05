@@ -168,6 +168,59 @@ export async function fetchAdminOverviewAction(): Promise<{
       }
     }
 
+    // 3.5. Fetch bills and payment attempts to accurately resolve payment method & financial ledger
+    const sessionIds = Array.from(
+      new Set(orders.map((o) => o.table_session_id).filter((id): id is string => Boolean(id)))
+    );
+
+    const orderPaymentProviderMap = new Map<string, string>();
+    const sessionPaymentProviderMap = new Map<string, string>();
+
+    if (sessionIds.length > 0) {
+      try {
+        const { data: bills } = await supabase
+          .from("bills")
+          .select("id, table_session_id")
+          .in("table_session_id", sessionIds);
+
+        if (bills && bills.length > 0) {
+          const billIds = bills.map((b) => b.id);
+          const billToSessionMap = new Map<string, string>();
+          for (const b of bills) {
+            billToSessionMap.set(b.id, b.table_session_id);
+          }
+
+          const { data: paymentAttempts } = await supabase
+            .from("payment_attempts")
+            .select("id, bill_id, provider, status, idempotency_key, created_at")
+            .in("bill_id", billIds)
+            .order("created_at", { ascending: true });
+
+          for (const att of paymentAttempts || []) {
+            if (!att.provider) continue;
+            const providerUpper = att.provider.trim().toUpperCase();
+
+            // 1. Direct order link via idempotency_key (format: cashier_confirm_${orderId}_... or cashier_edit_${orderId}_...)
+            if (att.idempotency_key) {
+              for (const ordId of orderIds) {
+                if (att.idempotency_key.includes(ordId)) {
+                  orderPaymentProviderMap.set(ordId, providerUpper);
+                }
+              }
+            }
+
+            // 2. Table Session link
+            const sessId = billToSessionMap.get(att.bill_id);
+            if (sessId) {
+              sessionPaymentProviderMap.set(sessId, providerUpper);
+            }
+          }
+        }
+      } catch (payErr) {
+        console.warn("[fetchAdminOverviewAction] Notice resolving payment attempts:", payErr);
+      }
+    }
+
     // 4. Map Orders and compute aggregates
     let grossRevenuePaise = 0;
     let pendingKdsTickets = 0;
@@ -211,18 +264,56 @@ export async function fetchAdminOverviewAction(): Promise<{
       const totalRupees = Math.round((o.total_snapshot || 0) / 100);
 
       // Payment method resolution
-      const rawMethod = (o as unknown as { payment_method?: string }).payment_method?.toUpperCase() || "UPI";
+      let rawMethod = "";
+      if (orderPaymentProviderMap.has(o.id)) {
+        rawMethod = orderPaymentProviderMap.get(o.id)!;
+      } else if (o.table_session_id && sessionPaymentProviderMap.has(o.table_session_id)) {
+        rawMethod = sessionPaymentProviderMap.get(o.table_session_id)!;
+      } else if ((o as unknown as { payment_method?: string }).payment_method) {
+        rawMethod = (o as unknown as { payment_method?: string }).payment_method!.toUpperCase();
+      }
+
+      const upper = (rawMethod || "").toUpperCase();
       let methodLabel = "PAID (UPI)";
-      let paymentCategory = "UPI";
-      if (rawMethod.includes("CASH")) {
+      let paymentCategory: "UPI" | "CASH" | "CARD" = "UPI";
+      let displayMethod = "UPI";
+
+      if (upper.includes("CASH")) {
         methodLabel = "PAID (CASH)";
         paymentCategory = "CASH";
-      } else if (rawMethod.includes("CARD") || rawMethod.includes("APPLE_PAY")) {
+        displayMethod = "CASH";
+      } else if (upper.includes("CARD") || upper.includes("APPLE_PAY") || upper.includes("POS")) {
         methodLabel = "PAID (CARD)";
         paymentCategory = "CARD";
-      } else if (rawMethod.includes("TEST")) {
+        displayMethod = "CARD";
+      } else if (upper.includes("COMPLIMENTARY") || upper.includes("PROMO") || upper.includes("FREE")) {
+        methodLabel = "COMPLIMENTARY";
+        paymentCategory = "CASH";
+        displayMethod = "COMPLIMENTARY";
+      } else if (upper.includes("TEST") || upper.includes("BYPASS")) {
         methodLabel = "PAID (TEST_MODE)";
         paymentCategory = "UPI";
+        displayMethod = "TEST_MODE";
+      } else if (upper.includes("RAZORPAY") || upper.includes("ONLINE")) {
+        methodLabel = "PAID (ONLINE)";
+        paymentCategory = "CARD";
+        displayMethod = "ONLINE";
+      } else if (upper.includes("UPI")) {
+        methodLabel = "PAID (UPI)";
+        paymentCategory = "UPI";
+        displayMethod = "UPI";
+      } else {
+        const isUnconfirmed = o.status === "DRAFT" || o.status === "PENDING_CONFIRMATION";
+        const hasPaymentStatus = (o as unknown as { payment_status?: string }).payment_status;
+        if (isUnconfirmed && (!hasPaymentStatus || hasPaymentStatus === "PENDING")) {
+          methodLabel = "UNPAID (PENDING)";
+          paymentCategory = "UPI";
+          displayMethod = "PENDING";
+        } else {
+          methodLabel = "PAID (UPI)";
+          paymentCategory = "UPI";
+          displayMethod = "UPI";
+        }
       }
 
       if (o.status !== "CANCELLED" && o.status !== "REJECTED") {
@@ -277,7 +368,7 @@ export async function fetchAdminOverviewAction(): Promise<{
         status: o.status,
         totalRupees,
         paymentStatus: methodLabel,
-        paymentMethod: rawMethod,
+        paymentMethod: displayMethod,
         createdAt: relativeTime,
         rawCreatedAt: o.created_at,
       });
@@ -286,7 +377,14 @@ export async function fetchAdminOverviewAction(): Promise<{
       if (o.status !== "CANCELLED" && o.status !== "REJECTED") {
         mappedPayments.push({
           txn: `TXN/${orderDate.getFullYear()}/${(o.id || "").replace(/[^0-9]/g, "").slice(-8) || "89412984"}`,
-          mode: paymentCategory === "CASH" ? "Cash Tendered" : paymentCategory === "CARD" ? "Card / NFC Tap" : "UPI Direct QR",
+          mode:
+            displayMethod === "COMPLIMENTARY"
+              ? "Complimentary / Promo"
+              : paymentCategory === "CASH"
+              ? "Cash Tendered"
+              : paymentCategory === "CARD"
+              ? "Card / NFC Tap"
+              : "UPI Direct QR",
           amt: `₹${totalRupees}`,
           ord: `ORD-${o.order_no || o.id.slice(-4)}`,
           st: o.status === "COMPLETED" || o.status === "SERVED" ? "SETTLED" : "VERIFIED",

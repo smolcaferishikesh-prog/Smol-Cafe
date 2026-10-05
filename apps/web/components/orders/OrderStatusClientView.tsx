@@ -3,12 +3,11 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { useRouter } from "next/navigation";
 import { fetchActiveOrdersAction, type CustomerOrderDetails } from "@/app/orders/actions";
 import type { OrderStatus } from "@smol-cafe/db";
 import { OrderCard } from "./OrderCard";
 import { ConversationDeckModal } from "./ConversationDeckModal";
-import { Bell, BellRing, CheckCircle2, Sparkles, CreditCard, Tag, Receipt, Star, ExternalLink, MapPin } from "lucide-react";
+import { Bell, BellRing, CheckCircle2, Sparkles, Receipt, ExternalLink } from "lucide-react";
 import { useSupabaseRealtime } from "@/hooks/useSupabaseRealtime";
 import { subscribeToSyncEvents } from "@/lib/sync-events";
 import { createTableJsonTag } from "@/lib/table-tag";
@@ -33,8 +32,11 @@ export const OrderStatusClientView: React.FC<OrderStatusClientViewProps> = ({
   hasSession,
   guestName = "",
 }) => {
-  const router = useRouter();
   const [orders, setOrders] = useState<CustomerOrderDetails[]>(initialOrders);
+  const ordersRef = useRef<CustomerOrderDetails[]>(orders);
+  useEffect(() => {
+    ordersRef.current = orders;
+  }, [orders]);
   const [currentGuestName, setCurrentGuestName] = useState(guestName);
   const [isDeckOpen, setIsDeckOpen] = useState(false);
   const [isJsonInspectorOpen, setIsJsonInspectorOpen] = useState(false);
@@ -62,7 +64,11 @@ export const OrderStatusClientView: React.FC<OrderStatusClientViewProps> = ({
   const displayTable = (tableLabel || "01").replace(/^(table|t)[-\s_]*/i, "").trim().padStart(2, "0");
   const tableJsonTag = createTableJsonTag(displayTable);
 
+  const isRefreshingRef = useRef(false);
+
   const refreshOrders = useCallback(async () => {
+    if (isRefreshingRef.current) return;
+    isRefreshingRef.current = true;
     try {
       let clientPhone: string | undefined = undefined;
       if (typeof window !== "undefined") {
@@ -98,6 +104,8 @@ export const OrderStatusClientView: React.FC<OrderStatusClientViewProps> = ({
       }
     } catch (err) {
       console.error("Failed to refresh active orders:", err);
+    } finally {
+      isRefreshingRef.current = false;
     }
   }, [tableLabel, currentGuestName]);
 
@@ -121,13 +129,18 @@ export const OrderStatusClientView: React.FC<OrderStatusClientViewProps> = ({
           }
         }
         prevStatusesRef.current[event.orderId] = newStatus;
-        setOrders((prev) =>
-          prev.map((o) =>
-            o.id === event.orderId ? { ...o, status: newStatus } : o
-          )
-        );
+        const exists = ordersRef.current.some((o) => o.id === event.orderId);
+        if (!exists) {
+          void refreshOrders();
+        } else {
+          setOrders((prev) =>
+            prev.map((o) =>
+              o.id === event.orderId ? { ...o, status: newStatus } : o
+            )
+          );
+        }
       } else {
-        refreshOrders();
+        void refreshOrders();
       }
     });
     return () => unsub();
@@ -136,7 +149,7 @@ export const OrderStatusClientView: React.FC<OrderStatusClientViewProps> = ({
   // 2. Supabase Realtime WebSocket subscription for Customer Order Status Updates
   useSupabaseRealtime({
     table: "orders",
-    onData: (payload: any) => {
+    onData: (payload: { new?: { id?: string; status?: string; order_no?: number } | null }) => {
       const newRow = payload?.new;
       if (newRow && newRow.id && newRow.status) {
         const newStatus = newRow.status as OrderStatus;
@@ -155,36 +168,60 @@ export const OrderStatusClientView: React.FC<OrderStatusClientViewProps> = ({
           }
         }
         prevStatusesRef.current[newRow.id] = newStatus;
-        setOrders((prev) =>
-          prev.map((o) =>
-            o.id === newRow.id ? { ...o, status: newStatus } : o
-          )
-        );
+        const exists = ordersRef.current.some((o) => o.id === newRow.id);
+        if (!exists) {
+          void refreshOrders();
+        } else {
+          setOrders((prev) =>
+            prev.map((o) =>
+              o.id === newRow.id ? { ...o, status: newStatus } : o
+            )
+          );
+        }
       } else {
-        refreshOrders();
+        void refreshOrders();
       }
     },
     enabled: true,
   });
 
-  // 3. Window Focus & Fallback Polling Timer for Realtime Sync
+  // 3. Window Focus & Fallback Polling Timer with non-overlapping execution
   useEffect(() => {
     let isMounted = true;
-    const handleFocus = () => {
-      if (isMounted) refreshOrders();
-    };
-    window.addEventListener("focus", handleFocus);
+    let pollTimer: ReturnType<typeof setTimeout> | null = null;
 
-    const intervalId = setInterval(() => {
-      if (isMounted) {
-        refreshOrders();
+    const schedulePoll = () => {
+      if (!isMounted) return;
+      const interval = typeof document !== "undefined" && document.visibilityState === "visible" ? 1500 : 8000;
+      pollTimer = setTimeout(async () => {
+        if (!isMounted) return;
+        await refreshOrders();
+        schedulePoll();
+      }, interval);
+    };
+
+    const handleFocus = () => {
+      if (isMounted) void refreshOrders();
+    };
+
+    const handleVisibility = () => {
+      if (isMounted && document.visibilityState === "visible") {
+        void refreshOrders();
       }
-    }, 30000);
+    };
+
+    window.addEventListener("focus", handleFocus);
+    document.addEventListener("visibilitychange", handleVisibility);
+
+    // Initial trigger and start schedule
+    void refreshOrders();
+    schedulePoll();
 
     return () => {
       isMounted = false;
-      clearInterval(intervalId);
+      if (pollTimer) clearTimeout(pollTimer);
       window.removeEventListener("focus", handleFocus);
+      document.removeEventListener("visibilitychange", handleVisibility);
     };
   }, [refreshOrders]);
 

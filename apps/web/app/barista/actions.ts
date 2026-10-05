@@ -88,8 +88,8 @@ export async function fetchBaristaOrdersAction(): Promise<FetchBaristaOrdersResu
       .filter((id): id is string => Boolean(id));
 
     const missingNameIds = (orderItems || [])
-      .filter((it: any) => (!it.name_snapshot || it.name_snapshot === "Smol Item" || it.name_snapshot === "Artisanal Item") && it.menu_item_id)
-      .map((it: any) => it.menu_item_id);
+      .filter((it: { name_snapshot?: string | null; menu_item_id?: string | null }) => (!it.name_snapshot || it.name_snapshot === "Smol Item" || it.name_snapshot === "Artisanal Item") && it.menu_item_id)
+      .map((it: { menu_item_id?: string | null }) => it.menu_item_id as string);
 
     // 3. Parallelize Dining Tables & Menu Items lookup concurrently
     const [tablesRes, dbMenuItemsRes] = await Promise.all([
@@ -176,9 +176,10 @@ export async function fetchBaristaOrdersAction(): Promise<FetchBaristaOrdersResu
     }
 
     return { success: true, orders: tickets };
-  } catch (err: any) {
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "Failed to fetch barista orders.";
     console.error("fetchBaristaOrdersAction error:", err);
-    return { success: false, orders: [], message: err?.message || "Failed to fetch barista orders." };
+    return { success: false, orders: [], message };
   }
 }
 
@@ -232,9 +233,10 @@ export async function transitionBaristaOrderStatusAction(
     // broadcastSyncEvent is a no-op on the server (typeof window === "undefined").
 
     return { success: true, currentStatus: toStatus, message: `Brew status updated to ${toStatus}` };
-  } catch (err: any) {
+  } catch (err: unknown) {
     captureAppException(err, { requestId, orderId });
-    return { success: false, message: err?.message || "Internal server error." };
+    const message = err instanceof Error ? err.message : "Internal server error.";
+    return { success: false, message };
   }
 }
 
@@ -243,7 +245,7 @@ export async function transitionBaristaOrderStatusAction(
  */
 export async function fetchSingleBaristaTicketAction(
   orderId: string
-): Promise<{ success: boolean; ticket?: BaristaTicket }> {
+): Promise<{ success: boolean; ticket?: BaristaTicket; reason?: string }> {
   try {
     const supabase = createAdminClient();
     const { data: o, error } = await supabase
@@ -285,16 +287,16 @@ export async function fetchSingleBaristaTicketAction(
 
     // Resolve any missing name snapshots from menu_items table
     const missingNameIds = (orderItems || [])
-      .filter((it: any) => (!it.name_snapshot || it.name_snapshot === "Smol Item" || it.name_snapshot === "Artisanal Item") && it.menu_item_id)
-      .map((it: any) => it.menu_item_id);
+      .filter((it: { name_snapshot?: string | null; menu_item_id?: string | null }) => (!it.name_snapshot || it.name_snapshot === "Smol Item" || it.name_snapshot === "Artisanal Item") && it.menu_item_id)
+      .map((it: { menu_item_id?: string | null }) => it.menu_item_id as string);
 
-    let nameMap = new Map<string, string>();
+    const nameMap = new Map<string, string>();
     if (missingNameIds.length > 0) {
       const { data: items } = await supabase.from("menu_items").select("id, name").in("id", missingNameIds);
       (items || []).forEach((m) => nameMap.set(m.id, m.name));
     }
 
-    const items: BaristaOrderItem[] = (orderItems || []).map((item: any) => {
+    const items: BaristaOrderItem[] = (orderItems || []).map((item: { id: string; name_snapshot?: string | null; menu_item_id?: string | null; qty?: number; item_status?: BaristaOrderItem["itemStatus"] }) => {
       const resolvedName =
         item.name_snapshot && item.name_snapshot !== "Smol Item" && item.name_snapshot !== "Artisanal Item"
           ? item.name_snapshot
@@ -311,7 +313,7 @@ export async function fetchSingleBaristaTicketAction(
 
     const beverageItems = items.filter((item) => item.isBeverage);
     if (beverageItems.length === 0) {
-      return { success: false };
+      return { success: false, reason: "NO_BEVERAGE_ITEMS" };
     }
 
     const ticket: BaristaTicket = {
@@ -345,16 +347,19 @@ export async function checkStaffAuthAction(): Promise<boolean> {
   return Boolean(cookieStore.get(STAFF_SESSION_COOKIE)?.value);
 }
 
+import { getStoredCredentials } from "@/app/smol-backdoor/actions";
+
 /**
  * Server Action: Staff login
  */
 export async function staffLoginAction(
   pinOrPassword: string
 ): Promise<{ success: boolean; message?: string }> {
-  const validPins = ["1234", "smol2026", "chef", "barista", "coffee"];
-  if (validPins.includes(pinOrPassword.trim().toLowerCase())) {
+  const creds = await getStoredCredentials();
+  const trimmed = pinOrPassword.trim();
+  if (trimmed === creds.barista.pin || (creds.admin.password && trimmed === creds.admin.password)) {
     const cookieStore = await cookies();
-    cookieStore.set(STAFF_SESSION_COOKIE, "authenticated", {
+    cookieStore.set(STAFF_SESSION_COOKIE, "barista", {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       sameSite: "lax",
@@ -364,7 +369,7 @@ export async function staffLoginAction(
     return { success: true };
   }
 
-  return { success: false, message: "Invalid staff passcode. Try: 1234" };
+  return { success: false, message: "Invalid Barista Station PIN." };
 }
 
 /**

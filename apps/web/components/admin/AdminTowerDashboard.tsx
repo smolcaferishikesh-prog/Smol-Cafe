@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import {
@@ -184,7 +184,7 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
   const [pinFeedback, setPinFeedback] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
   useEffect(() => {
-    getRoleCredentialsAction()
+    getRoleCredentialsAction(true)
       .then((res) => {
         if (res.success && res.credentials) {
           setRoleCredentials(res.credentials);
@@ -195,9 +195,9 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
 
   const handleOpenEditPin = (roleCred: RoleCredential) => {
     setEditingRole(roleCred);
-    setEditPinValue(roleCred.pin);
+    setEditPinValue(roleCred.pin === "****" ? "" : roleCred.pin);
     setEditPasswordValue(roleCred.password || "");
-    setShowPinMask(false);
+    setShowPinMask(true);
     setPinFeedback(null);
   };
 
@@ -648,9 +648,15 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
     item_croissant_butter: true, // example 1 item sold out
   });
 
+  const isRefreshingRef = useRef(false);
+
   // Re-fetch function
-  const refreshData = async () => {
-    setIsRefreshing(true);
+  const refreshData = async (isBackground = false) => {
+    if (isRefreshingRef.current) return;
+    isRefreshingRef.current = true;
+    if (!isBackground) {
+      setIsRefreshing(true);
+    }
     try {
       const res = await fetchAdminOverviewAction();
       if (res.success && res.data) {
@@ -661,26 +667,64 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
     } catch (e) {
       console.error("Failed to refresh admin data:", e);
     } finally {
-      setIsRefreshing(false);
+      isRefreshingRef.current = false;
+      if (!isBackground) {
+        setIsRefreshing(false);
+      }
     }
   };
 
-  // Real-Time Sync Subscription
+  // Real-Time Sync Subscription & Non-Overlapping Polling
   useEffect(() => {
-    refreshData();
+    let isMounted = true;
+    let pollTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const schedulePoll = () => {
+      if (!isMounted) return;
+      const interval = typeof document !== "undefined" && document.visibilityState === "visible" ? 2500 : 10000;
+      pollTimer = setTimeout(async () => {
+        if (!isMounted) return;
+        await refreshData(true);
+        schedulePoll();
+      }, interval);
+    };
 
     const unsub = subscribeToSyncEvents((ev) => {
-      console.log("[AdminTower] Sync event received:", ev.type);
-      refreshData();
+      if (isMounted) {
+        void refreshData(true);
+        if (ev.type === "SETTINGS_UPDATED") {
+          void getRoleCredentialsAction(true).then((res) => {
+            if (res.success && res.credentials) {
+              setRoleCredentials(res.credentials);
+            }
+          });
+        }
+      }
     });
 
-    const interval = setInterval(() => {
-      refreshData();
-    }, 12000);
+    const handleFocus = () => {
+      if (isMounted) void refreshData(true);
+    };
+
+    const handleVisibility = () => {
+      if (isMounted && document.visibilityState === "visible") {
+        void refreshData(true);
+      }
+    };
+
+    window.addEventListener("focus", handleFocus);
+    document.addEventListener("visibilitychange", handleVisibility);
+
+    // Initial load and start scheduling
+    void refreshData(false);
+    schedulePoll();
 
     return () => {
+      isMounted = false;
       unsub();
-      clearInterval(interval);
+      if (pollTimer) clearTimeout(pollTimer);
+      window.removeEventListener("focus", handleFocus);
+      document.removeEventListener("visibilitychange", handleVisibility);
     };
   }, []);
 
@@ -1522,7 +1566,49 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
                             </span>
                           </td>
                           <td className="p-3.5 font-bold font-serif text-[#241F1C] dark:text-white">₹{o.totalRupees}</td>
-                          <td className="p-3.5 text-[11px] text-[#725039] dark:text-stone-400">{o.paymentStatus}</td>
+                          <td className="p-3.5 whitespace-nowrap">
+                            {o.paymentMethod === "CARD" || o.paymentStatus.includes("CARD") ? (
+                              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-white dark:bg-stone-800 border border-[#C9AE8B]/40 dark:border-stone-700 shadow-2xs font-mono text-[10px] font-bold text-stone-800 dark:text-stone-200">
+                                <Image
+                                  src="/icon_card_hd.png"
+                                  alt="Card"
+                                  width={14}
+                                  height={14}
+                                  className="h-3.5 w-auto object-contain drop-shadow-2xs"
+                                />
+                                <span>CARD</span>
+                              </span>
+                            ) : o.paymentMethod === "CASH" || o.paymentStatus.includes("CASH") ? (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800/50">
+                                CASH
+                              </span>
+                            ) : o.paymentMethod === "COMPLIMENTARY" || o.paymentStatus.includes("COMPLIMENTARY") ? (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-purple-100 dark:bg-purple-950 text-purple-800 dark:text-purple-300 border border-purple-300 dark:border-purple-800/50">
+                                COMPLIMENTARY
+                              </span>
+                            ) : o.paymentStatus.includes("PENDING") || o.paymentStatus.includes("UNPAID") ? (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-800/50">
+                                PENDING
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-white dark:bg-stone-800 border border-[#C9AE8B]/40 dark:border-stone-700 shadow-2xs">
+                                <Image
+                                  src="/upi-logo-trimmed.png"
+                                  alt="UPI"
+                                  width={28}
+                                  height={10}
+                                  className="h-3 w-auto object-contain dark:hidden"
+                                />
+                                <Image
+                                  src="/upi-logo-dark.png"
+                                  alt="UPI"
+                                  width={28}
+                                  height={10}
+                                  className="h-3 w-auto object-contain hidden dark:block"
+                                />
+                              </span>
+                            )}
+                          </td>
                           <td className="p-3.5 text-right">
                             <button
                               onClick={() => setInspectingOrder(o)}

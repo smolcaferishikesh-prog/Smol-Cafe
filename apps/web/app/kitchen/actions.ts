@@ -50,7 +50,7 @@ export interface TransitionOrderResult {
 /**
  * Server Action: Fast single kitchen ticket fetch for instant realtime hydration (15ms vs 600ms)
  */
-export async function fetchSingleKitchenTicketAction(orderId: string): Promise<{ success: boolean; ticket?: KitchenTicket }> {
+export async function fetchSingleKitchenTicketAction(orderId: string): Promise<{ success: boolean; ticket?: KitchenTicket; reason?: string }> {
   const supabase = createAdminClient();
   try {
     const { data: order, error: orderErr } = await supabase.from("orders").select("*").eq("id", orderId).maybeSingle();
@@ -77,16 +77,16 @@ export async function fetchSingleKitchenTicketAction(orderId: string): Promise<{
     
     // Resolve any missing name snapshots from menu_items table
     const missingNameIds = (orderItems || [])
-      .filter((it: any) => (!it.name_snapshot || it.name_snapshot === "Smol Item" || it.name_snapshot === "Artisanal Item") && it.menu_item_id)
-      .map((it: any) => it.menu_item_id);
+      .filter((it: { name_snapshot?: string | null; menu_item_id?: string | null }) => (!it.name_snapshot || it.name_snapshot === "Smol Item" || it.name_snapshot === "Artisanal Item") && it.menu_item_id)
+      .map((it: { menu_item_id?: string | null }) => it.menu_item_id as string);
 
-    let nameMap = new Map<string, string>();
+    const nameMap = new Map<string, string>();
     if (missingNameIds.length > 0) {
       const { data: items } = await supabase.from("menu_items").select("id, name").in("id", missingNameIds);
       (items || []).forEach((m) => nameMap.set(m.id, m.name));
     }
 
-    const allItems: KitchenOrderItem[] = (orderItems || []).map((it: any) => {
+    const allItems: KitchenOrderItem[] = (orderItems || []).map((it: { id: string; name_snapshot?: string | null; menu_item_id?: string | null; qty?: number; item_status?: KitchenOrderItem["itemStatus"] }) => {
       const resolvedName =
         it.name_snapshot && it.name_snapshot !== "Smol Item" && it.name_snapshot !== "Artisanal Item"
           ? it.name_snapshot
@@ -103,7 +103,7 @@ export async function fetchSingleKitchenTicketAction(orderId: string): Promise<{
     // Filter to ONLY food items (drinks belong exclusively to Barista)
     const foodItems = allItems.filter((it) => !isBeverageItem(it.name));
     if (foodItems.length === 0) {
-      return { success: false };
+      return { success: false, reason: "NO_FOOD_ITEMS" };
     }
 
     const ticket: KitchenTicket = {
@@ -178,8 +178,8 @@ export async function fetchKitchenOrdersAction(): Promise<FetchKitchenOrdersResu
       .filter((id): id is string => Boolean(id));
 
     const missingNameIds = (orderItems || [])
-      .filter((it: any) => (!it.name_snapshot || it.name_snapshot === "Smol Item" || it.name_snapshot === "Artisanal Item") && it.menu_item_id)
-      .map((it: any) => it.menu_item_id);
+      .filter((it: { name_snapshot?: string | null; menu_item_id?: string | null }) => (!it.name_snapshot || it.name_snapshot === "Smol Item" || it.name_snapshot === "Artisanal Item") && it.menu_item_id)
+      .map((it: { menu_item_id?: string | null }) => it.menu_item_id as string);
 
     // 3. Parallelize Dining Tables & Menu Items lookup concurrently
     const [tablesRes, dbMenuItemsRes] = await Promise.all([
@@ -447,17 +447,19 @@ export async function transitionOrderStatusAction(
   }
 }
 
+import { getStoredCredentials } from "@/app/smol-backdoor/actions";
+
 /**
  * Server Action: Staff login
  */
 export async function staffLoginAction(
   pinOrPassword: string
 ): Promise<{ success: boolean; message?: string }> {
-  // Simple staff authentication for kitchen tablet
-  const validPins = ["1234", "smol2026", "chef", "kitchen"];
-  if (validPins.includes(pinOrPassword.trim().toLowerCase())) {
+  const creds = await getStoredCredentials();
+  const trimmed = pinOrPassword.trim();
+  if (trimmed === creds.kitchen.pin || (creds.admin.password && trimmed === creds.admin.password)) {
     const cookieStore = await cookies();
-    cookieStore.set(STAFF_SESSION_COOKIE, "authenticated", {
+    cookieStore.set(STAFF_SESSION_COOKIE, "kitchen", {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       sameSite: "lax",
@@ -467,7 +469,7 @@ export async function staffLoginAction(
     return { success: true };
   }
 
-  return { success: false, message: "Invalid staff passcode. Try: 1234" };
+  return { success: false, message: "Invalid Kitchen Station PIN." };
 }
 
 /**
