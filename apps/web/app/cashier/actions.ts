@@ -393,14 +393,20 @@ export async function confirmCashierOrderAction(
     const orderTotalPaise = currentOrder?.total_snapshot || 0;
     const sessionId = currentOrder?.table_session_id;
 
-    // 2. Mark order as ACCEPTED in PostgreSQL
+    // 2. Mark order as ACCEPTED and PAID in PostgreSQL
+    const orderUpdatePayload: Record<string, unknown> = {
+      status: "ACCEPTED",
+      payment_status: "PAID",
+      accepted_at: nowIso,
+      updated_at: nowIso,
+    };
+    if (isMockDatabase()) {
+      orderUpdatePayload.payment_method = cleanMethod;
+    }
+
     const { error: updateErr } = await supabase
       .from("orders")
-      .update({
-        status: "ACCEPTED",
-        accepted_at: nowIso,
-        updated_at: nowIso,
-      })
+      .update(orderUpdatePayload)
       .eq("id", orderId);
 
     if (updateErr) {
@@ -742,6 +748,7 @@ export async function fetchPaidCashierHistoryAction(): Promise<FetchPaidHistoryR
     // Also fetch payment attempts for session bills if available
     const billSessionIds = Array.from(tableLabelMap.keys());
     const sessionPaymentMap = new Map<string, "UPI" | "CASH" | "CARD" | "COMPLIMENTARY" | string>();
+    const orderAttemptMap = new Map<string, string>();
     if (billSessionIds.length > 0) {
       try {
         const { data: bills } = await supabase
@@ -753,12 +760,20 @@ export async function fetchPaidCashierHistoryAction(): Promise<FetchPaidHistoryR
           const billIds = bills.map((b) => b.id);
           const { data: attempts } = await supabase
             .from("payment_attempts")
-            .select("bill_id, provider")
+            .select("bill_id, provider, idempotency_key")
             .in("bill_id", billIds);
 
           const billProviderMap = new Map<string, string>();
           for (const att of attempts || []) {
+            if (!att.provider) continue;
             billProviderMap.set(att.bill_id, att.provider);
+            if (att.idempotency_key) {
+              for (const ord of orders || []) {
+                if (att.idempotency_key.includes(ord.id)) {
+                  orderAttemptMap.set(ord.id, att.provider.trim().toUpperCase());
+                }
+              }
+            }
           }
 
           for (const b of bills) {
@@ -786,14 +801,22 @@ export async function fetchPaidCashierHistoryAction(): Promise<FetchPaidHistoryR
         const totalItemsCount = orderItemsList.reduce((acc, i) => acc + i.qty, 0) || 1;
         
         let method: "UPI" | "CASH" | "CARD" | "COMPLIMENTARY" | string = "UPI";
-        const orderRawMethod = (o as unknown as { payment_method?: string }).payment_method?.toUpperCase();
-        if (orderRawMethod) {
-          if (orderRawMethod.includes("CASH")) method = "CASH";
-          else if (orderRawMethod.includes("CARD")) method = "CARD";
-          else if (orderRawMethod.includes("COMPLIMENTARY") || orderRawMethod.includes("PROMO")) method = "COMPLIMENTARY";
+        if (orderAttemptMap.has(o.id)) {
+          const prov = orderAttemptMap.get(o.id)!;
+          if (prov.includes("CASH")) method = "CASH";
+          else if (prov.includes("CARD")) method = "CARD";
+          else if (prov.includes("COMPLIMENTARY") || prov.includes("PROMO")) method = "COMPLIMENTARY";
           else method = "UPI";
-        } else if (o.table_session_id && sessionPaymentMap.has(o.table_session_id)) {
-          method = sessionPaymentMap.get(o.table_session_id)!;
+        } else {
+          const orderRawMethod = (o as unknown as { payment_method?: string }).payment_method?.toUpperCase();
+          if (orderRawMethod) {
+            if (orderRawMethod.includes("CASH")) method = "CASH";
+            else if (orderRawMethod.includes("CARD")) method = "CARD";
+            else if (orderRawMethod.includes("COMPLIMENTARY") || orderRawMethod.includes("PROMO")) method = "COMPLIMENTARY";
+            else method = "UPI";
+          } else if (o.table_session_id && sessionPaymentMap.has(o.table_session_id)) {
+            method = sessionPaymentMap.get(o.table_session_id)!;
+          }
         }
 
         let tableLabel = "01";

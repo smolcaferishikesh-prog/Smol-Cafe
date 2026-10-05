@@ -98,8 +98,14 @@ export const CashierDashboard: React.FC<CashierDashboardProps> = ({
     changeRupees?: number;
   } | null>(null);
 
-  const refreshData = useCallback(async () => {
-    setIsRefreshing(true);
+  const isRefreshingRef = useRef(false);
+
+  const refreshData = useCallback(async (isBackground = false) => {
+    if (isRefreshingRef.current) return;
+    isRefreshingRef.current = true;
+    if (!isBackground) {
+      setIsRefreshing(true);
+    }
     try {
       const [tableData, pendingData, paidData] = await Promise.all([
         fetchActiveCashierTablesAction(),
@@ -131,19 +137,22 @@ export const CashierDashboard: React.FC<CashierDashboardProps> = ({
     } catch (err) {
       console.error("Failed to refresh cashier data:", err);
     } finally {
-      setIsRefreshing(false);
+      isRefreshingRef.current = false;
+      if (!isBackground) {
+        setIsRefreshing(false);
+      }
     }
   }, []);
 
   // Instant refresh for realtime updates without artificial delays
   const instantRefresh = useCallback(() => {
-    refreshData();
+    void refreshData(true);
   }, [refreshData]);
 
   // Supabase Real-time subscriptions for cross-device live updates
   useSupabaseRealtime({
     table: "orders",
-    onData: (payload: any) => {
+    onData: (payload: { new?: { id?: string; status?: string } | null }) => {
       const newRow = payload?.new;
       if (newRow && newRow.id) {
         if (
@@ -163,10 +172,10 @@ export const CashierDashboard: React.FC<CashierDashboardProps> = ({
               soundManager.playCashierIncomingOrderAlert();
             }
           }
-          refreshData();
+          void refreshData(true);
         }
       } else {
-        refreshData();
+        void refreshData(true);
       }
     },
   });
@@ -175,45 +184,67 @@ export const CashierDashboard: React.FC<CashierDashboardProps> = ({
 
   const handleOpenTableForGuest = async (label: string) => {
     await openTableSessionAction(label);
-    refreshData();
+    void refreshData(true);
   };
 
   // Poll pending orders and tables + real-time event listener + window focus revalidation
   useEffect(() => {
-    refreshData();
+    let isMounted = true;
+    let pollTimer: ReturnType<typeof setTimeout> | null = null;
 
-    const handleFocus = () => refreshData();
-    window.addEventListener("focus", handleFocus);
+    const schedulePoll = () => {
+      if (!isMounted) return;
+      const interval = typeof document !== "undefined" && document.visibilityState === "visible" ? 1500 : 8000;
+      pollTimer = setTimeout(async () => {
+        if (!isMounted) return;
+        await refreshData(true);
+        schedulePoll();
+      }, interval);
+    };
 
-    const interval = setInterval(() => {
-      if (document.visibilityState === "visible") {
-        refreshData();
+    const handleFocus = () => {
+      if (isMounted) void refreshData(true);
+    };
+
+    const handleVisibility = () => {
+      if (isMounted && document.visibilityState === "visible") {
+        void refreshData(true);
       }
-    }, 3000);
+    };
+
+    window.addEventListener("focus", handleFocus);
+    document.addEventListener("visibilitychange", handleVisibility);
+
+    // Initial load and start scheduling
+    void refreshData(false);
+    schedulePoll();
 
     const unsubscribe = subscribeToSyncEvents((event) => {
+      if (!isMounted) return;
       if (event.type === "ORDER_PENDING_CASHIER" || event.status === "PENDING_CONFIRMATION") {
         if (event.orderId && !playedChimeOrderIdsRef.current.has(event.orderId)) {
           playedChimeOrderIdsRef.current.add(event.orderId);
           soundManager.playCashierIncomingOrderAlert();
         }
-        refreshData();
+        void refreshData(true);
         return;
       }
 
       if (event.orderId && event.status && ["ACCEPTED", "PREPARING", "READY", "SERVED", "COMPLETED", "CANCELLED"].includes(event.status)) {
         setPendingOrders((prev) => prev.filter((o) => o.id !== event.orderId));
       } else {
-        refreshData();
+        void refreshData(true);
       }
     });
 
     return () => {
-      clearInterval(interval);
+      isMounted = false;
+      if (pollTimer) clearTimeout(pollTimer);
       window.removeEventListener("focus", handleFocus);
+      document.removeEventListener("visibilitychange", handleVisibility);
       unsubscribe();
     };
-  }, [refreshData, instantRefresh]);
+  }, [refreshData]);
 
   const handleInitiateConfirm = (
     order: PendingOrderVerification,

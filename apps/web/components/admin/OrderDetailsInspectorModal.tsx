@@ -258,13 +258,27 @@ export const OrderDetailsInspectorModal: React.FC<OrderDetailsInspectorModalProp
                       />
                       <span>CARD</span>
                     </span>
+                  ) : order?.paymentMethod === "CASH" ? (
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800/50">
+                      CASH
+                    </span>
+                  ) : order?.paymentMethod === "COMPLIMENTARY" ? (
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-purple-100 dark:bg-purple-950 text-purple-800 dark:text-purple-300 border border-purple-300 dark:border-purple-800/50">
+                      COMPLIMENTARY
+                    </span>
                   ) : (
                     <span className="font-serif text-base font-bold text-[#241F1C] dark:text-white truncate">
                       {order?.paymentMethod}
                     </span>
                   )}
                 </div>
-                <p className="text-[10px] text-emerald-700 dark:text-emerald-400 font-bold truncate">
+                <p
+                  className={`text-[10px] font-bold truncate ${
+                    order?.paymentStatus?.includes("PENDING") || order?.paymentStatus?.includes("UNPAID")
+                      ? "text-amber-600 dark:text-amber-400"
+                      : "text-emerald-700 dark:text-emerald-400"
+                  }`}
+                >
                   {order?.paymentStatus || "PAID"}
                 </p>
               </div>

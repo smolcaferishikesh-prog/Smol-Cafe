@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import Image from "next/image";
-import type { KitchenTicket } from "@/app/kitchen/actions";
+import type { KitchenTicket, KitchenOrderItem } from "@/app/kitchen/actions";
 import {
   fetchKitchenOrdersAction,
   fetchSingleKitchenTicketAction,
@@ -128,14 +128,14 @@ export const KitchenBoardView: React.FC<KitchenBoardViewProps> = ({ initialOrder
 
   const isInitialLoadedRef = useRef(false);
 
-  const refreshOrders = useCallback(async () => {
+  const refreshOrders = useCallback(async (isManual = false) => {
     // If a refresh is currently running, queue this refresh so we don't drop updates
     if (isRefreshingRef.current) {
       pendingRefreshRef.current = true;
       return;
     }
     isRefreshingRef.current = true;
-    setIsRefreshing(true);
+    if (isManual) setIsRefreshing(true);
     try {
       const result = await fetchKitchenOrdersAction();
       if (result && result.success && Array.isArray(result.orders)) {
@@ -187,10 +187,12 @@ export const KitchenBoardView: React.FC<KitchenBoardViewProps> = ({ initialOrder
       console.warn("Kitchen orders sync retry scheduled:", err);
     } finally {
       isRefreshingRef.current = false;
-      setIsRefreshing(false);
+      if (isManual) setIsRefreshing(false);
       if (pendingRefreshRef.current) {
         pendingRefreshRef.current = false;
-        refreshOrders();
+        setTimeout(() => {
+          refreshOrders();
+        }, 100);
       }
     }
   }, [playChime]);
@@ -201,7 +203,7 @@ export const KitchenBoardView: React.FC<KitchenBoardViewProps> = ({ initialOrder
     syncRefreshTimerRef.current = setTimeout(() => {
       syncRefreshTimerRef.current = null;
       refreshOrders();
-    }, 1000); // 1000ms debounce allows server DB write to complete before refreshing
+    }, 1000);
   }, [refreshOrders]);
 
   const handleIncomingTicket = useCallback(
@@ -250,8 +252,8 @@ export const KitchenBoardView: React.FC<KitchenBoardViewProps> = ({ initialOrder
                 return [newTicket, ...prev];
               });
               playChime(newTicket.id);
-            } else {
-              // Instant fallback: If single fetch didn't return, refresh immediately (0ms delay)
+            } else if (result?.reason !== "NO_FOOD_ITEMS") {
+              // Only fallback to full refresh if it was not identified as drinks-only
               refreshOrders();
             }
           })
@@ -266,8 +268,8 @@ export const KitchenBoardView: React.FC<KitchenBoardViewProps> = ({ initialOrder
   // Supabase Realtime WebSocket subscription for Instant KDS Ticket updates
   useSupabaseRealtime({
     table: "orders",
-    onData: (payload: any) => {
-      const newRow = payload?.new;
+    onData: (payload) => {
+      const newRow = payload?.new as { id?: string; status?: string } | undefined;
       if (newRow && newRow.id) {
         // Do not chime or ingest orders awaiting cashier approval
         if (
@@ -285,20 +287,30 @@ export const KitchenBoardView: React.FC<KitchenBoardViewProps> = ({ initialOrder
     },
   });
 
-  // Real-Time Event Listener & Polling Fallback Loop
+  // Real-Time Event Listener & Non-Overlapping Polling Fallback Loop
   useEffect(() => {
-    // 1. Self-scheduling poll loop (avoids setInterval background tab throttling pile-up)
+    // 1. Safe, non-overlapping self-scheduling poll loop
     let pollActive = true;
-    const schedulePoll = () => {
+    let pollTimer: NodeJS.Timeout | null = null;
+
+    const scheduleNextPoll = () => {
       if (!pollActive) return;
-      setTimeout(() => {
+      pollTimer = setTimeout(async () => {
         if (!pollActive) return;
-        refreshOrders().finally(() => {
-          if (pollActive) schedulePoll();
-        });
-      }, 3000);
+        if (document.visibilityState === "visible") {
+          try {
+            await refreshOrders();
+          } catch {
+            // ignore background poll error
+          }
+        }
+        if (pollActive) {
+          scheduleNextPoll();
+        }
+      }, 1000);
     };
-    schedulePoll();
+
+    scheduleNextPoll();
 
     // 2. Cross-Interface Real-Time Sync Subscription
     const unsubscribe = subscribeToSyncEvents((event) => {
@@ -322,9 +334,27 @@ export const KitchenBoardView: React.FC<KitchenBoardViewProps> = ({ initialOrder
 
       // 1. Direct Instant Ingestion (0ms) if full ticket payload is attached from Cashier confirmation
       if (event.type === "ORDER_CONFIRMED") {
-        const ticketData = event.metadata?.ticket as any;
+        interface RawItem {
+          id?: string;
+          name: string;
+          qty?: number;
+          itemStatus?: string;
+          isBeverage?: boolean;
+        }
+        interface RawTicket {
+          id?: string;
+          orderNo?: number;
+          tableLabel?: string;
+          tableId?: string;
+          status?: string;
+          submittedAt?: string;
+          acceptedAt?: string;
+          instructions?: string | null;
+          items?: RawItem[];
+        }
+        const ticketData = event.metadata?.ticket as RawTicket | undefined;
         if (ticketData && Array.isArray(ticketData.items)) {
-          const foodItems = ticketData.items.filter((it: any) => !isBeverageItem(it.name));
+          const foodItems = ticketData.items.filter((it) => !isBeverageItem(it.name) && !it.isBeverage);
           if (foodItems.length > 0) {
             const newTicket: KitchenTicket = {
               id: ticketData.id || event.orderId!,
@@ -336,11 +366,11 @@ export const KitchenBoardView: React.FC<KitchenBoardViewProps> = ({ initialOrder
               acceptedAt: ticketData.acceptedAt || new Date().toISOString(),
               readyAt: null,
               instructions: ticketData.instructions || null,
-              items: foodItems.map((f: any) => ({
+              items: foodItems.map((f) => ({
                 id: f.id || crypto.randomUUID(),
                 name: f.name,
                 qty: f.qty || 1,
-                itemStatus: f.itemStatus || "PENDING",
+                itemStatus: (f.itemStatus as KitchenOrderItem["itemStatus"]) || "PENDING",
               })),
             };
             optimisticLocksRef.current.set(newTicket.id, { status: "ACCEPTED", timestamp: Date.now() });
@@ -353,6 +383,9 @@ export const KitchenBoardView: React.FC<KitchenBoardViewProps> = ({ initialOrder
             playChime(newTicket.id);
             debouncedRefresh();
             return;
+          } else {
+            // Food items count is 0 -> order belongs exclusively to Barista
+            return;
           }
         }
       }
@@ -360,7 +393,6 @@ export const KitchenBoardView: React.FC<KitchenBoardViewProps> = ({ initialOrder
       if (event.orderId) {
         handleIncomingTicket(event.orderId, event.status as OrderStatus);
       }
-      // Debounced refresh to coalesce rapid-fire sync events
       debouncedRefresh();
     });
 
@@ -375,12 +407,13 @@ export const KitchenBoardView: React.FC<KitchenBoardViewProps> = ({ initialOrder
 
     return () => {
       pollActive = false;
+      if (pollTimer) clearTimeout(pollTimer);
       if (syncRefreshTimerRef.current) clearTimeout(syncRefreshTimerRef.current);
       unsubscribe();
       window.removeEventListener("focus", handleActive);
       document.removeEventListener("visibilitychange", handleActive);
     };
-  }, [handleIncomingTicket, refreshOrders, debouncedRefresh]);
+  }, [handleIncomingTicket, refreshOrders, debouncedRefresh, playChime]);
 
   // Optimistic Transition Handler
   const handleTransition = async (
@@ -629,7 +662,7 @@ export const KitchenBoardView: React.FC<KitchenBoardViewProps> = ({ initialOrder
 
             {/* Manual Sync Button */}
             <button
-              onClick={refreshOrders}
+              onClick={() => void refreshOrders(true)}
               className="flex h-7.5 w-7.5 sm:h-8 sm:w-8 items-center justify-center rounded-full border border-[#C9AE8B]/40 dark:border-[#C9AE8B]/30 bg-[#FAF4EB] dark:bg-[#241F1C] text-[#725039] dark:text-[#C9AE8B] hover:text-[#241F1C] dark:hover:text-[#F3E7D3] transition cursor-pointer shrink-0"
               title="Refresh tickets"
             >

@@ -69,39 +69,185 @@ const DEFAULT_ROLE_CREDENTIALS: RoleCredentialsMap = {
   },
 };
 
+import fs from "fs";
+import path from "path";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { requireStaffAuth } from "@/lib/auth/rbac";
+import { broadcastSyncEvent } from "@/lib/sync-events";
+
 declare global {
   var __SMOL_ROLE_CREDENTIALS__: RoleCredentialsMap | undefined;
 }
 
-function getStoredCredentials(): RoleCredentialsMap {
-  if (!globalThis.__SMOL_ROLE_CREDENTIALS__) {
-    globalThis.__SMOL_ROLE_CREDENTIALS__ = {
-      admin: { ...DEFAULT_ROLE_CREDENTIALS.admin },
-      cashier: { ...DEFAULT_ROLE_CREDENTIALS.cashier },
-      kitchen: { ...DEFAULT_ROLE_CREDENTIALS.kitchen },
-      barista: { ...DEFAULT_ROLE_CREDENTIALS.barista },
-    };
-  } else {
-    // Ensure all default roles exist even when hot reloading
-    globalThis.__SMOL_ROLE_CREDENTIALS__ = {
-      admin: globalThis.__SMOL_ROLE_CREDENTIALS__.admin || { ...DEFAULT_ROLE_CREDENTIALS.admin },
-      cashier: globalThis.__SMOL_ROLE_CREDENTIALS__.cashier || { ...DEFAULT_ROLE_CREDENTIALS.cashier },
-      kitchen: globalThis.__SMOL_ROLE_CREDENTIALS__.kitchen || { ...DEFAULT_ROLE_CREDENTIALS.kitchen },
-      barista: globalThis.__SMOL_ROLE_CREDENTIALS__.barista || { ...DEFAULT_ROLE_CREDENTIALS.barista },
-    };
-  }
-  return globalThis.__SMOL_ROLE_CREDENTIALS__;
+const CREDENTIALS_FILE_PATH = path.join(process.cwd(), "data", "staff-credentials.json");
+
+function mergeWithDefaults(saved: Partial<RoleCredentialsMap>): RoleCredentialsMap {
+  return {
+    admin: {
+      ...DEFAULT_ROLE_CREDENTIALS.admin,
+      ...(saved.admin || {}),
+      role: "admin",
+      portal: "/admin",
+      permissions: "Full Control, Budgets, Logs",
+      status: "Active",
+    },
+    cashier: {
+      ...DEFAULT_ROLE_CREDENTIALS.cashier,
+      ...(saved.cashier || {}),
+      role: "cashier",
+      portal: "/cashier",
+      permissions: "Order Verification, Cash Settlement",
+      status: "Active",
+    },
+    kitchen: {
+      ...DEFAULT_ROLE_CREDENTIALS.kitchen,
+      ...(saved.kitchen || {}),
+      role: "kitchen",
+      portal: "/kitchen",
+      permissions: "Order Queue, Food Prep Status",
+      status: "Active",
+    },
+    barista: {
+      ...DEFAULT_ROLE_CREDENTIALS.barista,
+      ...(saved.barista || {}),
+      role: "barista",
+      portal: "/smol-backdoor/barista",
+      permissions: "Beverage Queue, Shot Timer, Brew Status",
+      status: "Active",
+    },
+  };
 }
 
 /**
- * Server Action: Returns role info (without exposing PINs) for UI display.
+ * Returns current role credentials with multi-tier persistence:
+ * 1. In-memory hot cache
+ * 2. Supabase PostgreSQL database (budgets table: category='STAFF_RBAC', month='CONFIG')
+ * 3. Local persistent file (data/staff-credentials.json)
+ * 4. Default credentials fallback
  */
-export async function getRoleCredentialsAction(): Promise<{
+export async function getStoredCredentials(): Promise<RoleCredentialsMap> {
+  if (globalThis.__SMOL_ROLE_CREDENTIALS__) {
+    return globalThis.__SMOL_ROLE_CREDENTIALS__;
+  }
+
+  // Tier 1: Supabase Database
+  try {
+    const supabase = createAdminClient();
+    const { data, error } = await supabase
+      .from("budgets")
+      .select("notes")
+      .eq("category", "STAFF_RBAC")
+      .eq("month", "CONFIG")
+      .maybeSingle();
+
+    if (!error && data?.notes) {
+      try {
+        const parsed = JSON.parse(data.notes);
+        if (parsed && typeof parsed === "object") {
+          const merged = mergeWithDefaults(parsed);
+          globalThis.__SMOL_ROLE_CREDENTIALS__ = merged;
+          // Synchronize local file cache
+          try {
+            const dir = path.dirname(CREDENTIALS_FILE_PATH);
+            if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+            fs.writeFileSync(CREDENTIALS_FILE_PATH, JSON.stringify(merged, null, 2), "utf-8");
+          } catch {
+            // Ignore disk cache write failure
+          }
+          return merged;
+        }
+      } catch (parseErr) {
+        console.error("Failed to parse stored credentials from Supabase:", parseErr);
+      }
+    }
+  } catch (dbErr) {
+    console.warn("Could not load credentials from Supabase:", dbErr);
+  }
+
+  // Tier 2: Persistent Local File
+  try {
+    if (fs.existsSync(CREDENTIALS_FILE_PATH)) {
+      const fileContent = fs.readFileSync(CREDENTIALS_FILE_PATH, "utf-8");
+      const parsed = JSON.parse(fileContent);
+      if (parsed && typeof parsed === "object") {
+        const merged = mergeWithDefaults(parsed);
+        globalThis.__SMOL_ROLE_CREDENTIALS__ = merged;
+        return merged;
+      }
+    }
+  } catch (fsErr) {
+    console.warn("Could not read credentials from local file:", fsErr);
+  }
+
+  // Tier 3: Default Credentials
+  globalThis.__SMOL_ROLE_CREDENTIALS__ = { ...DEFAULT_ROLE_CREDENTIALS };
+  return globalThis.__SMOL_ROLE_CREDENTIALS__;
+}
+
+async function persistCredentials(creds: RoleCredentialsMap): Promise<void> {
+  globalThis.__SMOL_ROLE_CREDENTIALS__ = creds;
+
+  // 1. Persist to local filesystem
+  try {
+    const dir = path.dirname(CREDENTIALS_FILE_PATH);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(CREDENTIALS_FILE_PATH, JSON.stringify(creds, null, 2), "utf-8");
+  } catch (fsErr) {
+    console.warn("Failed to write credentials to local file:", fsErr);
+  }
+
+  // 2. Persist to Supabase PostgreSQL database
+  try {
+    const supabase = createAdminClient();
+    const { error } = await supabase.from("budgets").upsert(
+      {
+        category: "STAFF_RBAC",
+        month: "CONFIG",
+        budgeted_amount_paise: 0,
+        notes: JSON.stringify(creds),
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "category,month" }
+    );
+    if (error) {
+      console.error("Failed to upsert credentials in Supabase:", error.message);
+    }
+  } catch (dbErr) {
+    console.error("Failed to persist credentials in Supabase:", dbErr);
+  }
+
+  // 3. Realtime broadcast for live propagation across tabs
+  try {
+    broadcastSyncEvent({
+      type: "SETTINGS_UPDATED",
+      timestamp: Date.now(),
+    });
+  } catch {
+    // Ignore broadcast failure on server
+  }
+}
+
+/**
+ * Server Action: Returns role info for UI display.
+ * If revealPinsForAdmin is true and requester is an authenticated Admin, actual PINs are returned.
+ * Otherwise, PIN values are masked with "****".
+ */
+export async function getRoleCredentialsAction(
+  revealPinsForAdmin: boolean = false
+): Promise<{
   success: boolean;
   credentials: RoleCredentialsMap;
 }> {
-  const creds = getStoredCredentials();
-  // Return a sanitized copy — never expose actual PIN values to the client
+  const creds = await getStoredCredentials();
+
+  if (revealPinsForAdmin) {
+    const auth = await requireStaffAuth(["admin", "super_admin"]);
+    if (auth.authorized) {
+      return { success: true, credentials: creds };
+    }
+  }
+
+  // Mask PINs for public/unauthenticated views
   const sanitized: RoleCredentialsMap = {
     admin: { ...creds.admin, pin: "****", password: undefined },
     cashier: { ...creds.cashier, pin: "****" },
@@ -113,6 +259,7 @@ export async function getRoleCredentialsAction(): Promise<{
 
 /**
  * Server Action: Updates the quick PIN and/or master password for a specific role.
+ * Persists permanently until changed again by Admin.
  */
 export async function updateRoleCredentialAction(
   role: "admin" | "cashier" | "kitchen" | "barista",
@@ -123,12 +270,17 @@ export async function updateRoleCredentialAction(
   credentials?: RoleCredentialsMap;
   message: string;
 }> {
+  const auth = await requireStaffAuth(["admin", "super_admin"]);
+  if (!auth.authorized) {
+    return { success: false, message: auth.message || "Unauthorized: Only Admin can update credentials." };
+  }
+
   const cleanPin = newPin.trim();
   if (!cleanPin || cleanPin.length < 3) {
     return { success: false, message: "PIN must be at least 3-4 digits/characters." };
   }
 
-  const creds = getStoredCredentials();
+  const creds = await getStoredCredentials();
   if (!creds[role]) {
     return { success: false, message: "Invalid role specified." };
   }
@@ -138,12 +290,12 @@ export async function updateRoleCredentialAction(
     creds[role].password = newPassword.trim();
   }
 
-  globalThis.__SMOL_ROLE_CREDENTIALS__ = creds;
+  await persistCredentials(creds);
 
   return {
     success: true,
     credentials: creds,
-    message: `${creds[role].roleName} credentials updated successfully to PIN: ${cleanPin}`,
+    message: `${creds[role].roleName} PIN updated successfully to: ${cleanPin}`,
   };
 }
 
@@ -157,25 +309,32 @@ export async function resetRoleCredentialAction(
   credentials: RoleCredentialsMap;
   message: string;
 }> {
+  const auth = await requireStaffAuth(["admin", "super_admin"]);
+  if (!auth.authorized) {
+    const current = await getStoredCredentials();
+    return { success: false, credentials: current, message: "Unauthorized." };
+  }
+
+  const creds = await getStoredCredentials();
   if (role) {
-    const creds = getStoredCredentials();
     creds[role] = { ...DEFAULT_ROLE_CREDENTIALS[role] };
-    globalThis.__SMOL_ROLE_CREDENTIALS__ = creds;
+    await persistCredentials(creds);
     return {
       success: true,
       credentials: creds,
       message: `${DEFAULT_ROLE_CREDENTIALS[role].roleName} reset to default PIN (${DEFAULT_ROLE_CREDENTIALS[role].pin}).`,
     };
   } else {
-    globalThis.__SMOL_ROLE_CREDENTIALS__ = {
+    const defaultCopy = {
       admin: { ...DEFAULT_ROLE_CREDENTIALS.admin },
       cashier: { ...DEFAULT_ROLE_CREDENTIALS.cashier },
       kitchen: { ...DEFAULT_ROLE_CREDENTIALS.kitchen },
       barista: { ...DEFAULT_ROLE_CREDENTIALS.barista },
     };
+    await persistCredentials(defaultCopy);
     return {
       success: true,
-      credentials: globalThis.__SMOL_ROLE_CREDENTIALS__,
+      credentials: defaultCopy,
       message: "All staff role credentials reset to default PINs.",
     };
   }
@@ -183,18 +342,18 @@ export async function resetRoleCredentialAction(
 
 /**
  * Server Action: Validates role credentials and signs in staff to the backdoor portal.
+ * Strictly verifies against the active stored credentials without hardcoded backdoor bypasses.
  */
 export async function staffBackdoorLoginAction(
   data: StaffLoginInput
 ): Promise<StaffLoginResult> {
   const { role, pin, password } = data;
 
-  // Require a non-empty PIN — no bypass allowed
   if (!pin || pin.trim().length === 0) {
     return { success: false, message: "PIN is required. Please enter your station PIN." };
   }
 
-  const creds = getStoredCredentials();
+  const creds = await getStoredCredentials();
   const currentCred = creds[role];
 
   if (!currentCred) {
@@ -203,9 +362,9 @@ export async function staffBackdoorLoginAction(
 
   const trimmedPin = pin.trim();
 
-  // Kitchen Quick Passcode
+  // Kitchen Quick Passcode - STRICT check against active PIN
   if (role === "kitchen") {
-    if (trimmedPin !== currentCred.pin && trimmedPin !== "6175") {
+    if (trimmedPin !== currentCred.pin) {
       return { success: false, message: "Invalid Kitchen Station PIN. Please try again." };
     }
     await setStaffSessionCookie("kitchen");
@@ -217,9 +376,9 @@ export async function staffBackdoorLoginAction(
     };
   }
 
-  // Barista Quick Passcode
+  // Barista Quick Passcode - STRICT check against active PIN
   if (role === "barista") {
-    if (trimmedPin !== currentCred.pin && trimmedPin !== "1234") {
+    if (trimmedPin !== currentCred.pin) {
       return { success: false, message: "Invalid Barista Station PIN. Please try again." };
     }
     await setStaffSessionCookie("barista");
@@ -231,9 +390,9 @@ export async function staffBackdoorLoginAction(
     };
   }
 
-  // Cashier Quick Passcode
+  // Cashier Quick Passcode - STRICT check against active PIN
   if (role === "cashier") {
-    if (trimmedPin !== currentCred.pin && trimmedPin !== "8112") {
+    if (trimmedPin !== currentCred.pin) {
       return { success: false, message: "Invalid Cashier Desk PIN. Please try again." };
     }
     await setStaffSessionCookie("cashier");
@@ -245,13 +404,18 @@ export async function staffBackdoorLoginAction(
     };
   }
 
-  // Admin Master Passcode — PIN 9227 or master password accepted
+  // Admin Master Passcode — STRICT check against active Admin PIN or master password
   if (role === "admin") {
-    const pinMatches = trimmedPin === currentCred.pin || trimmedPin === "9227";
-    const passMatches = Boolean(password && password.trim().length > 0 && password.trim() === currentCred.password);
+    const pinMatches = trimmedPin === currentCred.pin;
+    const passMatches = Boolean(
+      password &&
+      password.trim().length > 0 &&
+      currentCred.password &&
+      password.trim() === currentCred.password
+    );
 
     if (!pinMatches && !passMatches) {
-      return { success: false, message: "Invalid Admin PIN (9227) or master password. Please try again." };
+      return { success: false, message: "Invalid Admin PIN or master password. Please try again." };
     }
     await setStaffSessionCookie("admin");
     return {

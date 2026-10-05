@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import Image from "next/image";
-import type { BaristaTicket } from "@/app/barista/actions";
+import type { BaristaTicket, BaristaOrderItem } from "@/app/barista/actions";
 import {
   fetchBaristaOrdersAction,
   fetchSingleBaristaTicketAction,
@@ -117,14 +117,14 @@ export const BaristaBoardView: React.FC<BaristaBoardViewProps> = ({ initialOrder
 
   const isInitialLoadedRef = useRef(false);
 
-  const refreshOrders = useCallback(async () => {
+  const refreshOrders = useCallback(async (isManual = false) => {
     // If a refresh is currently running, queue this refresh so we don't drop updates
     if (isRefreshingRef.current) {
       pendingRefreshRef.current = true;
       return;
     }
     isRefreshingRef.current = true;
-    setIsRefreshing(true);
+    if (isManual) setIsRefreshing(true);
     try {
       const result = await fetchBaristaOrdersAction();
       if (result && result.success && Array.isArray(result.orders)) {
@@ -173,10 +173,12 @@ export const BaristaBoardView: React.FC<BaristaBoardViewProps> = ({ initialOrder
       console.warn("Barista orders sync retry scheduled:", err);
     } finally {
       isRefreshingRef.current = false;
-      setIsRefreshing(false);
+      if (isManual) setIsRefreshing(false);
       if (pendingRefreshRef.current) {
         pendingRefreshRef.current = false;
-        refreshOrders();
+        setTimeout(() => {
+          refreshOrders();
+        }, 100);
       }
     }
   }, [playChime]);
@@ -187,7 +189,7 @@ export const BaristaBoardView: React.FC<BaristaBoardViewProps> = ({ initialOrder
     syncRefreshTimerRef.current = setTimeout(() => {
       syncRefreshTimerRef.current = null;
       refreshOrders();
-    }, 1000); // 1000ms debounce allows server DB write to complete before refreshing
+    }, 1000);
   }, [refreshOrders]);
 
   const handleIncomingTicket = useCallback(
@@ -236,8 +238,8 @@ export const BaristaBoardView: React.FC<BaristaBoardViewProps> = ({ initialOrder
                 return [newTicket, ...prev];
               });
               playChime(newTicket.id);
-            } else {
-              // Instant fallback: If single fetch didn't return, refresh immediately (0ms delay)
+            } else if (result?.reason !== "NO_BEVERAGE_ITEMS") {
+              // Only fallback to full refresh if it was not identified as food-only
               refreshOrders();
             }
           })
@@ -252,8 +254,8 @@ export const BaristaBoardView: React.FC<BaristaBoardViewProps> = ({ initialOrder
   // Real-time WebSocket
   useSupabaseRealtime({
     table: "orders",
-    onData: (payload: any) => {
-      const newRow = payload?.new;
+    onData: (payload) => {
+      const newRow = payload?.new as { id?: string; status?: string } | undefined;
       if (newRow && newRow.id) {
         // Do not chime or ingest orders awaiting cashier approval
         if (
@@ -271,19 +273,30 @@ export const BaristaBoardView: React.FC<BaristaBoardViewProps> = ({ initialOrder
     },
   });
 
+  // Real-Time Event Listener & Non-Overlapping Polling Fallback Loop
   useEffect(() => {
-    // 1. Self-scheduling poll loop (avoids setInterval background tab throttling pile-up)
+    // 1. Safe, non-overlapping self-scheduling poll loop
     let pollActive = true;
-    const schedulePoll = () => {
+    let pollTimer: NodeJS.Timeout | null = null;
+
+    const scheduleNextPoll = () => {
       if (!pollActive) return;
-      setTimeout(() => {
+      pollTimer = setTimeout(async () => {
         if (!pollActive) return;
-        refreshOrders().finally(() => {
-          if (pollActive) schedulePoll();
-        });
-      }, 3000);
+        if (document.visibilityState === "visible") {
+          try {
+            await refreshOrders();
+          } catch {
+            // ignore background poll error
+          }
+        }
+        if (pollActive) {
+          scheduleNextPoll();
+        }
+      }, 1000);
     };
-    schedulePoll();
+
+    scheduleNextPoll();
 
     const unsubscribe = subscribeToSyncEvents((event) => {
       // Ignore orders awaiting cashier approval in Barista Desk
@@ -306,9 +319,27 @@ export const BaristaBoardView: React.FC<BaristaBoardViewProps> = ({ initialOrder
 
       // 1. Direct Instant Ingestion (0ms) if full ticket payload is attached from Cashier confirmation
       if (event.type === "ORDER_CONFIRMED") {
-        const ticketData = event.metadata?.ticket as any;
+        interface RawItem {
+          id?: string;
+          name: string;
+          qty?: number;
+          itemStatus?: string;
+          isBeverage?: boolean;
+        }
+        interface RawTicket {
+          id?: string;
+          orderNo?: number;
+          tableLabel?: string;
+          tableId?: string;
+          status?: string;
+          submittedAt?: string;
+          acceptedAt?: string;
+          instructions?: string | null;
+          items?: RawItem[];
+        }
+        const ticketData = event.metadata?.ticket as RawTicket | undefined;
         if (ticketData && Array.isArray(ticketData.items)) {
-          const drinkItems = ticketData.items.filter((it: any) => isBeverageItem(it.name) || it.isBeverage);
+          const drinkItems = ticketData.items.filter((it) => isBeverageItem(it.name) || it.isBeverage);
           if (drinkItems.length > 0) {
             const newTicket: BaristaTicket = {
               id: ticketData.id || event.orderId!,
@@ -320,11 +351,11 @@ export const BaristaBoardView: React.FC<BaristaBoardViewProps> = ({ initialOrder
               acceptedAt: ticketData.acceptedAt || new Date().toISOString(),
               readyAt: null,
               instructions: ticketData.instructions || null,
-              items: drinkItems.map((d: any) => ({
+              items: drinkItems.map((d) => ({
                 id: d.id || crypto.randomUUID(),
                 name: d.name,
                 qty: d.qty || 1,
-                itemStatus: d.itemStatus || "PENDING",
+                itemStatus: (d.itemStatus as BaristaOrderItem["itemStatus"]) || "PENDING",
                 isBeverage: true,
               })),
             };
@@ -338,6 +369,9 @@ export const BaristaBoardView: React.FC<BaristaBoardViewProps> = ({ initialOrder
             playChime(newTicket.id);
             debouncedRefresh();
             return;
+          } else {
+            // Drink items count is 0 -> order belongs exclusively to Kitchen
+            return;
           }
         }
       }
@@ -345,7 +379,6 @@ export const BaristaBoardView: React.FC<BaristaBoardViewProps> = ({ initialOrder
       if (event.orderId) {
         handleIncomingTicket(event.orderId, event.status as OrderStatus);
       }
-      // Debounced refresh to coalesce rapid-fire sync events
       debouncedRefresh();
     });
 
@@ -360,12 +393,13 @@ export const BaristaBoardView: React.FC<BaristaBoardViewProps> = ({ initialOrder
 
     return () => {
       pollActive = false;
+      if (pollTimer) clearTimeout(pollTimer);
       if (syncRefreshTimerRef.current) clearTimeout(syncRefreshTimerRef.current);
       unsubscribe();
       window.removeEventListener("focus", handleActive);
       document.removeEventListener("visibilitychange", handleActive);
     };
-  }, [handleIncomingTicket, refreshOrders, debouncedRefresh]);
+  }, [handleIncomingTicket, refreshOrders, debouncedRefresh, playChime]);
 
   const handleTransition = async (
     orderId: string,
@@ -539,7 +573,7 @@ export const BaristaBoardView: React.FC<BaristaBoardViewProps> = ({ initialOrder
 
             {/* Refresh */}
             <button
-              onClick={refreshOrders}
+              onClick={() => void refreshOrders(true)}
               className="flex h-8 w-8 items-center justify-center rounded-full border border-[#C9AE8B]/40 dark:border-white/10 bg-[#FAF4EB] dark:bg-[#1D1815] text-[#725039] dark:text-[#C9AE8B] hover:text-[#241F1C] transition cursor-pointer"
               title="Refresh tickets"
             >
