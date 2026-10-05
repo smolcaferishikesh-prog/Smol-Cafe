@@ -1,10 +1,10 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { fetchUpcomingEventsAction, registerEventRsvpAction, type CustomerEventView } from "@/app/events/actions";
-import { BottomNavBar } from "@/components/navigation/BottomNavBar";
 import { Coffee, Calendar } from "lucide-react";
+import { subscribeToSyncEvents } from "@/lib/sync-events";
 
 interface EventsClientViewProps {
   initialEvents: CustomerEventView[];
@@ -18,6 +18,36 @@ export const EventsClientView: React.FC<EventsClientViewProps> = ({ initialEvent
   const [partySize, setPartySize] = useState(1);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [feedback, setFeedback] = useState<{ type: "success" | "error"; text: string } | null>(null);
+
+  const refreshEvents = useCallback(async () => {
+    try {
+      const fresh = await fetchUpcomingEventsAction();
+      if (fresh.success && fresh.events) setEvents(fresh.events);
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  useEffect(() => {
+    const unsub = subscribeToSyncEvents((event) => {
+      if (event.type === "SETTINGS_UPDATED") {
+        refreshEvents();
+      }
+    });
+    return () => unsub();
+  }, [refreshEvents]);
+
+  useEffect(() => {
+    const handleFocus = () => {
+      refreshEvents();
+    };
+    window.addEventListener("focus", handleFocus);
+    window.addEventListener("online", handleFocus);
+    return () => {
+      window.removeEventListener("focus", handleFocus);
+      window.removeEventListener("online", handleFocus);
+    };
+  }, [refreshEvents]);
 
   const handleRsvpSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

@@ -60,16 +60,36 @@ const recentEventKeys = new Map<string, number>();
 
 function shouldProcessEvent(event: SyncPayload): boolean {
   const now = Date.now();
-  // Cleanup stale keys (> 10s)
+  // Cleanup stale keys (> 15s)
   for (const [k, ts] of recentEventKeys.entries()) {
-    if (now - ts > 10000) {
+    if (now - ts > 15000) {
       recentEventKeys.delete(k);
     }
   }
 
-  const id = event.orderId || event.orderNo || event.itemId || event.tableLabel || "global";
-  const status = event.status || event.stockStatus || "";
-  const timeBucket = event.timestamp ? Math.floor(event.timestamp / DEDUPE_WINDOW_MS) : Math.floor(now / DEDUPE_WINDOW_MS);
+  const id =
+    event.orderId ||
+    event.orderNo ||
+    event.itemId ||
+    event.tableId ||
+    event.tableLabel ||
+    (event.metadata?.id as string) ||
+    (event.metadata?.tableId as string) ||
+    (event.metadata?.ingredientId as string) ||
+    (event.metadata?.action as string) ||
+    "global";
+
+  const status =
+    event.status ||
+    event.stockStatus ||
+    event.availability ||
+    (event.metadata?.status as string) ||
+    (event.metadata?.active !== undefined ? String(event.metadata.active) : "");
+
+  const timeBucket = event.timestamp
+    ? Math.floor(event.timestamp / DEDUPE_WINDOW_MS)
+    : Math.floor(now / DEDUPE_WINDOW_MS);
+
   const dedupeKey = `${event.type}_${id}_${status}_${timeBucket}`;
 
   if (recentEventKeys.has(dedupeKey)) {
@@ -256,6 +276,85 @@ function getOrInitSupabaseChannel(): RealtimeChannel | null {
             stockStatus: item.status === "SOLD_OUT" ? "SOLD_OUT" : "IN_STOCK",
             timestamp: Date.now(),
             metadata: {
+              id: item.id,
+              name: typeof item.name === "string" ? item.name : undefined,
+              status: typeof item.status === "string" ? item.status : undefined,
+              eventType: payload.eventType,
+            },
+          };
+          dispatchToLocalListeners(syncEvent);
+        }
+      }
+    );
+
+    // 4. Direct Postgres CDC push notifications on 'dining_tables'
+    channel.on(
+      "postgres_changes",
+      { event: "*", schema: "public", table: "dining_tables" },
+      (payload: { new?: Record<string, unknown>; old?: Record<string, unknown>; eventType: string }) => {
+        const table = payload?.new || payload?.old;
+        if (table && (typeof table.id === "string" || typeof table.label === "string")) {
+          const type: SyncEventType =
+            payload.eventType === "DELETE"
+              ? "TABLE_DELETED"
+              : payload.eventType === "INSERT"
+              ? "TABLE_CREATED"
+              : "TABLE_RENAMED";
+          const syncEvent: SyncPayload = {
+            type,
+            tableId: typeof table.id === "string" ? table.id : undefined,
+            tableLabel: typeof table.label === "string" ? table.label : undefined,
+            timestamp: Date.now(),
+            metadata: {
+              id: table.id,
+              label: table.label,
+              seats: table.seats,
+              active: table.active,
+              section: table.section,
+              eventType: payload.eventType,
+            },
+          };
+          dispatchToLocalListeners(syncEvent);
+        }
+      }
+    );
+
+    // 5. Direct Postgres CDC push notifications on 'ingredients'
+    channel.on(
+      "postgres_changes",
+      { event: "*", schema: "public", table: "ingredients" },
+      (payload: { new?: Record<string, unknown>; old?: Record<string, unknown>; eventType: string }) => {
+        const ing = payload?.new || payload?.old;
+        if (ing && typeof ing.id === "string") {
+          const syncEvent: SyncPayload = {
+            type: "INVENTORY_UPDATED",
+            timestamp: Date.now(),
+            metadata: {
+              ingredientId: ing.id,
+              name: ing.name,
+              minThreshold: ing.min_threshold,
+              eventType: payload.eventType,
+            },
+          };
+          dispatchToLocalListeners(syncEvent);
+        }
+      }
+    );
+
+    // 6. Direct Postgres CDC push notifications on 'table_sessions'
+    channel.on(
+      "postgres_changes",
+      { event: "*", schema: "public", table: "table_sessions" },
+      (payload: { new?: Record<string, unknown>; old?: Record<string, unknown>; eventType: string }) => {
+        const session = payload?.new || payload?.old;
+        if (session && typeof session.table_id === "string") {
+          const syncEvent: SyncPayload = {
+            type: "TABLE_RENAMED",
+            tableId: session.table_id as string,
+            timestamp: Date.now(),
+            metadata: {
+              tableId: session.table_id,
+              sessionStatus: session.status,
               eventType: payload.eventType,
             },
           };
@@ -271,12 +370,12 @@ function getOrInitSupabaseChannel(): RealtimeChannel | null {
         flushPendingSupabaseEvents();
       } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
         isSupabaseChannelReady = false;
-        // Schedule auto-reconnect backoff
+        // Schedule auto-reconnect backoff (fast 1s recovery)
         if (!reconnectTimer) {
           reconnectTimer = setTimeout(() => {
             reconnectTimer = null;
             getOrInitSupabaseChannel();
-          }, 1500);
+          }, 1000);
         }
       }
     });
@@ -317,20 +416,67 @@ if (typeof window !== "undefined") {
 }
 
 /**
- * Broadcasts an event across all open tabs, windows, and external devices via Supabase Realtime.
+ * Server-side REST broadcast to Supabase Realtime WebSocket topic.
+ * Delivers instant updates to all connected browser clients across devices.
  */
-export function broadcastSyncEvent(event: SyncPayload): void {
-  if (typeof window === "undefined") return;
+async function broadcastSyncEventServer(payload: SyncPayload): Promise<void> {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const apiKey =
+    process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!supabaseUrl || !apiKey || supabaseUrl.includes("placeholder")) {
+    return;
+  }
 
+  const endpoint = `${supabaseUrl.replace(/\/$/, "")}/realtime/v1/api/broadcast`;
+  try {
+    const res = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        apikey: apiKey,
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        messages: [
+          {
+            topic: SUPABASE_BROADCAST_CHANNEL,
+            event: "sync",
+            payload,
+          },
+        ],
+      }),
+      signal: AbortSignal.timeout(3500),
+    });
+
+    if (!res.ok) {
+      console.warn(`[Supabase Broadcast REST] ${res.status}: ${res.statusText}`);
+    }
+  } catch (err) {
+    // Non-fatal warning: keep going without disrupting server action flow
+    console.warn("[Supabase Broadcast REST] Broadcast notice:", err);
+  }
+}
+
+/**
+ * Broadcasts an event across all open tabs, windows, and external devices via Supabase Realtime.
+ * Works seamlessly in both Client Components (via WebSocket + BroadcastChannel + LocalStorage)
+ * and Server Actions (via Supabase Realtime REST Broadcast endpoint).
+ */
+export function broadcastSyncEvent(event: SyncPayload): Promise<void> | void {
   const payload: SyncPayload = {
     ...event,
     timestamp: event.timestamp || Date.now(),
   };
 
-  // 1. Dispatch locally to all registered listeners in current page (0ms)
+  // 1. On server: perform instant REST broadcast to Supabase Realtime channel
+  if (typeof window === "undefined") {
+    return broadcastSyncEventServer(payload);
+  }
+
+  // 2. Dispatch locally to all registered listeners in current page (0ms)
   dispatchToLocalListeners(payload);
 
-  // 2. BroadcastChannel for active tabs in same origin (0ms across tabs)
+  // 3. BroadcastChannel for active tabs in same origin (0ms across tabs)
   try {
     const bc = getOrInitBroadcastChannel();
     if (bc) {
@@ -340,7 +486,7 @@ export function broadcastSyncEvent(event: SyncPayload): void {
     // BroadcastChannel error ignored
   }
 
-  // 3. LocalStorage trigger for cross-window / background tabs in same origin
+  // 4. LocalStorage trigger for cross-window / background tabs in same origin
   try {
     localStorage.setItem(
       STORAGE_KEY,
@@ -350,7 +496,7 @@ export function broadcastSyncEvent(event: SyncPayload): void {
     // LocalStorage error ignored
   }
 
-  // 4. Supabase Realtime Broadcast Channel for cross-device & cross-port delivery.
+  // 5. Supabase Realtime Broadcast Channel for cross-device & cross-port delivery.
   try {
     const sbChannel = getOrInitSupabaseChannel();
     if (sbChannel && isSupabaseChannelReady) {

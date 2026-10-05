@@ -649,11 +649,17 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
   });
 
   const isRefreshingRef = useRef(false);
+  const lastRefreshTimeRef = useRef(0);
 
-  // Re-fetch function
+  // Re-fetch function with debounce/throttle to prevent request storms
   const refreshData = async (isBackground = false) => {
+    const now = Date.now();
     if (isRefreshingRef.current) return;
+    if (isBackground && now - lastRefreshTimeRef.current < 2000) return;
+
     isRefreshingRef.current = true;
+    lastRefreshTimeRef.current = now;
+
     if (!isBackground) {
       setIsRefreshing(true);
     }
@@ -674,14 +680,16 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
     }
   };
 
-  // Real-Time Sync Subscription & Non-Overlapping Polling
+  // Real-Time Sync Subscription & Background Safety Polling
   useEffect(() => {
     let isMounted = true;
     let pollTimer: ReturnType<typeof setTimeout> | null = null;
 
     const schedulePoll = () => {
       if (!isMounted) return;
-      const interval = typeof document !== "undefined" && document.visibilityState === "visible" ? 2500 : 10000;
+      // Realtime broadcast and CDC handle instantaneous updates (<1s).
+      // Background poll is purely a passive safety net (20s visible / 60s hidden).
+      const interval = typeof document !== "undefined" && document.visibilityState === "visible" ? 20000 : 60000;
       pollTimer = setTimeout(async () => {
         if (!isMounted) return;
         await refreshData(true);
@@ -715,8 +723,7 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
     window.addEventListener("focus", handleFocus);
     document.addEventListener("visibilitychange", handleVisibility);
 
-    // Initial load and start scheduling
-    void refreshData(false);
+    // Start scheduling safety poll
     schedulePoll();
 
     return () => {

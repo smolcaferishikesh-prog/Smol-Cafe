@@ -3,6 +3,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { CafeEvent, EventRsvp } from "@smol-cafe/db";
+import { broadcastSyncEvent } from "@/lib/sync-events";
 
 export interface CustomerEventView {
   id: string;
@@ -162,6 +163,12 @@ export async function registerEventRsvpAction(
       return { success: false, message: "Could not complete registration." };
     }
 
+    broadcastSyncEvent({
+      type: "SETTINGS_UPDATED",
+      metadata: { entity: "event_rsvp", eventId },
+      timestamp: Date.now(),
+    });
+
     return {
       success: true,
       message: `✓ You're registered for ${event.title}! See you at smol café.`,
@@ -250,6 +257,12 @@ export async function createCafeEventAction(
       return { success: false, message: "Failed to create event." };
     }
 
+    broadcastSyncEvent({
+      type: "SETTINGS_UPDATED",
+      metadata: { entity: "event", action: "create", eventId: event.id },
+      timestamp: Date.now(),
+    });
+
     return {
       success: true,
       event: event as CafeEvent,
@@ -287,6 +300,12 @@ export async function toggleCafeEventActiveAction(
       return { success: false, message: "Failed to toggle event." };
     }
 
+    broadcastSyncEvent({
+      type: "SETTINGS_UPDATED",
+      metadata: { entity: "event", action: "toggle", eventId: id, active },
+      timestamp: Date.now(),
+    });
+
     return {
       success: true,
       event: event as CafeEvent,
@@ -313,6 +332,13 @@ export async function deleteCafeEventAction(
   try {
     const { error } = await admin.from("cafe_events").delete().eq("id", id);
     if (error) return { success: false, message: "Failed to delete event." };
+
+    broadcastSyncEvent({
+      type: "SETTINGS_UPDATED",
+      metadata: { entity: "event", action: "delete", eventId: id },
+      timestamp: Date.now(),
+    });
+
     return { success: true, message: "Event deleted." };
   } catch {
     return { success: false, message: "An unexpected error occurred." };

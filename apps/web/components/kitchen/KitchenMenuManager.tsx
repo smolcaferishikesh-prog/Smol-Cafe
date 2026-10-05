@@ -12,8 +12,8 @@ import {
   Check,
   RefreshCw,
   Ban,
-  CheckCheck,
   Trash2,
+  Edit2,
 } from "lucide-react";
 import {
   type KitchenMenuItem,
@@ -78,10 +78,10 @@ export const KitchenMenuManager: React.FC<KitchenMenuManagerProps> = () => {
   }, [loadData]);
 
   // Realtime Supabase WebSocket subscription for instant CDC menu_items changes
-  useSupabaseRealtime({
+  useSupabaseRealtime<{ id?: string; name?: string; status?: string; price_snapshot?: number }>({
     table: "menu_items",
-    onData: (payload: any) => {
-      const item = payload?.new;
+    onData: (payload) => {
+      const item = payload?.new as { id?: string; name?: string; status?: string; price_snapshot?: number } | undefined;
       if (item && item.id) {
         if (item.status === "ARCHIVED") {
           setItems((prev) => prev.filter((i) => i.id !== item.id));
@@ -112,7 +112,7 @@ export const KitchenMenuManager: React.FC<KitchenMenuManagerProps> = () => {
     const unsub = subscribeToSyncEvents((event) => {
       if (event.type === "ITEM_AVAILABILITY_CHANGED" || event.type === "INVENTORY_UPDATED") {
         if (event.itemId) {
-          const meta = (event.metadata as any) || {};
+          const meta = (event.metadata as Record<string, unknown>) || {};
           const isDeleted =
             event.stockStatus === "ARCHIVED" ||
             event.availability === "ARCHIVED" ||
@@ -132,12 +132,6 @@ export const KitchenMenuManager: React.FC<KitchenMenuManagerProps> = () => {
               meta.status === "SOLD_OUT" ||
               meta.stockStatus === "SOLD_OUT";
             const newStatus = isSoldOut ? "SOLD_OUT" : "IN_STOCK";
-            const newPrice =
-              event.priceRupees !== undefined
-                ? event.priceRupees
-                : meta.priceRupees !== undefined
-                ? meta.priceRupees
-                : 100;
 
             if (exists) {
               return prev.map((i) => {
@@ -145,8 +139,16 @@ export const KitchenMenuManager: React.FC<KitchenMenuManagerProps> = () => {
                   return {
                     ...i,
                     stockStatus: newStatus,
-                    priceRupees: newPrice,
-                    name: meta.name || i.name,
+                    priceRupees:
+                      event.priceRupees !== undefined
+                        ? event.priceRupees
+                        : meta.priceRupees !== undefined
+                        ? Number(meta.priceRupees)
+                        : i.priceRupees,
+                    name: typeof meta.name === "string" ? meta.name : i.name,
+                    chefNotes: typeof meta.description === "string" ? meta.description : i.chefNotes,
+                    imageUrl: meta.imageUrl !== undefined ? (meta.imageUrl as string | null) : i.imageUrl,
+                    dietary: typeof meta.dietary === "string" ? meta.dietary : i.dietary,
                   };
                 }
                 return i;
@@ -155,22 +157,27 @@ export const KitchenMenuManager: React.FC<KitchenMenuManagerProps> = () => {
 
             // Newly added dish — append to KDS in 0ms!
             if (meta.name) {
+              const newItemPrice =
+                event.priceRupees !== undefined
+                  ? event.priceRupees
+                  : meta.priceRupees !== undefined
+                  ? Number(meta.priceRupees)
+                  : 120;
               const newItem: KitchenMenuItem = {
                 id: event.itemId!,
-                name: meta.name,
-                category: meta.categoryId || "Slow Mornings",
+                name: String(meta.name),
+                category: (meta.categoryId as string) || "Slow Mornings",
                 station: "Hot Kitchen & Grill",
-                priceRupees: meta.priceRupees || newPrice,
+                priceRupees: newItemPrice,
                 stockStatus: newStatus as "IN_STOCK" | "SOLD_OUT",
                 isChefSpecial: false,
-                chefNotes: meta.description || "",
-                imageUrl: meta.imageUrl || null,
-                coreIngredients: meta.description || "",
-                dietary: meta.dietary || "veg",
+                chefNotes: (meta.description as string) || "",
+                imageUrl: (meta.imageUrl as string | null) || null,
+                coreIngredients: (meta.description as string) || "",
+                dietary: (meta.dietary as string) || "veg",
               };
               return [newItem, ...prev];
             }
-
             return prev;
           });
         }
@@ -178,6 +185,19 @@ export const KitchenMenuManager: React.FC<KitchenMenuManagerProps> = () => {
     });
     return () => unsub();
   }, []);
+
+  // Fast fallback refresh when tab or network resumes
+  useEffect(() => {
+    const handleFocus = () => {
+      loadData();
+    };
+    window.addEventListener("focus", handleFocus);
+    window.addEventListener("online", handleFocus);
+    return () => {
+      window.removeEventListener("focus", handleFocus);
+      window.removeEventListener("online", handleFocus);
+    };
+  }, [loadData]);
 
   // Compute stats (Simple 2-state: In Stock vs Out of Stock)
   const stats = useMemo(() => {
@@ -223,6 +243,7 @@ export const KitchenMenuManager: React.FC<KitchenMenuManagerProps> = () => {
     });
 
     try {
+      const targetItem = items.find((i) => i.id === itemId);
       const res = await updateMenuItemStockAction(itemId, newStatus);
       if (res.success) {
         broadcastSyncEvent({
@@ -230,7 +251,14 @@ export const KitchenMenuManager: React.FC<KitchenMenuManagerProps> = () => {
           itemId: itemId,
           availability: newStatus,
           stockStatus: newStatus,
+          priceRupees: targetItem?.priceRupees,
           timestamp: Date.now(),
+          metadata: {
+            id: itemId,
+            status: newStatus,
+            stockStatus: newStatus,
+            priceRupees: targetItem?.priceRupees,
+          },
         });
       } else {
         setItems(prevItems); // Rollback on failure
@@ -243,10 +271,6 @@ export const KitchenMenuManager: React.FC<KitchenMenuManagerProps> = () => {
       togglingItemIdsRef.current.delete(itemId);
     }
   };
-
-
-
-
 
   const [deletingDishId, setDeletingDishId] = useState<string | null>(null);
 
@@ -263,7 +287,20 @@ export const KitchenMenuManager: React.FC<KitchenMenuManagerProps> = () => {
     setIsDishModalOpen(true);
   };
 
-  // Add New Dish with 0ms Optimistic UI update & Realtime Broadcast to Customers & Admin
+  // Open Edit Dish modal
+  const handleOpenEditDish = (item: KitchenMenuItem) => {
+    setEditingDish(item);
+    setDishName(item.name);
+    setDishCategory(item.category || items[0]?.category || "Slow Mornings");
+    setDishPrice(item.priceRupees);
+    setDishDescription(item.chefNotes || item.coreIngredients || "");
+    setDishDietary((item.dietary as "veg" | "non-veg" | "vegan" | "egg" | "beverage") || "veg");
+    setDishStatus(item.stockStatus === "SOLD_OUT" ? "SOLD_OUT" : "AVAILABLE");
+    setDishImageUrl(item.imageUrl || "");
+    setIsDishModalOpen(true);
+  };
+
+  // Add or Edit Dish with 0ms Optimistic UI update & Realtime Broadcast
   const handleSaveDish = async (e: React.FormEvent) => {
     e.preventDefault();
     if (isSavingDish) return; // Prevent duplicate submissions
@@ -278,10 +315,77 @@ export const KitchenMenuManager: React.FC<KitchenMenuManagerProps> = () => {
     }
 
     const prevItems = items;
-    const targetId = `item_custom_${Date.now()}`;
     const targetPrice = Number(dishPrice);
     const targetStatus = dishStatus === "SOLD_OUT" ? "SOLD_OUT" : "IN_STOCK";
 
+    if (editingDish) {
+      // 1. Optimistic Edit Update (0ms)
+      const updatedDish: KitchenMenuItem = {
+        ...editingDish,
+        name: dishName.trim(),
+        category: dishCategory || editingDish.category,
+        priceRupees: targetPrice,
+        stockStatus: targetStatus as "IN_STOCK" | "SOLD_OUT",
+        chefNotes: dishDescription.trim(),
+        coreIngredients: dishDescription.trim(),
+        imageUrl: dishImageUrl.trim() || null,
+        dietary: dishDietary,
+      };
+
+      setItems((prev) => prev.map((i) => (i.id === editingDish.id ? updatedDish : i)));
+      setIsDishModalOpen(false);
+      setIsSavingDish(true);
+      setFeedback({
+        type: "success",
+        text: `Updating "${dishName.trim()}"...`,
+      });
+
+      try {
+        const res = await saveMenuItemAction({
+          id: editingDish.id,
+          name: dishName.trim(),
+          categoryId: dishCategory,
+          priceRupees: targetPrice,
+          description: dishDescription.trim(),
+          dietary: dishDietary,
+          status: dishStatus,
+          imageUrl: dishImageUrl.trim() || null,
+        });
+
+        if (res.success) {
+          broadcastSyncEvent({
+            type: "ITEM_AVAILABILITY_CHANGED",
+            itemId: editingDish.id,
+            priceRupees: targetPrice,
+            stockStatus: targetStatus,
+            availability: targetStatus,
+            timestamp: Date.now(),
+            metadata: {
+              id: editingDish.id,
+              name: dishName.trim(),
+              categoryId: dishCategory,
+              priceRupees: targetPrice,
+              description: dishDescription.trim(),
+              dietary: dishDietary,
+              status: dishStatus,
+              imageUrl: dishImageUrl.trim() || null,
+            },
+          });
+          setFeedback({ type: "success", text: `Dish "${dishName.trim()}" updated successfully!` });
+        } else {
+          setItems(prevItems);
+          setFeedback({ type: "error", text: res.message || "Failed to update dish." });
+        }
+      } catch {
+        setItems(prevItems);
+        setFeedback({ type: "error", text: "Failed to update dish." });
+      } finally {
+        setIsSavingDish(false);
+      }
+      return;
+    }
+
+    const targetId = `item_custom_${Date.now()}`;
     const optimisticItem: KitchenMenuItem = {
       id: targetId,
       name: dishName.trim(),
@@ -319,6 +423,24 @@ export const KitchenMenuManager: React.FC<KitchenMenuManagerProps> = () => {
       });
 
       if (res.success) {
+        broadcastSyncEvent({
+          type: "ITEM_AVAILABILITY_CHANGED",
+          itemId: res.itemId || targetId,
+          priceRupees: targetPrice,
+          stockStatus: targetStatus,
+          availability: targetStatus,
+          timestamp: Date.now(),
+          metadata: {
+            id: res.itemId || targetId,
+            name: dishName.trim(),
+            categoryId: dishCategory,
+            priceRupees: targetPrice,
+            description: dishDescription.trim(),
+            dietary: dishDietary,
+            status: dishStatus,
+            imageUrl: dishImageUrl.trim() || null,
+          },
+        });
         setFeedback({ type: "success", text: `Dish "${dishName.trim()}" added to menu successfully!` });
       } else {
         setItems(prevItems); // Rollback on failure
@@ -343,6 +465,14 @@ export const KitchenMenuManager: React.FC<KitchenMenuManagerProps> = () => {
     try {
       const res = await deleteMenuItemAction(itemId);
       if (res.success) {
+        broadcastSyncEvent({
+          type: "ITEM_AVAILABILITY_CHANGED",
+          itemId,
+          stockStatus: "ARCHIVED",
+          availability: "ARCHIVED",
+          timestamp: Date.now(),
+          metadata: { id: itemId, status: "ARCHIVED", deleted: true },
+        });
         setFeedback({ type: "success", text: "Dish removed from menu." });
       } else {
         setItems(prevItems); // Rollback
@@ -586,8 +716,16 @@ export const KitchenMenuManager: React.FC<KitchenMenuManagerProps> = () => {
                       </div>
                     </div>
 
-                    {/* Action Buttons: Delete Dish & Chef Note */}
+                    {/* Action Buttons: Edit Dish, Delete Dish & Chef Note */}
                     <div className="flex items-center gap-1 shrink-0">
+                      <button
+                        onClick={() => handleOpenEditDish(item)}
+                        className="p-1.5 rounded-xl border border-[#C9AE8B]/40 dark:border-stone-700 hover:bg-[#EFE7DC] dark:hover:bg-stone-800 text-stone-600 dark:text-stone-300 transition cursor-pointer"
+                        title="Edit Dish"
+                      >
+                        <Edit2 className="h-3.5 w-3.5" />
+                      </button>
+
                       {deletingDishId === item.id ? (
                         <div className="flex items-center gap-1">
                           <button
@@ -605,7 +743,7 @@ export const KitchenMenuManager: React.FC<KitchenMenuManagerProps> = () => {
                         </div>
                       ) : (
                         <button
-                          onClick={() => handleDeleteDish(item.id)}
+                          onClick={() => setDeletingDishId(item.id)}
                           className="p-1.5 rounded-xl border border-rose-200 dark:border-stone-700 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-rose-500 hover:text-rose-700 transition cursor-pointer"
                           title="Delete Dish"
                         >
@@ -744,7 +882,7 @@ export const KitchenMenuManager: React.FC<KitchenMenuManagerProps> = () => {
                   </label>
                   <select
                     value={dishDietary}
-                    onChange={(e) => setDishDietary(e.target.value as any)}
+                    onChange={(e) => setDishDietary(e.target.value as "veg" | "non-veg" | "vegan" | "egg" | "beverage")}
                     className="w-full rounded-xl border border-[#C9AE8B]/50 dark:border-stone-700 bg-white dark:bg-stone-900 p-2.5 text-xs font-mono text-[#241F1C] dark:text-white focus:outline-none focus:ring-2 focus:ring-[#B72E35]"
                   >
                     <option value="veg">Vegetarian</option>
@@ -761,7 +899,7 @@ export const KitchenMenuManager: React.FC<KitchenMenuManagerProps> = () => {
                   </label>
                   <select
                     value={dishStatus}
-                    onChange={(e) => setDishStatus(e.target.value as any)}
+                    onChange={(e) => setDishStatus(e.target.value as "AVAILABLE" | "SOLD_OUT")}
                     className="w-full rounded-xl border border-[#C9AE8B]/50 dark:border-stone-700 bg-white dark:bg-stone-900 p-2.5 text-xs font-mono text-[#241F1C] dark:text-white focus:outline-none focus:ring-2 focus:ring-[#B72E35]"
                   >
                     <option value="AVAILABLE">In Stock</option>

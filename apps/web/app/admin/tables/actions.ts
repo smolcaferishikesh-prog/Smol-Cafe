@@ -2,6 +2,7 @@
 
 import { createAdminClient } from "@/lib/supabase/admin";
 import { revalidatePath } from "next/cache";
+import { broadcastSyncEvent } from "@/lib/sync-events";
 
 export interface DiningTableRecord {
   id: string;
@@ -262,21 +263,39 @@ export async function createTableAction(input: CreateTableInput): Promise<{
     revalidatePath("/");
     revalidatePath("/home");
 
-    return {
-      success: true,
-      table: {
+    const newTable: DiningTableRecord = {
+      id: tableId,
+      location_id: locationId,
+      label,
+      seats,
+      active,
+      section,
+      isOccupied: false,
+    };
+
+    broadcastSyncEvent({
+      type: "TABLE_CREATED",
+      tableId,
+      tableLabel: label,
+      metadata: {
         id: tableId,
-        location_id: locationId,
         label,
         seats,
         active,
         section,
-        isOccupied: false,
+        location_id: locationId,
       },
+      timestamp: Date.now(),
+    });
+
+    return {
+      success: true,
+      table: newTable,
       message: `Table ${label} added successfully!`,
     };
-  } catch (err: any) {
-    return { success: false, message: err?.message || "Failed to create table." };
+  } catch (err: unknown) {
+    const errorMsg = err instanceof Error ? err.message : "Failed to create table.";
+    return { success: false, message: errorMsg };
   }
 }
 
@@ -295,12 +314,12 @@ export async function updateTableAction(
     const supabase = createAdminClient();
 
     // Only update columns that exist in the PostgreSQL dining_tables schema
-    const dbUpdates: Record<string, any> = {};
+    const dbUpdates: Record<string, unknown> = {};
     if (input.label !== undefined) dbUpdates.label = input.label.trim();
     if (input.seats !== undefined) dbUpdates.seats = Number(input.seats);
     if (input.active !== undefined) dbUpdates.active = input.active;
 
-    let updated: any = null;
+    let updated: Record<string, unknown> | null = null;
     if (Object.keys(dbUpdates).length > 0) {
       const { data, error: updateError } = await supabase
         .from("dining_tables")
@@ -312,14 +331,14 @@ export async function updateTableAction(
       if (updateError) {
         return { success: false, message: updateError.message };
       }
-      updated = data;
+      updated = data as Record<string, unknown>;
     } else {
       const { data } = await supabase
         .from("dining_tables")
         .select("*")
         .eq("id", tableId)
         .single();
-      updated = data;
+      updated = data as Record<string, unknown>;
     }
 
     const cleanNum = (updated?.label || input.label || "").toString().padStart(2, "0");
@@ -331,7 +350,7 @@ export async function updateTableAction(
         globalThis.__SMOL_TABLE_SECTIONS_MAP__ = {};
       }
       globalThis.__SMOL_TABLE_SECTIONS_MAP__[tableId] = trimmedSection;
-      if (updated?.label) globalThis.__SMOL_TABLE_SECTIONS_MAP__[updated.label] = trimmedSection;
+      if (updated?.label) globalThis.__SMOL_TABLE_SECTIONS_MAP__[String(updated.label)] = trimmedSection;
       if (cleanNum) globalThis.__SMOL_TABLE_SECTIONS_MAP__[cleanNum] = trimmedSection;
 
       if (!DEFAULT_SECTIONS.includes(trimmedSection)) {
@@ -355,20 +374,37 @@ export async function updateTableAction(
     revalidatePath("/");
     revalidatePath("/home");
 
+    const updatedTable: DiningTableRecord = {
+      id: (updated?.id as string) || tableId,
+      location_id: (updated?.location_id as string) || "",
+      label: (updated?.label as string) || input.label || "",
+      seats: updated?.seats !== undefined ? Number(updated.seats) : (input.seats || 2),
+      active: updated?.active !== undefined ? Boolean(updated.active) : (input.active !== undefined ? input.active : true),
+      section: effectiveSection,
+    };
+
+    broadcastSyncEvent({
+      type: "TABLE_RENAMED",
+      tableId: updatedTable.id,
+      tableLabel: updatedTable.label,
+      metadata: {
+        id: updatedTable.id,
+        label: updatedTable.label,
+        seats: updatedTable.seats,
+        active: updatedTable.active,
+        section: updatedTable.section,
+      },
+      timestamp: Date.now(),
+    });
+
     return {
       success: true,
-      table: {
-        id: updated?.id || tableId,
-        location_id: updated?.location_id || "",
-        label: updated?.label || input.label || "",
-        seats: updated?.seats !== undefined ? updated.seats : (input.seats || 2),
-        active: updated?.active !== undefined ? updated.active : (input.active !== undefined ? input.active : true),
-        section: effectiveSection,
-      },
+      table: updatedTable,
       message: "Table updated successfully!",
     };
-  } catch (err: any) {
-    return { success: false, message: err?.message || "Failed to update table." };
+  } catch (err: unknown) {
+    const errorMsg = err instanceof Error ? err.message : "Failed to update table.";
+    return { success: false, message: errorMsg };
   }
 }
 
@@ -420,9 +456,17 @@ export async function deleteTableAction(tableId: string): Promise<{
     revalidatePath("/");
     revalidatePath("/home");
 
+    broadcastSyncEvent({
+      type: "TABLE_DELETED",
+      tableId,
+      metadata: { id: tableId },
+      timestamp: Date.now(),
+    });
+
     return { success: true, message: "Table deleted successfully." };
-  } catch (err: any) {
-    return { success: false, message: err?.message || "Failed to delete table." };
+  } catch (err: unknown) {
+    const errorMsg = err instanceof Error ? err.message : "Failed to delete table.";
+    return { success: false, message: errorMsg };
   }
 }
 
@@ -456,13 +500,25 @@ export async function createSectionAction(name: string): Promise<{
     revalidatePath("/admin");
     revalidatePath("/admin/tables");
 
+    const allSections = Array.from(new Set([...DEFAULT_SECTIONS, ...globalThis.__SMOL_CUSTOM_SECTIONS__]));
+
+    broadcastSyncEvent({
+      type: "SETTINGS_UPDATED",
+      metadata: {
+        action: "SECTIONS_UPDATED",
+        sections: allSections,
+      },
+      timestamp: Date.now(),
+    });
+
     return {
       success: true,
-      sections: Array.from(new Set([...DEFAULT_SECTIONS, ...globalThis.__SMOL_CUSTOM_SECTIONS__])),
+      sections: allSections,
       message: `Section "${trimmed}" added!`,
     };
-  } catch (err: any) {
-    return { success: false, message: err?.message || "Failed to create section." };
+  } catch (err: unknown) {
+    const errorMsg = err instanceof Error ? err.message : "Failed to create section.";
+    return { success: false, message: errorMsg };
   }
 }
 
@@ -505,12 +561,24 @@ export async function deleteSectionAction(name: string): Promise<{
     revalidatePath("/admin");
     revalidatePath("/admin/tables");
 
+    const allSections = Array.from(new Set([...DEFAULT_SECTIONS, ...(globalThis.__SMOL_CUSTOM_SECTIONS__ || [])]));
+
+    broadcastSyncEvent({
+      type: "SETTINGS_UPDATED",
+      metadata: {
+        action: "SECTIONS_UPDATED",
+        sections: allSections,
+      },
+      timestamp: Date.now(),
+    });
+
     return {
       success: true,
-      sections: Array.from(new Set([...DEFAULT_SECTIONS, ...(globalThis.__SMOL_CUSTOM_SECTIONS__ || [])])),
+      sections: allSections,
       message: `Section "${trimmed}" deleted.`,
     };
-  } catch (err: any) {
-    return { success: false, message: err?.message || "Failed to delete section." };
+  } catch (err: unknown) {
+    const errorMsg = err instanceof Error ? err.message : "Failed to delete section.";
+    return { success: false, message: errorMsg };
   }
 }

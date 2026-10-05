@@ -423,6 +423,18 @@ export async function transitionOrderStatusAction(
       data: { fromStatus, toStatus },
     });
 
+    broadcastSyncEvent({
+      type: "STATUS_CHANGED",
+      orderId,
+      status: normalizedToStatus,
+      timestamp: Date.now(),
+    });
+
+    broadcastSyncEvent({
+      type: "INVENTORY_UPDATED",
+      timestamp: Date.now(),
+    });
+
     return {
       success: true,
       currentStatus: normalizedToStatus,

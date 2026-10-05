@@ -2,6 +2,7 @@
 
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { Reward, RewardType } from "@smol-cafe/db";
+import { broadcastSyncEvent } from "@/lib/sync-events";
 
 export interface CreateRewardInput {
   name: string;
@@ -91,6 +92,12 @@ export async function createRewardAction(input: CreateRewardInput): Promise<Rewa
       return { success: false, message: "Failed to create reward." };
     }
 
+    broadcastSyncEvent({
+      type: "LOYALTY_UPDATED",
+      metadata: { entity: "reward", action: "create", id: reward.id },
+      timestamp: Date.now(),
+    });
+
     return {
       success: true,
       reward: reward as Reward,
@@ -127,6 +134,12 @@ export async function toggleRewardActiveAction(
     if (error || !reward) {
       return { success: false, message: "Failed to update reward status." };
     }
+
+    broadcastSyncEvent({
+      type: "LOYALTY_UPDATED",
+      metadata: { entity: "reward", action: "toggle", id, active },
+      timestamp: Date.now(),
+    });
 
     return {
       success: true,

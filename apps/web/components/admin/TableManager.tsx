@@ -37,7 +37,7 @@ import {
 } from "@/app/admin/tables/actions";
 import { JsonTagInspectorModal } from "@/components/table/JsonTagInspectorModal";
 import { createTableJsonTag, type TableJsonTag } from "@/lib/table-tag";
-import { broadcastSyncEvent } from "@/lib/sync-events";
+import { broadcastSyncEvent, subscribeToSyncEvents } from "@/lib/sync-events";
 
 export const DEFAULT_QR_DOMAIN = "https://www.smolcafe.in";
 
@@ -245,18 +245,125 @@ export const TableManager: React.FC<TableManagerProps> = ({
   const [selectedSection, setSelectedSection] = useState<string>("ALL");
   const [searchQuery, setSearchQuery] = useState<string>("");
 
+  const refreshTables = React.useCallback(async () => {
+    try {
+      const res = await fetchTablesAndSectionsAction();
+      if (res.success && res.tables) {
+        setTables(res.tables);
+        if (res.sections && res.sections.length > 0) {
+          setSections(res.sections);
+        }
+      }
+    } catch {
+      // ignore network errors
+    }
+  }, []);
+
   React.useEffect(() => {
     if (initialTables.length === 0) {
-      fetchTablesAndSectionsAction().then((res) => {
-        if (res.success && res.tables) {
-          setTables(res.tables);
-          if (res.sections && res.sections.length > 0) {
-            setSections(res.sections);
-          }
-        }
-      });
+      refreshTables();
     }
-  }, [initialTables]);
+  }, [initialTables, refreshTables]);
+
+  // Real-time synchronization across all devices and open tabs for Dining Tables
+  useEffect(() => {
+    const unsubscribe = subscribeToSyncEvents((event) => {
+      if (event.type === "TABLE_CREATED") {
+        const meta = event.metadata || {};
+        const label = event.tableLabel || (meta.label as string) || "";
+        const id = event.tableId || (meta.id as string) || `tbl_${Date.now()}`;
+        const section = (meta.section as string) || "smol-cafe";
+        const seats = Number(meta.seats) || 2;
+        const active = meta.active !== undefined ? Boolean(meta.active) : true;
+
+        setTables((prev) => {
+          if (prev.some((t) => t.id === id || (label && t.label.toLowerCase() === label.toLowerCase()))) {
+            return prev.map((t) =>
+              t.id === id || (label && t.label.toLowerCase() === label.toLowerCase())
+                ? { ...t, id: id || t.id, label: label || t.label, section, seats, active }
+                : t
+            );
+          }
+          return [
+            ...prev,
+            {
+              id,
+              location_id: (meta.location_id as string) || "",
+              label,
+              seats,
+              active,
+              section,
+              isOccupied: false,
+            },
+          ];
+        });
+
+        if (section) {
+          setSections((prev) => (prev.includes(section) ? prev : [...prev, section]));
+        }
+      } else if (event.type === "TABLE_RENAMED") {
+        const meta = event.metadata || {};
+        const id = event.tableId || (meta.id as string);
+        const label = event.tableLabel || (meta.label as string);
+
+        setTables((prev) =>
+          prev.map((t) => {
+            if ((id && t.id === id) || (label && t.label.toLowerCase() === label.toLowerCase())) {
+              return {
+                ...t,
+                label: label || t.label,
+                seats: meta.seats !== undefined ? Number(meta.seats) : t.seats,
+                active: meta.active !== undefined ? Boolean(meta.active) : t.active,
+                section: (meta.section as string) || t.section,
+                isOccupied: meta.isOccupied !== undefined ? Boolean(meta.isOccupied) : t.isOccupied,
+              };
+            }
+            return t;
+          })
+        );
+
+        if (meta.section && typeof meta.section === "string") {
+          const sec = meta.section;
+          setSections((prev) => (prev.includes(sec) ? prev : [...prev, sec]));
+        }
+      } else if (event.type === "TABLE_DELETED") {
+        const targetId = event.tableId || (event.metadata?.id as string);
+        const targetLabel = event.tableLabel || (event.metadata?.label as string);
+
+        setTables((prev) =>
+          prev.filter((t) => {
+            if (targetId && t.id === targetId) return false;
+            if (targetLabel && t.label.toLowerCase() === targetLabel.toLowerCase()) return false;
+            return true;
+          })
+        );
+      } else if (event.type === "SETTINGS_UPDATED") {
+        const meta = event.metadata || {};
+        if (meta.action === "SECTIONS_UPDATED" && Array.isArray(meta.sections)) {
+          setSections(meta.sections as string[]);
+        } else {
+          refreshTables();
+        }
+      } else if (event.type === "STATUS_CHANGED" || event.type === "ORDER_PLACED") {
+        refreshTables();
+      }
+    });
+
+    return () => unsubscribe();
+  }, [refreshTables]);
+
+  // Fast fallback refresh when tab or network resumes
+  useEffect(() => {
+    const handleFocus = () => {
+      refreshTables();
+    };
+    window.addEventListener("focus", handleFocus);
+    window.addEventListener("online", handleFocus);
+    return () => {
+      window.removeEventListener("focus", handleFocus);
+      window.removeEventListener("online", handleFocus);
+    };
+  }, [refreshTables]);
 
   // Modals state
   const [isAddModalOpen, setIsAddModalOpen] = useState<boolean>(false);
@@ -577,7 +684,13 @@ export const TableManager: React.FC<TableManagerProps> = ({
           type: "TABLE_CREATED",
           tableLabel: res.table.label,
           tableId: res.table.id,
-          metadata: { section: res.table.section, seats: res.table.seats },
+          metadata: {
+            id: res.table.id,
+            label: res.table.label,
+            section: res.table.section,
+            seats: res.table.seats,
+            active: res.table.active,
+          },
         });
         setIsAddModalOpen(false);
         setIsAddSectionDropdownOpen(false);
@@ -622,7 +735,13 @@ export const TableManager: React.FC<TableManagerProps> = ({
           type: "TABLE_RENAMED",
           tableLabel: res.table.label,
           tableId: res.table.id,
-          metadata: { section: res.table.section, seats: res.table.seats },
+          metadata: {
+            id: res.table.id,
+            label: res.table.label,
+            section: res.table.section,
+            seats: res.table.seats,
+            active: res.table.active,
+          },
         });
         setEditingTable(null);
         setFeedback({ type: "success", text: "Table updated successfully!" });
@@ -649,7 +768,13 @@ export const TableManager: React.FC<TableManagerProps> = ({
           type: "TABLE_RENAMED",
           tableLabel: t.label,
           tableId: t.id,
-          metadata: { active: newStatus },
+          metadata: {
+            id: t.id,
+            label: t.label,
+            active: newStatus,
+            section: t.section,
+            seats: t.seats,
+          },
         });
       }
     } catch {
@@ -669,6 +794,7 @@ export const TableManager: React.FC<TableManagerProps> = ({
           type: "TABLE_DELETED",
           tableId: deletingTable.id,
           tableLabel: deletingTable.label,
+          metadata: { id: deletingTable.id, label: deletingTable.label },
         });
         setDeletingTable(null);
         setFeedback({ type: "success", text: `Table ${deletingTable.label} deleted successfully.` });
@@ -692,6 +818,10 @@ export const TableManager: React.FC<TableManagerProps> = ({
       if (res.success && res.sections) {
         setSections(res.sections);
         setNewSectionName("");
+        broadcastSyncEvent({
+          type: "SETTINGS_UPDATED",
+          metadata: { action: "SECTIONS_UPDATED", sections: res.sections },
+        });
         setFeedback({ type: "success", text: res.message || "Section added!" });
       } else {
         setFeedback({ type: "error", text: res.message || "Failed to add section." });
@@ -711,6 +841,10 @@ export const TableManager: React.FC<TableManagerProps> = ({
       if (res.success && res.sections) {
         setSections(res.sections);
         if (selectedSection === name) setSelectedSection("ALL");
+        broadcastSyncEvent({
+          type: "SETTINGS_UPDATED",
+          metadata: { action: "SECTIONS_UPDATED", sections: res.sections },
+        });
         setFeedback({ type: "success", text: res.message || "Section removed." });
       } else {
         setFeedback({ type: "error", text: res.message || "Cannot remove section." });

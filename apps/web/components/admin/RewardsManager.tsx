@@ -1,25 +1,62 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import type { Reward, RewardType } from "@smol-cafe/db";
 import {
   createRewardAction,
   toggleRewardActiveAction,
+  fetchRewardsAction,
   type CreateRewardInput,
 } from "@/app/admin/rewards/actions";
-import { broadcastSyncEvent } from "@/lib/sync-events";
+import { broadcastSyncEvent, subscribeToSyncEvents } from "@/lib/sync-events";
 
 interface RewardsManagerProps {
   initialRewards: Reward[];
 }
 
 export const RewardsManager: React.FC<RewardsManagerProps> = ({ initialRewards }) => {
+  const router = useRouter();
   const [rewards, setRewards] = useState<Reward[]>(initialRewards);
   const [isCreating, setIsCreating] = useState(false);
   const [feedback, setFeedback] = useState<{ type: "success" | "error"; text: string } | null>(
     null
   );
+
+  const refreshRewards = useCallback(async () => {
+    try {
+      const res = await fetchRewardsAction();
+      if (res.success && res.rewards) {
+        setRewards(res.rewards);
+      } else {
+        router.refresh();
+      }
+    } catch {
+      router.refresh();
+    }
+  }, [router]);
+
+  useEffect(() => {
+    const unsub = subscribeToSyncEvents((event) => {
+      if (event.type === "LOYALTY_UPDATED" || event.type === "SETTINGS_UPDATED") {
+        refreshRewards();
+      }
+    });
+
+    const handleFocus = () => {
+      refreshRewards();
+    };
+
+    window.addEventListener("focus", handleFocus);
+    window.addEventListener("online", handleFocus);
+
+    return () => {
+      unsub();
+      window.removeEventListener("focus", handleFocus);
+      window.removeEventListener("online", handleFocus);
+    };
+  }, [refreshRewards]);
 
   // Form state
   const [name, setName] = useState("");

@@ -2,6 +2,7 @@
 
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireStaffAuth } from "@/lib/auth/rbac";
+import { broadcastSyncEvent } from "@/lib/sync-events";
 import type {
   Vendor,
   PurchaseOrder,
@@ -478,6 +479,17 @@ export async function quickRestockGRNAction(input: {
 
   store.extraGRNs.unshift(newGRN);
 
+  broadcastSyncEvent({
+    type: "INVENTORY_UPDATED",
+    metadata: {
+      action: "QUICK_RESTOCK",
+      ingredientId: input.ingredientId,
+      newStock,
+      grnNumber,
+    },
+    timestamp: Date.now(),
+  });
+
   return {
     success: true,
     grnNumber,
@@ -515,6 +527,17 @@ export async function adjustIngredientStockAction(input: {
   const ingMeta = DEFAULT_INGREDIENTS_RADAR.find((i) => i.id === input.ingredientId);
   const actionText = input.adjustmentQty < 0 ? `Reduced by ${Math.abs(input.adjustmentQty)}` : `Increased by ${input.adjustmentQty}`;
 
+  broadcastSyncEvent({
+    type: "INVENTORY_UPDATED",
+    metadata: {
+      action: "ADJUST_STOCK",
+      ingredientId: input.ingredientId,
+      newStock: updatedStock,
+      reason: input.reason,
+    },
+    timestamp: Date.now(),
+  });
+
   return {
     success: true,
     newStock: updatedStock,
@@ -547,6 +570,16 @@ export async function updateIngredientThresholdAction(input: {
     minThreshold: Math.max(0.1, input.minThreshold),
     costPerUnitPaise: input.costPerUnitPaise !== undefined ? input.costPerUnitPaise : current.costPerUnitPaise,
   };
+
+  broadcastSyncEvent({
+    type: "INVENTORY_UPDATED",
+    metadata: {
+      action: "UPDATE_THRESHOLD",
+      ingredientId: input.ingredientId,
+      minThreshold: input.minThreshold,
+    },
+    timestamp: Date.now(),
+  });
 
   return {
     success: true,
@@ -763,6 +796,17 @@ export async function recordGoodsReceiptAction(
   };
 
   store.extraGRNs.unshift(newGRN);
+
+  broadcastSyncEvent({
+    type: "INVENTORY_UPDATED",
+    metadata: {
+      action: "RECORD_GRN",
+      grnNumber,
+      vendorId: input.vendorId,
+      lines: input.lines,
+    },
+    timestamp: Date.now(),
+  });
 
   return {
     success: true,

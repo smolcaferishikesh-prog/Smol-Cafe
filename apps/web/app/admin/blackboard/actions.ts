@@ -2,6 +2,7 @@
 
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { BlackboardPost } from "@smol-cafe/db";
+import { broadcastSyncEvent } from "@/lib/sync-events";
 
 export interface CreateBlackboardInput {
   title: string;
@@ -114,6 +115,12 @@ export async function createBlackboardPostAction(
       return { success: false, message: "Failed to create blackboard post." };
     }
 
+    broadcastSyncEvent({
+      type: "SETTINGS_UPDATED",
+      metadata: { entity: "blackboard", action: "create", id: post.id },
+      timestamp: Date.now(),
+    });
+
     return {
       success: true,
       post: post as BlackboardPost,
@@ -151,6 +158,12 @@ export async function toggleBlackboardActiveAction(
       return { success: false, message: "Failed to update blackboard status." };
     }
 
+    broadcastSyncEvent({
+      type: "SETTINGS_UPDATED",
+      metadata: { entity: "blackboard", action: "toggle", id, active },
+      timestamp: Date.now(),
+    });
+
     return {
       success: true,
       post: post as BlackboardPost,
@@ -180,6 +193,13 @@ export async function deleteBlackboardPostAction(
     if (error) {
       return { success: false, message: "Failed to delete post." };
     }
+
+    broadcastSyncEvent({
+      type: "SETTINGS_UPDATED",
+      metadata: { entity: "blackboard", action: "delete", id },
+      timestamp: Date.now(),
+    });
+
     return { success: true, message: "Post deleted successfully." };
   } catch {
     return { success: false, message: "An unexpected error occurred." };

@@ -81,10 +81,10 @@ export const AdminMenuManager: React.FC<AdminMenuManagerProps> = ({ onItemChange
   }, [loadMenu]);
 
   // Realtime Supabase CDC WebSocket subscription for Postgres menu_items changes
-  useSupabaseRealtime({
+  useSupabaseRealtime<{ id?: string; name?: string; status?: string; price_snapshot?: number }>({
     table: "menu_items",
-    onData: (payload: any) => {
-      const item = payload?.new;
+    onData: (payload) => {
+      const item = payload?.new as { id?: string; name?: string; status?: string; price_snapshot?: number } | undefined;
       if (item && item.id) {
         if (item.status === "ARCHIVED") {
           setItems((prev) => prev.filter((i) => i.id !== item.id));
@@ -115,7 +115,7 @@ export const AdminMenuManager: React.FC<AdminMenuManagerProps> = ({ onItemChange
     const unsub = subscribeToSyncEvents((event) => {
       if (event.type === "ITEM_AVAILABILITY_CHANGED" || event.type === "INVENTORY_UPDATED") {
         if (event.itemId) {
-          const meta = (event.metadata as any) || {};
+          const meta = (event.metadata as Record<string, unknown>) || {};
           const isDeleted =
             event.stockStatus === "ARCHIVED" ||
             event.availability === "ARCHIVED" ||
@@ -135,12 +135,6 @@ export const AdminMenuManager: React.FC<AdminMenuManagerProps> = ({ onItemChange
               meta.status === "SOLD_OUT" ||
               meta.stockStatus === "SOLD_OUT";
             const newStatus = isSoldOut ? "SOLD_OUT" : "AVAILABLE";
-            const newPrice =
-              event.priceRupees !== undefined
-                ? event.priceRupees
-                : meta.priceRupees !== undefined
-                ? meta.priceRupees
-                : 100;
 
             if (exists) {
               return prev.map((i) =>
@@ -148,8 +142,17 @@ export const AdminMenuManager: React.FC<AdminMenuManagerProps> = ({ onItemChange
                   ? {
                       ...i,
                       status: newStatus,
-                      priceRupees: newPrice,
-                      name: meta.name || i.name,
+                      priceRupees:
+                        event.priceRupees !== undefined
+                          ? event.priceRupees
+                          : meta.priceRupees !== undefined
+                          ? Number(meta.priceRupees)
+                          : i.priceRupees,
+                      name: typeof meta.name === "string" ? meta.name : i.name,
+                      description: typeof meta.description === "string" ? meta.description : i.description,
+                      imageUrl: meta.imageUrl !== undefined ? (meta.imageUrl as string | null) : i.imageUrl,
+                      dietary: typeof meta.dietary === "string" ? meta.dietary : i.dietary,
+                      categoryId: typeof meta.categoryId === "string" ? meta.categoryId : i.categoryId,
                     }
                   : i
               );
@@ -158,15 +161,21 @@ export const AdminMenuManager: React.FC<AdminMenuManagerProps> = ({ onItemChange
             // Newly added dish by KDS/Admin — append to list in 0ms!
             if (meta.name) {
               const category = categories.find((c) => c.id === meta.categoryId);
+              const newItemPrice =
+                event.priceRupees !== undefined
+                  ? event.priceRupees
+                  : meta.priceRupees !== undefined
+                  ? Number(meta.priceRupees)
+                  : 120;
               const newItem: AdminMenuItem = {
                 id: event.itemId!,
-                name: meta.name,
-                categoryId: meta.categoryId || categories[0]?.id || "cat-1",
+                name: String(meta.name),
+                categoryId: (meta.categoryId as string) || categories[0]?.id || "cat-1",
                 categoryName: category?.name || "Menu Specials",
-                priceRupees: meta.priceRupees || newPrice,
-                description: meta.description || "",
-                imageUrl: meta.imageUrl || null,
-                dietary: meta.dietary || "veg",
+                priceRupees: newItemPrice,
+                description: (meta.description as string) || "",
+                imageUrl: (meta.imageUrl as string | null) || null,
+                dietary: (meta.dietary as string) || "veg",
                 status: newStatus,
               };
               return [newItem, ...prev];
@@ -178,6 +187,19 @@ export const AdminMenuManager: React.FC<AdminMenuManagerProps> = ({ onItemChange
     });
     return () => unsub();
   }, [categories]);
+
+  // Fast fallback refresh when tab or network resumes
+  useEffect(() => {
+    const handleFocus = () => {
+      loadMenu();
+    };
+    window.addEventListener("focus", handleFocus);
+    window.addEventListener("online", handleFocus);
+    return () => {
+      window.removeEventListener("focus", handleFocus);
+      window.removeEventListener("online", handleFocus);
+    };
+  }, [loadMenu]);
 
   // Open modal for New Item
   const handleOpenAdd = () => {
@@ -192,7 +214,20 @@ export const AdminMenuManager: React.FC<AdminMenuManagerProps> = ({ onItemChange
     setIsModalOpen(true);
   };
 
-  // Add New Dish to Menu
+  // Open modal to Edit existing Dish
+  const handleOpenEdit = (item: AdminMenuItem) => {
+    setEditingItem(item);
+    setFormName(item.name);
+    setFormCategoryId(item.categoryId);
+    setFormPriceRupees(item.priceRupees);
+    setFormDescription(item.description);
+    setFormDietary((item.dietary as "veg" | "non-veg" | "vegan" | "egg" | "beverage") || "veg");
+    setFormStatus(item.status === "SOLD_OUT" ? "SOLD_OUT" : "AVAILABLE");
+    setFormImageUrl(item.imageUrl || "");
+    setIsModalOpen(true);
+  };
+
+  // Add or Edit Dish
   const handleSubmitForm = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formName.trim()) {
@@ -204,10 +239,73 @@ export const AdminMenuManager: React.FC<AdminMenuManagerProps> = ({ onItemChange
       return;
     }
 
-    const newDishId = `item_custom_${Date.now()}`;
     const dishPrice = Number(formPriceRupees);
     const category = categories.find((c) => c.id === formCategoryId);
 
+    if (editingItem) {
+      // 1. Optimistic Edit Update (0ms)
+      const updatedItem: AdminMenuItem = {
+        ...editingItem,
+        name: formName.trim(),
+        categoryId: formCategoryId || editingItem.categoryId,
+        categoryName: category?.name || editingItem.categoryName,
+        priceRupees: dishPrice,
+        description: formDescription.trim(),
+        imageUrl: formImageUrl.trim() || null,
+        dietary: formDietary,
+        status: formStatus,
+      };
+
+      setItems((prev) => prev.map((i) => (i.id === editingItem.id ? updatedItem : i)));
+      setIsModalOpen(false);
+      setIsSubmitting(true);
+      setFeedback({ type: "success", text: `Updating "${formName.trim()}"...` });
+
+      try {
+        const res = await saveMenuItemAction({
+          id: editingItem.id,
+          name: formName.trim(),
+          categoryId: formCategoryId,
+          priceRupees: dishPrice,
+          description: formDescription.trim(),
+          dietary: formDietary,
+          status: formStatus,
+          imageUrl: formImageUrl.trim() || null,
+        });
+
+        if (res.success) {
+          broadcastSyncEvent({
+            type: "ITEM_AVAILABILITY_CHANGED",
+            itemId: editingItem.id,
+            priceRupees: dishPrice,
+            stockStatus: formStatus === "SOLD_OUT" ? "SOLD_OUT" : "IN_STOCK",
+            availability: formStatus === "SOLD_OUT" ? "SOLD_OUT" : "IN_STOCK",
+            timestamp: Date.now(),
+            metadata: {
+              id: editingItem.id,
+              name: formName.trim(),
+              categoryId: formCategoryId,
+              priceRupees: dishPrice,
+              description: formDescription.trim(),
+              dietary: formDietary,
+              status: formStatus,
+              imageUrl: formImageUrl.trim() || null,
+            },
+          });
+          setFeedback({ type: "success", text: `Dish "${formName.trim()}" updated successfully!` });
+          if (onItemChange) onItemChange();
+        } else {
+          setFeedback({ type: "error", text: res.message });
+        }
+      } catch {
+        setFeedback({ type: "error", text: "Failed to update dish." });
+      } finally {
+        setIsSubmitting(false);
+      }
+      return;
+    }
+
+    const newDishId = `item_custom_${Date.now()}`;
     const optimisticItem: AdminMenuItem = {
       id: newDishId,
       name: formName.trim(),
@@ -238,6 +336,24 @@ export const AdminMenuManager: React.FC<AdminMenuManagerProps> = ({ onItemChange
       });
 
       if (res.success) {
+        broadcastSyncEvent({
+          type: "ITEM_AVAILABILITY_CHANGED",
+          itemId: res.itemId || newDishId,
+          priceRupees: dishPrice,
+          stockStatus: formStatus === "SOLD_OUT" ? "SOLD_OUT" : "IN_STOCK",
+          availability: formStatus === "SOLD_OUT" ? "SOLD_OUT" : "IN_STOCK",
+          timestamp: Date.now(),
+          metadata: {
+            id: res.itemId || newDishId,
+            name: formName.trim(),
+            categoryId: formCategoryId,
+            priceRupees: dishPrice,
+            description: formDescription.trim(),
+            dietary: formDietary,
+            status: formStatus,
+            imageUrl: formImageUrl.trim() || null,
+          },
+        });
         setFeedback({ type: "success", text: `Dish "${formName.trim()}" added to menu successfully!` });
         if (onItemChange) onItemChange();
       } else {
@@ -277,7 +393,7 @@ export const AdminMenuManager: React.FC<AdminMenuManagerProps> = ({ onItemChange
         categoryId: item.categoryId,
         priceRupees: item.priceRupees,
         description: item.description,
-        dietary: item.dietary as any,
+        dietary: item.dietary as "veg" | "non-veg" | "vegan" | "egg" | "beverage",
         status: targetStatus,
         imageUrl: item.imageUrl,
       });
@@ -291,11 +407,13 @@ export const AdminMenuManager: React.FC<AdminMenuManagerProps> = ({ onItemChange
           itemId: item.id,
           availability: stockStatusStr,
           stockStatus: stockStatusStr,
+          priceRupees: item.priceRupees,
           timestamp: Date.now(),
           metadata: {
             id: item.id,
             status: targetStatus,
             stockStatus: stockStatusStr,
+            priceRupees: item.priceRupees,
           },
         });
         if (onItemChange) onItemChange();
@@ -319,7 +437,14 @@ export const AdminMenuManager: React.FC<AdminMenuManagerProps> = ({ onItemChange
         setFeedback({ type: "success", text: "Item removed from menu." });
         setDeletingItemId(null);
         setItems((prev) => prev.filter((i) => i.id !== itemId));
-        broadcastSyncEvent({ type: "ITEM_AVAILABILITY_CHANGED", itemId });
+        broadcastSyncEvent({
+          type: "ITEM_AVAILABILITY_CHANGED",
+          itemId,
+          stockStatus: "ARCHIVED",
+          availability: "ARCHIVED",
+          timestamp: Date.now(),
+          metadata: { id: itemId, status: "ARCHIVED", deleted: true },
+        });
         if (onItemChange) onItemChange();
       } else {
         setFeedback({ type: "error", text: res.message });
@@ -618,6 +743,14 @@ export const AdminMenuManager: React.FC<AdminMenuManagerProps> = ({ onItemChange
                   </div>
 
                   <div className="flex items-center gap-1.5 shrink-0">
+                    <button
+                      onClick={() => handleOpenEdit(item)}
+                      className="p-1.5 rounded-lg border border-stone-200 dark:border-stone-700 hover:bg-stone-100 dark:hover:bg-stone-800 text-stone-500 hover:text-stone-900 dark:hover:text-stone-100 transition cursor-pointer"
+                      title="Edit Dish"
+                    >
+                      <Edit2 className="w-3.5 h-3.5" />
+                    </button>
+
                     {deletingItemId === item.id ? (
                       <div className="flex items-center gap-1">
                         <button
