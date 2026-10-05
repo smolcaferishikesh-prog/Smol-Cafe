@@ -289,7 +289,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ tableLabel = "07", guest
           orderId: finalOrderId,
           orderNo: finalOrderNo,
           tableLabel: finalTableLabel,
-          status: orderStatus as any,
+          status: orderStatus,
           timestamp: Date.now(),
           metadata: {
             paymentStatus: orderPaymentStatus,
@@ -302,7 +302,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ tableLabel = "07", guest
 
         if (isCashier) {
           broadcastSyncEvent({
-            type: "ORDER_PENDING_CASHIER" as any,
+            type: "ORDER_PENDING_CASHIER",
             orderId: finalOrderId,
             orderNo: finalOrderNo,
             tableLabel: finalTableLabel,
@@ -734,20 +734,20 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ tableLabel = "07", guest
 
               {/* Direct Cashier & Kitchen Order Dispatch Card */}
               <div className="pt-1">
-                <div className="rounded-3xl border border-[#B72E35]/30 dark:border-[#FF5B52]/25 bg-gradient-to-br from-[#FAF4EB] via-[#F6ECE0] to-[#EFE2D2] dark:from-[#251E1A] dark:via-[#1E1815] dark:to-[#171311] p-4 shadow-[0_4px_20px_rgba(183,46,53,0.08)] dark:shadow-[0_4px_24px_rgba(0,0,0,0.4)] transition-all">
+                <div className="rounded-3xl border border-[#B72E35]/30 dark:border-purple-500/30 bg-gradient-to-br from-[#FAF4EB] via-[#F6ECE0] to-[#EFE2D2] dark:from-[#20152B] dark:via-[#180F22] dark:to-[#120A1B] p-4 shadow-[0_4px_20px_rgba(183,46,53,0.08)] dark:shadow-[0_4px_24px_rgba(147,51,234,0.18)] transition-all">
                   {/* Card Header with Live Dispatch Badge */}
-                  <div className="flex items-center justify-between pb-3 border-b border-[#C9AE8B]/30 dark:border-white/10">
+                  <div className="flex items-center justify-between pb-3 border-b border-[#C9AE8B]/30 dark:border-purple-500/20">
                     <div className="flex items-center gap-2">
                       <span className="relative flex h-2.5 w-2.5">
                         <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
                         <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500" />
                       </span>
-                      <span className="font-mono text-[11px] font-bold tracking-wider uppercase text-[#725039] dark:text-[#C9AE8B]">
+                      <span className="font-mono text-[11px] font-bold tracking-wider uppercase text-[#725039] dark:text-purple-200">
                         Live Counter Order
                       </span>
                     </div>
-                    <span className="inline-flex items-center gap-1 rounded-full bg-[#B72E35]/10 dark:bg-[#FF5B52]/15 px-2.5 py-0.5 font-mono text-[10.5px] font-bold text-[#B72E35] dark:text-[#FF8080]">
-                      <Receipt className="w-3 h-3" /> Pay at Counter / Table
+                    <span className="inline-flex items-center gap-1 rounded-full bg-[#B72E35]/10 dark:bg-purple-950/70 border border-transparent dark:border-purple-500/30 px-2.5 py-0.5 font-mono text-[10.5px] font-bold text-[#B72E35] dark:text-purple-300">
+                      <Receipt className="w-3 h-3 text-[#B72E35] dark:text-purple-300" /> Pay at Counter / Table
                     </span>
                   </div>
 
@@ -756,14 +756,14 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ tableLabel = "07", guest
                     type="button"
                     onClick={handleTestBypassPayment}
                     disabled={isBypassing}
-                    className="group relative w-full mt-3 overflow-hidden rounded-2xl bg-gradient-to-r from-[#B72E35] via-[#A0242B] to-[#7D1217] dark:from-[#B72E35] dark:via-[#952229] dark:to-[#6C1217] p-4 text-left text-white shadow-[0_4px_16px_rgba(183,46,53,0.35)] hover:shadow-[0_6px_22px_rgba(183,46,53,0.5)] hover:scale-[1.01] active:scale-[0.99] transition-all duration-200 cursor-pointer disabled:opacity-60"
+                    className="group relative w-full mt-3 overflow-hidden rounded-2xl bg-gradient-to-r from-[#B72E35] via-[#A0242B] to-[#7D1217] dark:from-[#9333EA] dark:via-[#7E22CE] dark:to-[#581C87] border border-transparent dark:border-purple-400/40 p-4 text-left text-white shadow-[0_4px_16px_rgba(183,46,53,0.35)] dark:shadow-[0_4px_24px_rgba(126,34,206,0.45)] hover:shadow-[0_6px_22px_rgba(183,46,53,0.5)] dark:hover:shadow-[0_6px_30px_rgba(168,85,247,0.6)] hover:scale-[1.01] active:scale-[0.99] transition-all duration-200 cursor-pointer disabled:opacity-60"
                   >
                     {/* Ambient shine overlay on hover */}
-                    <span className="absolute inset-0 -translate-x-full group-hover:translate-x-full bg-gradient-to-r from-transparent via-white/20 to-transparent transition-transform duration-700 ease-in-out pointer-events-none" />
+                    <span className="absolute inset-0 -translate-x-full group-hover:translate-x-full bg-gradient-to-r from-transparent via-white/20 dark:via-white/30 to-transparent transition-transform duration-700 ease-in-out pointer-events-none" />
 
                     <div className="relative z-10 flex items-center justify-between gap-3">
                       <div className="flex items-center gap-3.5">
-                        <div className="w-11 h-11 rounded-xl bg-white/15 border border-white/25 flex items-center justify-center shrink-0 shadow-xs backdrop-blur-xs">
+                        <div className="w-11 h-11 rounded-xl bg-white/15 dark:bg-white/20 border border-white/25 dark:border-purple-300/40 flex items-center justify-center shrink-0 shadow-xs backdrop-blur-xs">
                           {isBypassing ? (
                             <Loader2 className="w-5 h-5 text-white animate-spin" />
                           ) : (
@@ -774,26 +774,26 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ tableLabel = "07", guest
                           <h3 className="font-serif font-bold text-[16px] sm:text-[17px] text-white leading-tight">
                             {isBypassing ? "Sending Order to Cashier..." : "Send Order to Cashier"}
                           </h3>
-                          <p className="font-sans text-[12px] text-[#F3E7D3]/90 mt-0.5 leading-snug">
+                          <p className="font-sans text-[12px] text-[#F3E7D3]/90 dark:text-purple-100/90 mt-0.5 leading-snug">
                             Instant live dispatch to Cashier Counter &amp; Kitchen
                           </p>
                         </div>
                       </div>
 
-                      <div className="w-8 h-8 rounded-full bg-white/15 flex items-center justify-center shrink-0 group-hover:bg-white/25 transition-colors">
+                      <div className="w-8 h-8 rounded-full bg-white/15 dark:bg-white/20 flex items-center justify-center shrink-0 group-hover:bg-white/25 dark:group-hover:bg-white/30 transition-colors">
                         <ChevronRight className="w-4 h-4 text-white group-hover:translate-x-0.5 transition-transform" />
                       </div>
                     </div>
                   </button>
 
                   {/* Key Highlights */}
-                  <div className="mt-3 grid grid-cols-2 gap-2 pt-2.5 border-t border-[#C9AE8B]/25 dark:border-white/5 text-[11px] font-mono text-[#725039] dark:text-[#C9AE8B]">
+                  <div className="mt-3 grid grid-cols-2 gap-2 pt-2.5 border-t border-[#C9AE8B]/25 dark:border-purple-500/20 text-[11px] font-mono text-[#725039] dark:text-purple-200/80">
                     <div className="flex items-center gap-1.5">
-                      <Sparkles className="w-3.5 h-3.5 text-[#B72E35] dark:text-[#F2C84B] shrink-0" />
+                      <Sparkles className="w-3.5 h-3.5 text-[#B72E35] dark:text-purple-400 shrink-0" />
                       <span>Instant Kitchen Prep</span>
                     </div>
                     <div className="flex items-center justify-end gap-1.5">
-                      <CreditCard className="w-3.5 h-3.5 text-[#725039] dark:text-[#C9AE8B] shrink-0" />
+                      <CreditCard className="w-3.5 h-3.5 text-[#725039] dark:text-purple-300 shrink-0" />
                       <span>Cash, UPI or Card</span>
                     </div>
                   </div>
