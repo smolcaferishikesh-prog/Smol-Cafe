@@ -1,27 +1,64 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import type { BlackboardPost } from "@smol-cafe/db";
 import {
   createBlackboardPostAction,
   toggleBlackboardActiveAction,
   deleteBlackboardPostAction,
+  fetchAllBlackboardPostsAction,
   type CreateBlackboardInput,
 } from "@/app/admin/blackboard/actions";
-import { broadcastSyncEvent } from "@/lib/sync-events";
+import { broadcastSyncEvent, subscribeToSyncEvents } from "@/lib/sync-events";
 
 interface BlackboardManagerProps {
   initialPosts: BlackboardPost[];
 }
 
 export const BlackboardManager: React.FC<BlackboardManagerProps> = ({ initialPosts }) => {
+  const router = useRouter();
   const [posts, setPosts] = useState<BlackboardPost[]>(initialPosts);
   const [isCreating, setIsCreating] = useState(false);
   const [feedback, setFeedback] = useState<{ type: "success" | "error"; text: string } | null>(
     null
   );
   const togglingIdsRef = React.useRef<Set<string>>(new Set());
+
+  const refreshPosts = useCallback(async () => {
+    try {
+      const res = await fetchAllBlackboardPostsAction();
+      if (res.success && res.posts) {
+        setPosts(res.posts);
+      } else {
+        router.refresh();
+      }
+    } catch {
+      router.refresh();
+    }
+  }, [router]);
+
+  useEffect(() => {
+    const unsub = subscribeToSyncEvents((event) => {
+      if (event.type === "SETTINGS_UPDATED") {
+        refreshPosts();
+      }
+    });
+
+    const handleFocus = () => {
+      refreshPosts();
+    };
+
+    window.addEventListener("focus", handleFocus);
+    window.addEventListener("online", handleFocus);
+
+    return () => {
+      unsub();
+      window.removeEventListener("focus", handleFocus);
+      window.removeEventListener("online", handleFocus);
+    };
+  }, [refreshPosts]);
 
   // Form state
   const [title, setTitle] = useState("");
@@ -109,6 +146,7 @@ export const BlackboardManager: React.FC<BlackboardManagerProps> = ({ initialPos
       const res = await deleteBlackboardPostAction(id);
       if (res.success) {
         setPosts((prev) => prev.filter((p) => p.id !== id));
+        broadcastSyncEvent({ type: "SETTINGS_UPDATED", timestamp: Date.now() });
       }
     } catch {
       setFeedback({ type: "error", text: "Failed to delete post." });

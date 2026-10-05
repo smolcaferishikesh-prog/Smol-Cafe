@@ -477,8 +477,13 @@ export async function confirmCashierOrderAction(
       console.warn("status history insert notice:", histErr);
     }
 
-    // NOTE: Client-side CashierDashboard handles broadcastSyncEvent after this server action returns.
-    // broadcastSyncEvent is a no-op on the server (typeof window === "undefined").
+    broadcastSyncEvent({
+      type: "STATUS_CHANGED",
+      orderId,
+      status: "ACCEPTED",
+      timestamp: Date.now(),
+      metadata: { stationTarget },
+    });
 
     const destinationLabel =
       stationTarget === "KITCHEN"
@@ -535,7 +540,13 @@ export async function rejectCashierOrderAction(
       console.warn("status history reject insert notice:", histErr);
     }
 
-    // NOTE: Client-side handles broadcastSyncEvent after this server action returns.
+    broadcastSyncEvent({
+      type: "STATUS_CHANGED",
+      orderId,
+      status: "CANCELLED",
+      timestamp: Date.now(),
+      metadata: { reason },
+    });
 
     return {
       success: true,
@@ -593,7 +604,12 @@ export async function clearAllPendingCashierOrdersAction(
       }
     }
 
-    // NOTE: Client-side handles broadcastSyncEvent after this server action returns.
+    broadcastSyncEvent({
+      type: "STATUS_CHANGED",
+      status: targetStatus,
+      timestamp: Date.now(),
+      metadata: { count: orderIds.length },
+    });
 
     return {
       success: true,

@@ -15,7 +15,8 @@ export interface RealtimeSubscriptionOptions<T extends { [key: string]: unknown 
 
 /**
  * High-performance React hook for real-time PostgreSQL WebSocket subscriptions via Supabase Realtime.
- * Uses deterministic channel names to prevent connection bloat and re-subscribe churn.
+ * Uses unique channel identifiers per hook instance to prevent callbacks-after-subscribe errors,
+ * connection bloat, and StrictMode channel collisions.
  */
 export function useSupabaseRealtime<T extends { [key: string]: unknown } = Record<string, unknown>>({
   table,
@@ -38,63 +39,69 @@ export function useSupabaseRealtime<T extends { [key: string]: unknown } = Recor
       return;
     }
 
-    // Deterministic channel name per table & filter to avoid duplicate subscriptions
-    const channelName = `realtime_${schema}_${table}_${filter || "all"}`;
-    let isSubscribed = true;
+    // Unique channel instance per component to avoid "cannot add callbacks after subscribe()" error
+    const channelId = `rt_${schema}_${table}_${filter ? filter.replace(/[^a-zA-Z0-9]/g, "_") : "all"}_${Math.random().toString(36).slice(2, 9)}`;
+    let isMounted = true;
+    let channel: ReturnType<typeof supabase.channel> | null = null;
     let reconnectTimeout: NodeJS.Timeout | null = null;
 
     function setupChannel() {
-      if (!isSubscribed) return;
+      if (!isMounted) return;
 
-      const channel = supabase.channel(channelName);
+      try {
+        channel = supabase.channel(channelId);
 
-      channel
-        .on(
-          "postgres_changes",
-          {
-            event,
-            schema,
-            table,
-            filter,
-          },
-          (payload: RealtimePostgresChangesPayload<T>) => {
-            if (onDataRef.current) {
-              onDataRef.current(payload);
+        channel
+          .on(
+            "postgres_changes",
+            {
+              event,
+              schema,
+              table,
+              filter,
+            },
+            (payload: RealtimePostgresChangesPayload<T>) => {
+              if (onDataRef.current) {
+                onDataRef.current(payload);
+              }
             }
-          }
-        )
-        .subscribe((status: string) => {
-          if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
-            if (isSubscribed && !reconnectTimeout) {
-              reconnectTimeout = setTimeout(() => {
-                reconnectTimeout = null;
-                try {
-                  supabase.removeChannel(channel);
-                } catch {
-                  // ignore cleanup
-                }
-                setupChannel();
-              }, 2000);
+          )
+          .subscribe((status: string) => {
+            if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
+              if (isMounted && !reconnectTimeout) {
+                reconnectTimeout = setTimeout(() => {
+                  reconnectTimeout = null;
+                  if (!isMounted) return;
+                  if (channel) {
+                    try {
+                      supabase.removeChannel(channel);
+                    } catch {
+                      // ignore cleanup error
+                    }
+                  }
+                  setupChannel();
+                }, 2000);
+              }
             }
-          }
-        });
-
-      return channel;
+          });
+      } catch (err) {
+        console.warn("[useSupabaseRealtime] Setup channel error:", err);
+      }
     }
 
-    const currentChannel = setupChannel();
+    setupChannel();
 
     return () => {
-      isSubscribed = false;
+      isMounted = false;
       if (reconnectTimeout) {
         clearTimeout(reconnectTimeout);
       }
-      try {
-        if (currentChannel) {
-          supabase.removeChannel(currentChannel);
+      if (channel) {
+        try {
+          supabase.removeChannel(channel);
+        } catch {
+          // ignore cleanup error
         }
-      } catch {
-        // ignore cleanup error
       }
     };
   }, [table, schema, filter, event, enabled]);

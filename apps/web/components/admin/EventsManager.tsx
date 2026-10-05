@@ -1,26 +1,63 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import type { AdminEventWithRsvps, CreateEventInput } from "@/app/events/actions";
 import {
   createCafeEventAction,
   toggleCafeEventActiveAction,
   deleteCafeEventAction,
+  fetchAllAdminEventsAction,
 } from "@/app/events/actions";
-import { broadcastSyncEvent } from "@/lib/sync-events";
+import { broadcastSyncEvent, subscribeToSyncEvents } from "@/lib/sync-events";
 
 interface EventsManagerProps {
   initialEvents: AdminEventWithRsvps[];
 }
 
 export const EventsManager: React.FC<EventsManagerProps> = ({ initialEvents }) => {
+  const router = useRouter();
   const [events, setEvents] = useState<AdminEventWithRsvps[]>(initialEvents);
   const [isCreating, setIsCreating] = useState(false);
   const [feedback, setFeedback] = useState<{ type: "success" | "error"; text: string } | null>(
     null
   );
   const togglingIdsRef = React.useRef<Set<string>>(new Set());
+
+  const refreshEvents = useCallback(async () => {
+    try {
+      const res = await fetchAllAdminEventsAction();
+      if (res.success && res.events) {
+        setEvents(res.events);
+      } else {
+        router.refresh();
+      }
+    } catch {
+      router.refresh();
+    }
+  }, [router]);
+
+  useEffect(() => {
+    const unsub = subscribeToSyncEvents((event) => {
+      if (event.type === "SETTINGS_UPDATED") {
+        refreshEvents();
+      }
+    });
+
+    const handleFocus = () => {
+      refreshEvents();
+    };
+
+    window.addEventListener("focus", handleFocus);
+    window.addEventListener("online", handleFocus);
+
+    return () => {
+      unsub();
+      window.removeEventListener("focus", handleFocus);
+      window.removeEventListener("online", handleFocus);
+    };
+  }, [refreshEvents]);
 
   // Form state
   const [title, setTitle] = useState("");
@@ -113,6 +150,7 @@ export const EventsManager: React.FC<EventsManagerProps> = ({ initialEvents }) =
       const res = await deleteCafeEventAction(id);
       if (res.success) {
         setEvents((prev) => prev.filter((e) => e.id !== id));
+        broadcastSyncEvent({ type: "SETTINGS_UPDATED", timestamp: Date.now() });
       }
     } catch {
       setFeedback({ type: "error", text: "Failed to delete event." });

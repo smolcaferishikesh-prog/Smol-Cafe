@@ -120,20 +120,71 @@ export const ProcurementManager: React.FC<ProcurementManagerProps> = ({ initialD
   const [taxId, setTaxId] = useState("");
   const [isCreatingVendor, setIsCreatingVendor] = useState(false);
 
-  const refreshData = async () => {
+  const refreshData = React.useCallback(async () => {
     const fresh = await fetchProcurementDataAction();
     if (fresh.success) setData(fresh);
-  };
+  }, []);
 
-  // Listen to realtime INVENTORY_UPDATED across tabs/mesh
+  // Listen to realtime INVENTORY_UPDATED and order events across all devices & tabs
   useEffect(() => {
     const unsubscribe = subscribeToSyncEvents((event) => {
-      if (event.type === "INVENTORY_UPDATED" || event.type === "ORDER_PLACED" || event.type === "ORDER_CONFIRMED") {
+      if (event.type === "INVENTORY_UPDATED") {
+        const meta = event.metadata || {};
+        const ingId = (meta.ingredientId as string) || event.itemId;
+        const newStock = meta.newStock as number | undefined;
+
+        if (ingId && typeof newStock === "number") {
+          setData((prev) => {
+            if (!prev.radarData) return prev;
+            const updatedIngredients = prev.radarData.ingredients.map((ing) => {
+              if (ing.id === ingId) {
+                return {
+                  ...ing,
+                  currentStock: newStock,
+                  status:
+                    newStock <= 0
+                      ? ("CRITICAL_LOW" as const)
+                      : newStock <= ing.minThreshold
+                      ? ("LOW_STOCK" as const)
+                      : ("OPTIMAL" as const),
+                };
+              }
+              return ing;
+            });
+            return {
+              ...prev,
+              radarData: {
+                ...prev.radarData,
+                ingredients: updatedIngredients,
+                criticalCount: updatedIngredients.filter((i) => i.currentStock <= 0).length,
+                lowStockCount: updatedIngredients.filter(
+                  (i) => i.currentStock > 0 && i.currentStock <= i.minThreshold
+                ).length,
+                healthyCount: updatedIngredients.filter((i) => i.currentStock > i.minThreshold).length,
+              },
+            };
+          });
+        }
+        refreshData();
+      } else if (event.type === "ORDER_PLACED" || event.type === "ORDER_CONFIRMED") {
         refreshData();
       }
     });
     return () => unsubscribe();
-  }, []);
+  }, [refreshData]);
+
+  // Fast fallback refresh when tab or network resumes
+  useEffect(() => {
+    const handleFocus = () => {
+      refreshData();
+    };
+    window.addEventListener("focus", handleFocus);
+    window.addEventListener("online", handleFocus);
+    return () => {
+      window.removeEventListener("focus", handleFocus);
+      window.removeEventListener("online", handleFocus);
+    };
+  }, [refreshData]);
 
   // Quick Restock Submit
   const handleQuickRestockSubmit = async (e: React.FormEvent) => {
@@ -185,9 +236,17 @@ export const ProcurementManager: React.FC<ProcurementManagerProps> = ({ initialD
           };
         });
 
+        const updatedStock = Number((quickRestockItem.currentStock + quickRestockQty).toFixed(1));
         setQuickRestockItem(null);
         await refreshData();
-        broadcastSyncEvent({ type: "INVENTORY_UPDATED" });
+        broadcastSyncEvent({
+          type: "INVENTORY_UPDATED",
+          itemId: quickRestockItem.id,
+          metadata: {
+            ingredientId: quickRestockItem.id,
+            newStock: updatedStock,
+          },
+        });
       } else {
         setFeedback({ type: "error", text: res.message || "Could not complete restock." });
       }
@@ -216,9 +275,17 @@ export const ProcurementManager: React.FC<ProcurementManagerProps> = ({ initialD
 
       if (res.success) {
         setFeedback({ type: "success", text: res.message || "Stock adjusted." });
+        const adjustedItemId = adjustItem.id;
         setAdjustItem(null);
         await refreshData();
-        broadcastSyncEvent({ type: "INVENTORY_UPDATED" });
+        broadcastSyncEvent({
+          type: "INVENTORY_UPDATED",
+          itemId: adjustedItemId,
+          metadata: {
+            ingredientId: adjustedItemId,
+            newStock: res.newStock,
+          },
+        });
       } else {
         setFeedback({ type: "error", text: res.message || "Failed to adjust stock." });
       }

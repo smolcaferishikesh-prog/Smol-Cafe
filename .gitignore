@@ -42,3 +42,5 @@ next-env.d.ts
 # scratch and temp
 scratch/
 .temp/
+apps/web/data/
+data/
