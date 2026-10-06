@@ -52,6 +52,7 @@ export const KitchenMenuManager: React.FC<KitchenMenuManagerProps> = () => {
   const [dishPrice, setDishPrice] = useState<number | "">("");
   const [dishDescription, setDishDescription] = useState<string>("");
   const [dishDietary, setDishDietary] = useState<"veg" | "non-veg" | "vegan" | "egg" | "beverage">("veg");
+  const [dishBestPairing, setDishBestPairing] = useState<string>("");
   const [dishStatus, setDishStatus] = useState<"AVAILABLE" | "SOLD_OUT">("AVAILABLE");
   const [dishImageUrl, setDishImageUrl] = useState<string>("");
   const [isSavingDish, setIsSavingDish] = useState<boolean>(false);
@@ -282,6 +283,7 @@ export const KitchenMenuManager: React.FC<KitchenMenuManagerProps> = () => {
     setDishPrice("");
     setDishDescription("");
     setDishDietary("veg");
+    setDishBestPairing("");
     setDishStatus("AVAILABLE");
     setDishImageUrl("");
     setIsDishModalOpen(true);
@@ -295,6 +297,7 @@ export const KitchenMenuManager: React.FC<KitchenMenuManagerProps> = () => {
     setDishPrice(item.priceRupees);
     setDishDescription(item.chefNotes || item.coreIngredients || "");
     setDishDietary((item.dietary as "veg" | "non-veg" | "vegan" | "egg" | "beverage") || "veg");
+    setDishBestPairing(item.bestPairing || "");
     setDishStatus(item.stockStatus === "SOLD_OUT" ? "SOLD_OUT" : "AVAILABLE");
     setDishImageUrl(item.imageUrl || "");
     setIsDishModalOpen(true);
@@ -330,6 +333,7 @@ export const KitchenMenuManager: React.FC<KitchenMenuManagerProps> = () => {
         coreIngredients: dishDescription.trim(),
         imageUrl: dishImageUrl.trim() || null,
         dietary: dishDietary,
+        bestPairing: dishBestPairing.trim(),
       };
 
       setItems((prev) => prev.map((i) => (i.id === editingDish.id ? updatedDish : i)));
@@ -348,6 +352,7 @@ export const KitchenMenuManager: React.FC<KitchenMenuManagerProps> = () => {
           priceRupees: targetPrice,
           description: dishDescription.trim(),
           dietary: dishDietary,
+          bestPairing: dishBestPairing.trim(),
           status: dishStatus,
           imageUrl: dishImageUrl.trim() || null,
         });
@@ -367,6 +372,7 @@ export const KitchenMenuManager: React.FC<KitchenMenuManagerProps> = () => {
               priceRupees: targetPrice,
               description: dishDescription.trim(),
               dietary: dishDietary,
+              best_pairing: dishBestPairing.trim(),
               status: dishStatus,
               imageUrl: dishImageUrl.trim() || null,
             },
@@ -398,6 +404,7 @@ export const KitchenMenuManager: React.FC<KitchenMenuManagerProps> = () => {
       imageUrl: dishImageUrl.trim() || null,
       coreIngredients: dishDescription.trim(),
       dietary: dishDietary,
+      bestPairing: dishBestPairing.trim(),
     };
 
     // 1. Instant 0ms Optimistic UI Update (Prepend to menu list)
@@ -418,6 +425,7 @@ export const KitchenMenuManager: React.FC<KitchenMenuManagerProps> = () => {
         priceRupees: targetPrice,
         description: dishDescription.trim(),
         dietary: dishDietary,
+        bestPairing: dishBestPairing.trim(),
         status: dishStatus,
         imageUrl: dishImageUrl.trim() || null,
       });
@@ -437,6 +445,7 @@ export const KitchenMenuManager: React.FC<KitchenMenuManagerProps> = () => {
             priceRupees: targetPrice,
             description: dishDescription.trim(),
             dietary: dishDietary,
+            best_pairing: dishBestPairing.trim(),
             status: dishStatus,
             imageUrl: dishImageUrl.trim() || null,
           },
@@ -759,6 +768,14 @@ export const KitchenMenuManager: React.FC<KitchenMenuManagerProps> = () => {
                       &ldquo;{item.chefNotes}&rdquo;
                     </div>
                   )}
+
+                  {/* Pairing Suggestion badge */}
+                  {item.bestPairing && (
+                    <div className="mt-2 flex items-center gap-1.5 text-[10.5px] font-mono font-medium text-amber-800 dark:text-amber-200 bg-amber-50/80 dark:bg-amber-950/40 border border-amber-200/80 dark:border-amber-900/40 px-2 py-0.5 rounded-lg w-fit">
+                      <Sparkles className="h-3 w-3 text-amber-600 shrink-0" />
+                      <span>Pairs with: <strong>{item.bestPairing}</strong></span>
+                    </div>
+                  )}
                 </div>
 
                 {/* 2-BUTTON STOCK TOGGLE: 1. IN STOCK  2. OUT OF STOCK */}
@@ -920,6 +937,71 @@ export const KitchenMenuManager: React.FC<KitchenMenuManagerProps> = () => {
                   placeholder="Brioche bread, cinnamon, whipped vanilla mascarpone, maple drizzle"
                   className="w-full rounded-xl border border-[#C9AE8B]/50 dark:border-stone-700 bg-white dark:bg-stone-900 p-2.5 text-xs font-mono text-[#241F1C] dark:text-white focus:outline-none focus:ring-2 focus:ring-[#B72E35]"
                 />
+              </div>
+
+              {/* Suggestions / Pairings (Pairs with) */}
+              <div className="p-3 rounded-xl bg-amber-50/70 dark:bg-amber-950/20 border border-amber-200/80 dark:border-amber-900/40 space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-mono font-bold text-amber-900 dark:text-amber-200 flex items-center gap-1.5">
+                    <Sparkles className="w-3.5 h-3.5 text-amber-600" />
+                    <span>Customer Suggestions &amp; Best Pairing (Pairs With)</span>
+                  </label>
+                  <span className="text-[10px] text-amber-700/80 dark:text-amber-400 font-mono">
+                    Shown on Menu &amp; Upsell
+                  </span>
+                </div>
+
+                <input
+                  type="text"
+                  placeholder="e.g. Smol Chai / Adrak Chai, Triple Decker, Classic Cold Coffee"
+                  value={dishBestPairing}
+                  onChange={(e) => setDishBestPairing(e.target.value)}
+                  className="w-full rounded-xl border border-amber-200 dark:border-amber-800/60 bg-white dark:bg-stone-900 p-2.5 text-xs font-mono text-[#241F1C] dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500/40"
+                />
+
+                {/* Quick Suggestion Chips */}
+                <div className="space-y-1">
+                  <span className="text-[10px] uppercase font-mono font-semibold text-amber-800/80 dark:text-amber-400">
+                    Quick suggestions:
+                  </span>
+                  <div className="flex flex-wrap gap-1.5">
+                    {[
+                      "Smol Chai",
+                      "Classic Cold Coffee",
+                      "Triple Decker",
+                      "Buransh Fizz",
+                      "Masala Chaas",
+                      "Brownie / Affogato",
+                      "Cappuccino",
+                      "Fresh Lime Soda",
+                    ].map((chip) => {
+                      const isSelected = dishBestPairing.toLowerCase().includes(chip.toLowerCase());
+                      return (
+                        <button
+                          key={chip}
+                          type="button"
+                          onClick={() => {
+                            if (isSelected) {
+                              const regex = new RegExp(`\\s*\\/?\\s*${chip}`, "gi");
+                              setDishBestPairing((prev) => prev.replace(regex, "").replace(/^[\s\/]+|[\s\/]+$/g, ""));
+                            } else {
+                              setDishBestPairing((prev) =>
+                                prev.trim() ? `${prev.trim()} / ${chip}` : chip
+                              );
+                            }
+                          }}
+                          className={`text-[10.5px] px-2 py-0.5 rounded-md font-mono font-medium transition cursor-pointer ${
+                            isSelected
+                              ? "bg-amber-600 text-white shadow-xs"
+                              : "bg-white dark:bg-stone-800 text-amber-900 dark:text-amber-200 border border-amber-200/80 dark:border-amber-800 hover:bg-amber-100 dark:hover:bg-amber-900/40"
+                          }`}
+                        >
+                          + {chip}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
               </div>
 
               {/* Photo / Image Selection with Camera & Upload Support */}

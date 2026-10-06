@@ -20,6 +20,7 @@ export interface SaveMenuItemPayload {
   description?: string;
   imageUrl?: string | null;
   dietary?: "veg" | "non-veg" | "vegan" | "egg" | "beverage";
+  bestPairing?: string;
   status?: "AVAILABLE" | "SOLD_OUT" | "ARCHIVED";
 }
 
@@ -37,6 +38,7 @@ export interface AdminMenuItem {
   description: string;
   imageUrl: string | null;
   dietary: string;
+  bestPairing?: string;
   status: string;
 }
 
@@ -75,6 +77,7 @@ export async function fetchAdminMenuCatalogAction(): Promise<{
           description: it.description || "",
           imageUrl: it.imageUrl || null,
           dietary: it.metadata?.dietary || "veg",
+          bestPairing: it.metadata?.best_pairing || "",
           status: it.status || "AVAILABLE",
         });
       });
@@ -141,7 +144,7 @@ export async function saveMenuItemAction(
   payload: SaveMenuItemPayload
 ): Promise<{ success: boolean; message: string; itemId: string }> {
   try {
-    const { id, name, categoryId, priceRupees, description, imageUrl, dietary, status } = payload;
+    const { id, name, categoryId, priceRupees, description, imageUrl, dietary, bestPairing, status } = payload;
     const isEdit = !!id;
     const itemId = id || `item_custom_${Date.now()}`;
     const amountPaise = Math.round(priceRupees * 100);
@@ -167,7 +170,9 @@ export async function saveMenuItemAction(
         imageUrl: finalImageUrl,
         status: itemStatus,
         metadata: {
+          ...(overridesStore[itemId]?.metadata || {}),
           dietary: dietary || "veg",
+          best_pairing: bestPairing !== undefined ? bestPairing.trim() : (overridesStore[itemId]?.metadata?.best_pairing || ""),
           availability: itemStatus === "SOLD_OUT" ? "SOLD_OUT" : "IN_STOCK",
         },
       };
@@ -186,6 +191,7 @@ export async function saveMenuItemAction(
           metadata: {
             ...customStore[existingCustomIdx].metadata,
             dietary: dietary || "veg",
+            best_pairing: bestPairing !== undefined ? bestPairing.trim() : (customStore[existingCustomIdx].metadata?.best_pairing || ""),
             availability: itemStatus === "SOLD_OUT" ? "SOLD_OUT" : "IN_STOCK",
           },
         };
@@ -202,6 +208,7 @@ export async function saveMenuItemAction(
         imageUrl: finalImageUrl,
         metadata: {
           dietary: dietary || "veg",
+          best_pairing: bestPairing?.trim() || "",
           availability: itemStatus === "SOLD_OUT" ? "SOLD_OUT" : "IN_STOCK",
         },
       };
@@ -294,11 +301,22 @@ export async function saveMenuItemAction(
         priceRupees,
         description: description || "",
         dietary: dietary || "veg",
+        best_pairing: bestPairing?.trim() || "",
         status: itemStatus,
         stockStatus: itemStatus === "SOLD_OUT" ? "SOLD_OUT" : "IN_STOCK",
         imageUrl: finalImageUrl,
       },
     });
+
+    try {
+      revalidateTag("menu-catalog");
+      revalidatePath("/menu");
+      revalidatePath("/smol-menu");
+      revalidatePath("/admin");
+      revalidatePath("/");
+    } catch {
+      // ignore
+    }
 
     return {
       success: true,

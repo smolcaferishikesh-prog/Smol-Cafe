@@ -20,6 +20,7 @@ export interface KitchenMenuItem {
   imageUrl?: string | null;
   coreIngredients?: string;
   dietary?: string;
+  bestPairing?: string;
 }
 
 export interface KitchenIngredientItem {
@@ -119,6 +120,7 @@ export async function fetchKitchenMenuCatalogAction(): Promise<{
           imageUrl: it.imageUrl,
           coreIngredients: it.metadata?.core_ingredients as string | undefined,
           dietary: it.metadata?.dietary as string | undefined,
+          bestPairing: it.metadata?.best_pairing as string | undefined,
         });
       });
     });

@@ -67,13 +67,16 @@ const MenuContentInner: React.FC<MenuClientViewProps> = ({
     description?: string;
     imageUrl?: string | null;
     dietary?: string;
+    bestPairing?: string;
   }) => {
     setCategories((prevCategories) => {
       if (payload.status === "ARCHIVED" || payload.stockStatus === "ARCHIVED") {
-        return prevCategories.map((cat) => ({
+        const next = prevCategories.map((cat) => ({
           ...cat,
           items: cat.items.filter((it) => it.id !== payload.id),
         }));
+        cacheMenuCatalog(next);
+        return next;
       }
 
       let found = false;
@@ -103,6 +106,10 @@ const MenuContentInner: React.FC<MenuClientViewProps> = ({
               ...targetItem.metadata,
               availability: isSoldOut ? "SOLD_OUT" : "IN_STOCK",
               dietary: payload.dietary || targetItem.metadata?.dietary || "veg",
+              best_pairing:
+                payload.bestPairing !== undefined
+                  ? payload.bestPairing
+                  : targetItem.metadata?.best_pairing || "",
             },
           };
           return { ...cat, items: updatedItems };
@@ -132,13 +139,16 @@ const MenuContentInner: React.FC<MenuClientViewProps> = ({
             imageUrl: payload.imageUrl || null,
             metadata: {
               dietary: payload.dietary || "veg",
+              best_pairing: payload.bestPairing || "",
               availability: isSoldOut ? "SOLD_OUT" : "IN_STOCK",
             },
           };
 
-          return updatedCategories.map((c) =>
+          const next = updatedCategories.map((c) =>
             c.id === targetCategory.id ? { ...c, items: [newItem, ...c.items] } : c
           );
+          cacheMenuCatalog(next);
+          return next;
         }
       }
 
@@ -155,17 +165,25 @@ const MenuContentInner: React.FC<MenuClientViewProps> = ({
           return {
             ...prev,
             name: payload.name || prev.name,
+            description: payload.description !== undefined ? payload.description : prev.description,
+            imageUrl: payload.imageUrl !== undefined ? payload.imageUrl : prev.imageUrl,
             status: isSoldOut ? "SOLD_OUT" : "ACTIVE",
             pricePaise: newPricePaise,
             metadata: {
               ...prev.metadata,
               availability: isSoldOut ? "SOLD_OUT" : "IN_STOCK",
+              dietary: payload.dietary || prev.metadata?.dietary || "veg",
+              best_pairing:
+                payload.bestPairing !== undefined
+                  ? payload.bestPairing
+                  : prev.metadata?.best_pairing || "",
             },
           };
         }
         return prev;
       });
 
+      cacheMenuCatalog(updatedCategories);
       return updatedCategories;
     });
   }, []);
@@ -185,6 +203,7 @@ const MenuContentInner: React.FC<MenuClientViewProps> = ({
           stockStatus: item.status === "SOLD_OUT" ? "SOLD_OUT" : "IN_STOCK",
           description: item.description,
           imageUrl: item.image_url,
+          bestPairing: item.metadata?.best_pairing || item.metadata?.bestPairing,
         });
       }
     },
@@ -206,6 +225,7 @@ const MenuContentInner: React.FC<MenuClientViewProps> = ({
             description: meta.description,
             imageUrl: meta.imageUrl,
             dietary: meta.dietary,
+            bestPairing: meta.best_pairing || meta.bestPairing,
           });
         }
       }
