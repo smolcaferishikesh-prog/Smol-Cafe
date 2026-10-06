@@ -52,12 +52,11 @@ const PROTECTED_PREFIXES = [
 ];
 
 export function middleware(request: NextRequest) {
-  // 1. Bypass Server Actions and API/RSC POST requests so they receive valid JSON/RSC responses
+  // 1. Bypass Server Actions and API mutation POST requests
   if (
     request.method === "POST" ||
     request.headers.get("next-action") ||
-    request.headers.get("x-next-action") ||
-    request.headers.get("rsc")
+    request.headers.get("x-next-action")
   ) {
     return NextResponse.next();
   }
@@ -96,13 +95,21 @@ export function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
+    "/kitchen",
     "/kitchen/:path*",
+    "/cashier",
     "/cashier/:path*",
+    "/admin",
     "/admin/:path*",
+    "/barista",
     "/barista/:path*",
+    "/smol-backdoor/kitchen",
     "/smol-backdoor/kitchen/:path*",
+    "/smol-backdoor/cashier",
     "/smol-backdoor/cashier/:path*",
+    "/smol-backdoor/admin",
     "/smol-backdoor/admin/:path*",
+    "/smol-backdoor/barista",
     "/smol-backdoor/barista/:path*",
   ],
 };

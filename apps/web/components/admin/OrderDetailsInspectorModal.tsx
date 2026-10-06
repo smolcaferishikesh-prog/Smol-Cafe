@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
+import { createPortal } from "react-dom";
 import Image from "next/image";
 import { TableJsonTag, createTableJsonTag } from "@/lib/table-tag";
 import type { AdminOrderRecord } from "@/app/admin/actions";
@@ -36,6 +37,11 @@ export const OrderDetailsInspectorModal: React.FC<OrderDetailsInspectorModalProp
   const [activeTab, setActiveTab] = useState<"details" | "raw">("details");
   const [copied, setCopied] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   // Resolved values
   const tableNumber = order?.tableLabel || tag?.table_number || "01";
@@ -97,9 +103,11 @@ export const OrderDetailsInspectorModal: React.FC<OrderDetailsInspectorModalProp
     (s) => s.key === (order?.status || "SUBMITTED")
   );
 
-  return (
+  if (!mounted) return null;
+
+  return createPortal(
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-xs animate-fade-in"
+      className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 dark:bg-black/85 p-4 backdrop-blur-md animate-fade-in"
       onClick={onClose}
     >
       <div
@@ -457,6 +465,7 @@ export const OrderDetailsInspectorModal: React.FC<OrderDetailsInspectorModalProp
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };

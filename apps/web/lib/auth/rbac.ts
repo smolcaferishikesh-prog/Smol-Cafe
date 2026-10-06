@@ -70,10 +70,11 @@ export async function requireStaffAuth(
     const supabase = await createClient();
     const { data: authData, error } = await supabase.auth.getUser();
 
-    if (error || !authData.user) {
+    if (error || !authData?.user) {
       return {
-        authorized: true,
-        role: "admin",
+        authorized: false,
+        error: "AUTH_REQUIRED",
+        message: "Staff authentication required. Please log in at /smol-backdoor.",
       };
     }
 

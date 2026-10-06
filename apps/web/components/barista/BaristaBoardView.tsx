@@ -490,11 +490,11 @@ export const BaristaBoardView: React.FC<BaristaBoardViewProps> = ({ initialOrder
   return (
     <div className="flex min-h-screen flex-col bg-[#F3E7D3] dark:bg-[#181412] text-[#241F1C] dark:text-[#FAF4EB] font-sans transition-colors duration-200">
       {/* Top Barista Header */}
-      <header className="sticky top-0 z-30 border-b border-[#C9AE8B]/40 dark:border-white/10 bg-[#FAF4EB]/95 dark:bg-[#1D1815]/95 px-3 sm:px-6 py-2.5 backdrop-blur-md">
-        <div className="flex flex-wrap items-center justify-between gap-2.5 sm:gap-4">
+      <header className="sticky top-0 z-30 border-b border-[#C9AE8B]/40 dark:border-white/10 bg-[#FAF4EB]/95 dark:bg-[#1D1815]/95 px-3 sm:px-5 lg:px-6 py-2 sm:py-2.5 backdrop-blur-md">
+        <div className="flex items-center justify-between gap-2 sm:gap-4 flex-nowrap">
           {/* Brand & Station Indicator with Custom Barista Logos */}
-          <div className="flex items-center gap-2.5 shrink-0">
-            <div className="relative h-10 w-7 sm:h-11 sm:w-8 shrink-0 select-none">
+          <div className="flex items-center gap-2 sm:gap-2.5 shrink-0 min-w-0">
+            <div className="relative h-8 w-6 sm:h-10 sm:w-7.5 shrink-0 select-none">
               <Image
                 src="/barista-logo.png"
                 alt="smol café barista logo"
@@ -510,33 +510,33 @@ export const BaristaBoardView: React.FC<BaristaBoardViewProps> = ({ initialOrder
                 className="object-contain drop-shadow-[0_0_10px_rgba(168,85,247,0.5)] hidden dark:block"
               />
             </div>
-            <div>
-              <div className="flex items-center gap-1.5">
-                <span className="font-serif text-lg sm:text-xl font-bold tracking-tight text-[#241F1C] dark:text-[#FAF4EB]">
+            <div className="min-w-0">
+              <div className="flex items-center gap-1 sm:gap-1.5">
+                <span className="font-serif text-sm sm:text-lg font-bold tracking-tight text-[#241F1C] dark:text-[#FAF4EB] whitespace-nowrap">
                   smol café
                 </span>
                 <span className="text-[10px] text-[#F2C84B]">✦</span>
-                <span className="rounded-md border border-[#C9AE8B]/40 dark:border-white/10 bg-[#F3E7D3] dark:bg-white/5 px-2 py-0.5 font-mono text-[10.5px] font-bold text-[#B72E35] dark:text-[#FF6B6B]">
-                  barista desk
+                <span className="rounded-md border border-[#C9AE8B]/40 dark:border-white/10 bg-[#F3E7D3] dark:bg-white/5 px-1.5 py-0.5 font-mono text-[9.5px] sm:text-[10.5px] font-bold text-[#B72E35] dark:text-[#FF6B6B] shrink-0 whitespace-nowrap">
+                  barista
                 </span>
               </div>
-              <p className="font-mono text-[10px] text-[#725039] dark:text-[#C9AE8B] -mt-0.5 hidden sm:block">
+              <p className="font-mono text-[10px] text-[#725039] dark:text-[#C9AE8B] -mt-0.5 hidden sm:block truncate">
                 single-origin espresso &amp; artisanal pour overs
               </p>
             </div>
           </div>
 
-
           {/* Right Action Controls */}
-          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+          <div className="flex items-center gap-1 sm:gap-1.5 lg:gap-2 shrink-0">
             {dismissedTicketIds.size > 0 && (
               <button
                 onClick={handleRestoreDismissed}
-                className="flex items-center gap-1 rounded-full border border-[#C9AE8B]/60 dark:border-stone-700 bg-[#FAF4EB] dark:bg-[#1D1815] px-2.5 py-1 text-xs font-mono text-[#725039] dark:text-[#C9AE8B] hover:text-[#B72E35] transition cursor-pointer shadow-xs"
+                className="flex items-center gap-1 rounded-full border border-[#C9AE8B]/60 dark:border-stone-700 bg-[#FAF4EB] dark:bg-[#1D1815] px-2 sm:px-2.5 py-1 text-[11px] sm:text-xs font-mono text-[#725039] dark:text-[#C9AE8B] hover:text-[#B72E35] transition cursor-pointer shadow-xs whitespace-nowrap"
                 title="Restore dismissed tickets"
               >
-                <RotateCcw className="h-3 w-3" />
-                <span className="hidden sm:inline">restore ({dismissedTicketIds.size})</span>
+                <RotateCcw className="h-3 w-3 shrink-0" />
+                <span className="hidden sm:inline">restore</span>
+                <span>({dismissedTicketIds.size})</span>
               </button>
             )}
 
@@ -551,7 +551,7 @@ export const BaristaBoardView: React.FC<BaristaBoardViewProps> = ({ initialOrder
                   return next;
                 });
               }}
-              className={`flex items-center gap-1 rounded-full border px-2 sm:px-3 py-1 text-xs font-mono transition cursor-pointer whitespace-nowrap ${
+              className={`flex items-center gap-1 rounded-full border px-2 sm:px-2.5 py-1 text-xs font-mono transition cursor-pointer whitespace-nowrap ${
                 soundEnabled
                   ? "border-[#F2C84B]/60 bg-[#F2C84B]/20 text-[#8C6207] dark:text-[#F2C84B]"
                   : "border-[#C9AE8B]/40 dark:border-white/10 bg-[#FAF4EB] dark:bg-[#1D1815] text-[#725039] dark:text-[#C9AE8B]"
@@ -561,12 +561,12 @@ export const BaristaBoardView: React.FC<BaristaBoardViewProps> = ({ initialOrder
               {soundEnabled ? (
                 <>
                   <Bell className="h-3.5 w-3.5 text-[#8C6207] dark:text-[#F2C84B] shrink-0" />
-                  <span className="hidden sm:inline">chime on 🔔</span>
+                  <span className="hidden sm:inline">chime</span>
                 </>
               ) : (
                 <>
                   <BellOff className="h-3.5 w-3.5 shrink-0" />
-                  <span className="hidden sm:inline">chime off</span>
+                  <span className="hidden sm:inline">mute</span>
                 </>
               )}
             </button>
@@ -574,13 +574,16 @@ export const BaristaBoardView: React.FC<BaristaBoardViewProps> = ({ initialOrder
             {/* Refresh */}
             <button
               onClick={() => void refreshOrders(true)}
-              className="flex h-8 w-8 items-center justify-center rounded-full border border-[#C9AE8B]/40 dark:border-white/10 bg-[#FAF4EB] dark:bg-[#1D1815] text-[#725039] dark:text-[#C9AE8B] hover:text-[#241F1C] transition cursor-pointer"
+              className="flex h-7 w-7 sm:h-8 sm:w-8 items-center justify-center rounded-full border border-[#C9AE8B]/40 dark:border-white/10 bg-[#FAF4EB] dark:bg-[#1D1815] text-[#725039] dark:text-[#C9AE8B] hover:text-[#241F1C] transition cursor-pointer shrink-0"
               title="Refresh tickets"
             >
-              <RefreshCw className={`h-3.5 w-3.5 ${isRefreshing ? "animate-spin" : ""}`} />
+              <RefreshCw className={`h-3 w-3 sm:h-3.5 sm:w-3.5 ${isRefreshing ? "animate-spin" : ""}`} />
             </button>
 
-            <ThemeToggle />
+            {/* Theme Toggle */}
+            <div className="shrink-0">
+              <ThemeToggle />
+            </div>
 
             {/* Logout */}
             <button
@@ -588,10 +591,10 @@ export const BaristaBoardView: React.FC<BaristaBoardViewProps> = ({ initialOrder
                 await staffLogoutAction();
                 window.location.href = "/smol-backdoor";
               }}
-              className="flex h-8 sm:h-auto items-center justify-center gap-1 rounded-full border border-[#C9AE8B]/40 dark:border-white/10 bg-[#FAF4EB] dark:bg-[#1D1815] sm:px-3 sm:py-1 text-xs font-mono text-[#725039] dark:text-[#C9AE8B] hover:text-[#B72E35] transition cursor-pointer"
+              className="flex h-7 w-7 sm:h-auto sm:w-auto items-center justify-center gap-1 rounded-full border border-[#B72E35]/40 hover:border-[#B72E35] dark:border-white/10 bg-[#FAF4EB] dark:bg-[#1D1815] sm:px-2.5 sm:py-1 text-[11px] sm:text-xs font-mono font-bold text-[#B72E35] dark:text-[#FF6B6B] hover:bg-[#B72E35] hover:text-white transition cursor-pointer shrink-0"
               title="Staff logout"
             >
-              <LogOut className="h-3.5 w-3.5" />
+              <LogOut className="h-3 w-3 sm:h-3.5 sm:w-3.5 shrink-0" />
               <span className="hidden sm:inline">logout</span>
             </button>
           </div>

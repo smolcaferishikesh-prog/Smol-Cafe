@@ -1,3 +1,5 @@
+import { redirect } from "next/navigation";
+import { requireStaffAuth } from "@/lib/auth/rbac";
 import { fetchProcurementDataAction } from "./actions";
 import { ProcurementManager } from "@/components/admin/ProcurementManager";
 
@@ -9,6 +11,12 @@ export const metadata = {
 };
 
 export default async function AdminProcurementPage() {
+  const auth = await requireStaffAuth(["admin", "super_admin"]);
+
+  if (!auth.authorized) {
+    redirect("/smol-backdoor");
+  }
+
   const initialData = await fetchProcurementDataAction();
 
   return <ProcurementManager initialData={initialData} />;

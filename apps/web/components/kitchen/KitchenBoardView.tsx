@@ -518,10 +518,11 @@ export const KitchenBoardView: React.FC<KitchenBoardViewProps> = ({ initialOrder
   return (
     <div className="flex min-h-screen flex-col bg-[#F3E7D3] dark:bg-[#241F1C] text-[#241F1C] dark:text-[#F3E7D3] font-sans transition-colors duration-200">
       {/* Header */}
-      <header className="sticky top-0 z-30 border-b border-[#C9AE8B]/40 dark:border-[#C9AE8B]/20 bg-[#FAF4EB]/95 dark:bg-[#1D1815]/95 px-3 sm:px-6 py-2 sm:py-3 backdrop-blur-md transition-colors duration-200">
-        <div className="flex items-center justify-between gap-2 sm:gap-4">
+      <header className="sticky top-0 z-30 border-b border-[#C9AE8B]/40 dark:border-[#C9AE8B]/20 bg-[#FAF4EB]/95 dark:bg-[#1D1815]/95 px-3 sm:px-5 lg:px-6 py-2 sm:py-3 backdrop-blur-md transition-colors duration-200 shadow-xs">
+        {/* Top Header Row: Brand (Left) + Full Action Bar (Right) */}
+        <div className="flex items-center justify-between gap-2 sm:gap-4 flex-nowrap">
           {/* Brand */}
-          <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+          <div className="flex items-center gap-2 sm:gap-3 shrink-0 min-w-0">
             <div className="relative h-8 w-6 sm:h-10 sm:w-7.5 shrink-0 select-none">
               <Image
                 src="/kitchen-logo.png"
@@ -538,24 +539,24 @@ export const KitchenBoardView: React.FC<KitchenBoardViewProps> = ({ initialOrder
                 className="object-contain drop-shadow-[0_0_8px_rgba(168,85,247,0.4)] hidden dark:block"
               />
             </div>
-            <div className="shrink-0">
-              <div className="flex items-center gap-1.5 sm:gap-2">
-                <span className="font-serif text-base sm:text-lg font-bold tracking-tight text-[#241F1C] dark:text-[#F3E7D3] lowercase whitespace-nowrap">
+            <div className="min-w-0">
+              <div className="flex items-center gap-1 sm:gap-2">
+                <span className="font-serif text-sm sm:text-lg font-bold tracking-tight text-[#241F1C] dark:text-[#F3E7D3] lowercase whitespace-nowrap">
                   smol café
                 </span>
-                <span className="text-[10px] sm:text-xs text-[#754CFF]">✦</span>
-                <span className="rounded-md border border-[#C9AE8B]/40 dark:border-[#C9AE8B]/30 bg-[#F3E7D3] dark:bg-[#241F1C] px-1.5 sm:px-2 py-0.5 font-mono text-[10px] sm:text-[11px] text-[#B72E35] dark:text-[#F2C84B] shrink-0 whitespace-nowrap">
-                  kitchen kds
+                <span className="text-[10px] text-[#754CFF]">✦</span>
+                <span className="rounded-md border border-[#C9AE8B]/40 dark:border-[#C9AE8B]/30 bg-[#F3E7D3] dark:bg-[#241F1C] px-1.5 py-0.5 font-mono text-[9.5px] sm:text-[11px] font-bold text-[#B72E35] dark:text-[#F2C84B] shrink-0 whitespace-nowrap">
+                  kds
                 </span>
               </div>
-              <p className="hidden lg:block font-serif italic text-[11px] text-[#725039] dark:text-[#C9AE8B] -mt-0.5 truncate whitespace-nowrap">
+              <p className="hidden sm:block font-serif italic text-[10.5px] text-[#725039] dark:text-[#C9AE8B] -mt-0.5 truncate whitespace-nowrap">
                 order preparation &amp; ticket dispatch
               </p>
             </div>
           </div>
 
-          {/* Central KDS View Switcher */}
-          <div className="hidden md:flex items-center gap-1 rounded-2xl bg-[#EFE7DC] dark:bg-[#151110] p-1 border border-[#C9AE8B]/30 dark:border-stone-800 shrink-0">
+          {/* Central KDS View Switcher (Desktop XL+ inline view) */}
+          <div className="hidden xl:flex items-center gap-1 rounded-2xl bg-[#EFE7DC] dark:bg-[#151110] p-1 border border-[#C9AE8B]/30 dark:border-stone-800 shrink-0 shadow-inner">
             <button
               onClick={() => setCurrentView("TICKETS")}
               className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl font-mono text-xs font-bold transition cursor-pointer whitespace-nowrap ${
@@ -592,32 +593,35 @@ export const KitchenBoardView: React.FC<KitchenBoardViewProps> = ({ initialOrder
           </div>
 
           {/* Right Action Controls */}
-          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-            {/* Restore Dismissed Tickets Button (only visible if any are dismissed) */}
+          <div className="flex items-center gap-1 sm:gap-1.5 lg:gap-2 shrink-0">
+            {/* Restore Dismissed Tickets Button */}
             {dismissedTicketIds.size > 0 && (
               <button
                 onClick={handleRestoreDismissed}
-                className="flex items-center gap-1 rounded-full border border-[#C9AE8B]/60 dark:border-stone-700 bg-[#FAF4EB] dark:bg-[#1D1815] px-2.5 py-1 text-xs font-mono text-[#725039] dark:text-[#C9AE8B] hover:text-[#B72E35] hover:border-[#B72E35] transition cursor-pointer shadow-xs whitespace-nowrap"
-                title="Restore dismissed tickets back to board"
+                className="flex items-center gap-1 rounded-full border border-[#C9AE8B]/60 dark:border-stone-700 bg-[#FAF4EB] dark:bg-[#1D1815] px-2 sm:px-2.5 py-1 text-[11px] sm:text-xs font-mono text-[#725039] dark:text-[#C9AE8B] hover:text-[#B72E35] transition cursor-pointer shadow-xs whitespace-nowrap"
+                title="Restore dismissed tickets"
               >
                 <RotateCcw className="h-3 w-3 shrink-0" />
-                <span className="hidden sm:inline">restore ({dismissedTicketIds.size})</span>
+                <span className="hidden sm:inline">restore</span>
+                <span>({dismissedTicketIds.size})</span>
               </button>
             )}
 
-            {/* Station Load & ETA Analytics Toggle */}
+            {/* Station Load Toggle */}
             <button
               onClick={() => setShowEtaAnalytics(!showEtaAnalytics)}
-              className={`hidden xl:flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-mono transition cursor-pointer whitespace-nowrap ${
+              className={`flex items-center gap-1 rounded-full border px-2 sm:px-3 py-1 text-xs font-mono font-medium transition cursor-pointer whitespace-nowrap shadow-xs ${
                 showEtaAnalytics
                   ? "border-[#B72E35] bg-[#B72E35]/15 text-[#B72E35] dark:text-[#F2C84B]"
-                  : "border-[#C9AE8B]/40 dark:border-[#C9AE8B]/30 bg-[#FAF4EB] dark:bg-[#241F1C] text-[#725039] dark:text-[#C9AE8B] hover:text-[#241F1C] dark:hover:text-[#F3E7D3]"
+                  : "border-[#C9AE8B]/50 dark:border-stone-700 bg-[#FAF4EB] dark:bg-[#241F1C] text-[#725039] dark:text-[#C9AE8B]"
               }`}
+              title="Station Load & ETA"
             >
-              <span>⏱ station load</span>
+              <span>⏱</span>
+              <span className="hidden md:inline">load</span>
             </button>
 
-            {/* Sound Toggle */}
+            {/* Sound / Chime Toggle */}
             <button
               onClick={() => {
                 setSoundEnabled((v) => {
@@ -628,48 +632,49 @@ export const KitchenBoardView: React.FC<KitchenBoardViewProps> = ({ initialOrder
                   return next;
                 });
               }}
-              className={`flex items-center gap-1 rounded-full border px-2 sm:px-3 py-1 text-xs font-mono transition cursor-pointer whitespace-nowrap ${
+              className={`flex items-center gap-1 rounded-full border px-2 sm:px-2.5 py-1 text-xs font-mono font-medium transition cursor-pointer whitespace-nowrap shadow-xs ${
                 soundEnabled
                   ? "border-[#F2C84B]/60 bg-[#F2C84B]/20 text-[#8C6207] dark:text-[#F2C84B]"
-                  : "border-[#C9AE8B]/40 dark:border-[#C9AE8B]/30 bg-[#FAF4EB] dark:bg-[#241F1C] text-[#725039] dark:text-[#C9AE8B] hover:text-[#241F1C] dark:hover:text-[#F3E7D3]"
+                  : "border-[#C9AE8B]/50 dark:border-stone-700 bg-[#FAF4EB] dark:bg-[#241F1C] text-[#725039] dark:text-[#C9AE8B]"
               }`}
-              title={soundEnabled ? "Mute audio alerts" : "Enable audio alerts & test chime"}
+              title={soundEnabled ? "Mute audio alerts" : "Enable audio alerts"}
             >
               {soundEnabled ? (
                 <>
                   <Bell className="h-3.5 w-3.5 text-[#8C6207] dark:text-[#F2C84B] shrink-0" />
-                  <span className="hidden sm:inline">chime on 🔔</span>
+                  <span className="hidden md:inline">chime</span>
                 </>
               ) : (
                 <>
                   <BellOff className="h-3.5 w-3.5 shrink-0" />
-                  <span className="hidden sm:inline">chime off</span>
+                  <span className="hidden md:inline">mute</span>
                 </>
               )}
             </button>
 
-            {/* Live Polling Indicator */}
-            <div className="flex items-center gap-1.5 sm:gap-2 rounded-full border border-[#C9AE8B]/40 dark:border-[#C9AE8B]/30 bg-[#FAF4EB] dark:bg-[#241F1C] px-2 sm:px-3 py-1 text-xs font-mono text-[#725039] dark:text-[#C9AE8B] whitespace-nowrap">
+            {/* Live Status Indicator */}
+            <div className="flex items-center gap-1 sm:gap-1.5 rounded-full border border-[#C9AE8B]/50 dark:border-stone-700 bg-[#FAF4EB] dark:bg-[#241F1C] px-2 sm:px-2.5 py-1 text-[11px] sm:text-xs font-mono text-[#725039] dark:text-[#C9AE8B] whitespace-nowrap shadow-xs">
               <span
                 className={`h-2 w-2 rounded-full bg-[#75AFA7] shrink-0 ${
                   isRefreshing ? "scale-125 opacity-70" : "animate-pulse"
                 }`}
               />
-              <span className="hidden sm:inline" suppressHydrationWarning>
+              <span className="hidden lg:inline" suppressHydrationWarning>
                 live · {mounted ? lastRefreshedAt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "--:--:--"}
               </span>
+              <span className="inline lg:hidden text-[10.5px]">live</span>
             </div>
 
-            {/* Manual Sync Button */}
+            {/* Refresh */}
             <button
               onClick={() => void refreshOrders(true)}
-              className="flex h-7.5 w-7.5 sm:h-8 sm:w-8 items-center justify-center rounded-full border border-[#C9AE8B]/40 dark:border-[#C9AE8B]/30 bg-[#FAF4EB] dark:bg-[#241F1C] text-[#725039] dark:text-[#C9AE8B] hover:text-[#241F1C] dark:hover:text-[#F3E7D3] transition cursor-pointer shrink-0"
+              className="flex h-7 w-7 sm:h-8 sm:w-8 items-center justify-center rounded-full border border-[#C9AE8B]/50 dark:border-stone-700 bg-[#FAF4EB] dark:bg-[#241F1C] text-[#725039] dark:text-[#C9AE8B] transition cursor-pointer shrink-0 shadow-xs"
               title="Refresh tickets"
             >
-              <RefreshCw className={`h-3.5 w-3.5 shrink-0 ${isRefreshing ? "animate-spin" : ""}`} />
+              <RefreshCw className={`h-3 w-3 sm:h-3.5 sm:w-3.5 shrink-0 ${isRefreshing ? "animate-spin" : ""}`} />
             </button>
 
-            {/* Theme Toggle (Light / Dark Mode) */}
+            {/* Theme Toggle */}
             <div className="shrink-0">
               <ThemeToggle />
             </div>
@@ -680,57 +685,63 @@ export const KitchenBoardView: React.FC<KitchenBoardViewProps> = ({ initialOrder
                 await staffLogoutAction();
                 window.location.reload();
               }}
-              className="flex h-7.5 w-7.5 sm:h-auto sm:w-auto items-center justify-center gap-1 rounded-full border border-[#C9AE8B]/40 dark:border-[#C9AE8B]/30 bg-[#FAF4EB] dark:bg-[#241F1C] sm:px-3 sm:py-1 text-xs font-mono text-[#725039] dark:text-[#C9AE8B] hover:text-[#B72E35] transition cursor-pointer shrink-0 whitespace-nowrap"
-              title="Logout"
+              className="flex h-7 w-7 sm:h-auto sm:w-auto items-center justify-center gap-1 rounded-full border border-[#B72E35]/40 hover:border-[#B72E35] dark:border-stone-700 bg-[#FAF4EB] dark:bg-[#241F1C] sm:px-2.5 sm:py-1 text-[11px] sm:text-xs font-mono font-bold text-[#B72E35] dark:text-[#FF6B6B] hover:bg-[#B72E35] hover:text-white dark:hover:bg-rose-950/60 transition cursor-pointer shrink-0 whitespace-nowrap shadow-xs"
+              title="Staff Logout"
             >
-              <LogOut className="h-3.5 w-3.5 shrink-0" />
+              <LogOut className="h-3 w-3 sm:h-3.5 sm:w-3.5 shrink-0" />
               <span className="hidden sm:inline">logout</span>
             </button>
           </div>
         </div>
 
-        {/* Mobile View Switcher Row (< md screens) */}
-        <div className="md:hidden flex items-center justify-between gap-1.5 pt-2 border-t border-[#C9AE8B]/20 dark:border-stone-800/60 mt-2 overflow-x-auto">
-          <div className="flex flex-1 items-center gap-1 rounded-xl bg-[#EFE7DC] dark:bg-[#151110] p-1 border border-[#C9AE8B]/30 dark:border-stone-800">
+        {/* Sub-Bar: 3-Segment KDS View Switcher (Mobile & Tablet < xl) */}
+        <div className="xl:hidden flex items-center justify-between gap-1 pt-2 sm:pt-2.5 border-t border-[#C9AE8B]/25 dark:border-stone-800/80 mt-2 sm:mt-2.5">
+          <div className="flex flex-1 items-center gap-1 rounded-2xl bg-[#EFE7DC] dark:bg-[#151110] p-0.5 sm:p-1 border border-[#C9AE8B]/30 dark:border-stone-800 shadow-inner">
             <button
               onClick={() => setCurrentView("TICKETS")}
-              className={`flex-1 flex items-center justify-center gap-1 py-1.5 px-2 rounded-lg font-mono text-[11px] font-bold transition cursor-pointer whitespace-nowrap ${
+              className={`flex-1 flex items-center justify-center gap-1 sm:gap-1.5 py-1.5 sm:py-2 px-1 sm:px-3 rounded-xl font-mono text-[11px] sm:text-xs font-bold transition cursor-pointer whitespace-nowrap ${
                 currentView === "TICKETS"
-                  ? "bg-[#B72E35] text-white shadow-xs"
+                  ? "bg-[#B72E35] text-white shadow-sm"
                   : "text-[#725039] dark:text-[#C9AE8B] hover:text-[#241F1C] dark:hover:text-white"
               }`}
             >
-              <Coffee className="h-3 w-3 shrink-0" />
-              <span>Tickets ({orders.filter((o) => o.status !== "SERVED").length})</span>
+              <Coffee className="h-3 w-3 sm:h-3.5 sm:w-3.5 shrink-0" />
+              <span>
+                <span className="hidden sm:inline">Live </span>Tickets ({orders.filter((o) => o.status !== "SERVED" && o.status !== "COMPLETED").length})
+              </span>
             </button>
             <button
               onClick={() => setCurrentView("MENU_STOCK")}
-              className={`flex-1 flex items-center justify-center gap-1 py-1.5 px-2 rounded-lg font-mono text-[11px] font-bold transition cursor-pointer whitespace-nowrap ${
+              className={`flex-1 flex items-center justify-center gap-1 sm:gap-1.5 py-1.5 sm:py-2 px-1 sm:px-3 rounded-xl font-mono text-[11px] sm:text-xs font-bold transition cursor-pointer whitespace-nowrap ${
                 currentView === "MENU_STOCK"
-                  ? "bg-[#B72E35] text-white shadow-xs"
+                  ? "bg-[#B72E35] text-white shadow-sm"
                   : "text-[#725039] dark:text-[#C9AE8B] hover:text-[#241F1C] dark:hover:text-white"
               }`}
             >
-              <UtensilsCrossed className="h-3 w-3 shrink-0" />
-              <span>Menu &amp; 86</span>
+              <UtensilsCrossed className="h-3 w-3 sm:h-3.5 sm:w-3.5 shrink-0" />
+              <span>
+                <span className="hidden sm:inline">Daily </span>Menu &amp; 86
+              </span>
             </button>
             <button
               onClick={() => setCurrentView("COOKBOOK")}
-              className={`flex-1 flex items-center justify-center gap-1 py-1.5 px-2 rounded-lg font-mono text-[11px] font-bold transition cursor-pointer whitespace-nowrap ${
+              className={`flex-1 flex items-center justify-center gap-1 sm:gap-1.5 py-1.5 sm:py-2 px-1 sm:px-3 rounded-xl font-mono text-[11px] sm:text-xs font-bold transition cursor-pointer whitespace-nowrap ${
                 currentView === "COOKBOOK"
-                  ? "bg-[#B72E35] text-white shadow-xs"
+                  ? "bg-[#B72E35] text-white shadow-sm"
                   : "text-[#725039] dark:text-[#C9AE8B] hover:text-[#241F1C] dark:hover:text-white"
               }`}
             >
-              <BookOpen className="h-3 w-3 shrink-0 text-amber-400" />
-              <span>Cookbook</span>
+              <BookOpen className="h-3 w-3 sm:h-3.5 sm:w-3.5 shrink-0 text-amber-400" />
+              <span>
+                <span className="hidden sm:inline">Chef&apos;s </span>Cookbook
+              </span>
             </button>
           </div>
         </div>
 
         {/* Concurrency Conflict Toast */}
         {conflictMessage && (
-          <div className="mt-2 flex items-center justify-between rounded-xl border border-[#B72E35]/60 bg-[#B72E35]/20 px-4 py-2 text-xs text-[#F2C84B]">
+          <div className="mt-2 flex items-center justify-between rounded-xl border border-[#B72E35]/60 bg-[#B72E35]/20 px-3 py-1.5 text-xs text-[#F2C84B]">
             <div className="flex items-center gap-2">
               <AlertTriangle className="h-4 w-4 shrink-0 text-[#F2C84B]" />
               <span>{conflictMessage}</span>
@@ -746,7 +757,7 @@ export const KitchenBoardView: React.FC<KitchenBoardViewProps> = ({ initialOrder
 
         {/* Station Load & ETA Review Drawer */}
         {showEtaAnalytics && (
-          <div className="mt-4">
+          <div className="mt-3">
             <EtaAccuracyReview />
           </div>
         )}
@@ -763,9 +774,9 @@ export const KitchenBoardView: React.FC<KitchenBoardViewProps> = ({ initialOrder
       ) : (
         <div className="flex-1 flex flex-col min-w-0">
           {/* Station Filter & Search Row for Live Tickets */}
-          <div className="px-4 pt-3 pb-1 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 max-w-7xl">
-            {/* Station Filter Tabs */}
-            <div className="flex items-center gap-1 bg-[#FAF4EB] dark:bg-[#1D1815] p-1 rounded-2xl border border-[#C9AE8B]/40 dark:border-stone-800 shrink-0 overflow-x-auto">
+          <div className="px-3 sm:px-4 pt-2.5 sm:pt-3 pb-1 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 max-w-7xl">
+            {/* Station Filter Pills (Horizontal Swipe Strip on Mobile) */}
+            <div className="flex items-center gap-1 bg-[#FAF4EB] dark:bg-[#1D1815] p-1 rounded-2xl border border-[#C9AE8B]/40 dark:border-stone-800 overflow-x-auto no-scrollbar shrink-0">
               {(
                 [
                   { key: "ALL", label: "All Tickets" },
@@ -777,7 +788,7 @@ export const KitchenBoardView: React.FC<KitchenBoardViewProps> = ({ initialOrder
                 <button
                   key={tab.key}
                   onClick={() => setTicketStationFilter(tab.key)}
-                  className={`px-3 py-1.5 rounded-xl font-mono text-xs font-bold transition whitespace-nowrap cursor-pointer ${
+                  className={`px-2.5 sm:px-3 py-1.5 rounded-xl font-mono text-[11px] sm:text-xs font-bold transition whitespace-nowrap cursor-pointer shrink-0 ${
                     ticketStationFilter === tab.key
                       ? "bg-[#B72E35] text-white shadow-xs"
                       : "text-[#725039] dark:text-stone-300 hover:bg-[#F3E7D3] dark:hover:bg-stone-800"

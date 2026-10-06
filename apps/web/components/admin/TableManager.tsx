@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useMemo, useEffect } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import QRCode from "qrcode";
 import {
@@ -244,6 +245,11 @@ export const TableManager: React.FC<TableManagerProps> = ({
   );
   const [selectedSection, setSelectedSection] = useState<string>("ALL");
   const [searchQuery, setSearchQuery] = useState<string>("");
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const refreshTables = React.useCallback(async () => {
     try {
@@ -1178,8 +1184,8 @@ export const TableManager: React.FC<TableManagerProps> = ({
       {/* ========================================================================= */}
       {/* MODAL 1: ADD TABLE                                                        */}
       {/* ========================================================================= */}
-      {isAddModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-fade-in">
+      {mounted && isAddModalOpen && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 dark:bg-black/85 backdrop-blur-md p-4 animate-fade-in">
           <div className="relative w-full max-w-md rounded-3xl border border-[#C9AE8B]/50 dark:border-stone-700 bg-[#FAF4EB] dark:bg-[#1A1715] p-6 shadow-2xl space-y-4">
             <div className="flex items-center justify-between border-b border-[#C9AE8B]/30 dark:border-stone-800 pb-3">
               <div className="flex items-center gap-2">
@@ -1392,14 +1398,15 @@ export const TableManager: React.FC<TableManagerProps> = ({
               </div>
             </form>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* ========================================================================= */}
       {/* MODAL 2: EDIT TABLE                                                       */}
       {/* ========================================================================= */}
-      {editingTable && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-fade-in">
+      {mounted && editingTable && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 dark:bg-black/85 backdrop-blur-md p-4 animate-fade-in">
           <div className="relative w-full max-w-md rounded-3xl border border-[#C9AE8B]/50 dark:border-stone-700 bg-[#FAF4EB] dark:bg-[#1A1715] p-6 shadow-2xl space-y-4">
             <div className="flex items-center justify-between border-b border-[#C9AE8B]/30 dark:border-stone-800 pb-3">
               <div className="flex items-center gap-2">
@@ -1591,14 +1598,15 @@ export const TableManager: React.FC<TableManagerProps> = ({
               </div>
             </form>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* ========================================================================= */}
       {/* MODAL 3: DELETE CONFIRMATION                                              */}
       {/* ========================================================================= */}
-      {deletingTable && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-fade-in">
+      {mounted && deletingTable && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 dark:bg-black/85 backdrop-blur-md p-4 animate-fade-in">
           <div className="relative w-full max-w-sm rounded-3xl border border-rose-200 dark:border-rose-900 bg-[#FAF4EB] dark:bg-[#1A1715] p-6 shadow-2xl space-y-4">
             <div className="flex items-center gap-3">
               <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-rose-100 dark:bg-rose-950 text-rose-600">
@@ -1633,14 +1641,15 @@ export const TableManager: React.FC<TableManagerProps> = ({
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* ========================================================================= */}
       {/* MODAL 4: MANAGE SECTIONS                                                  */}
       {/* ========================================================================= */}
-      {isSectionsModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-fade-in">
+      {mounted && isSectionsModalOpen && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 dark:bg-black/85 backdrop-blur-md p-4 animate-fade-in">
           <div className="relative w-full max-w-md rounded-3xl border border-[#C9AE8B]/50 dark:border-stone-700 bg-[#FAF4EB] dark:bg-[#1A1715] p-6 shadow-2xl space-y-4">
             <div className="flex items-center justify-between border-b border-[#C9AE8B]/30 dark:border-stone-800 pb-3">
               <div className="flex items-center gap-2">
@@ -1720,22 +1729,23 @@ export const TableManager: React.FC<TableManagerProps> = ({
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* ========================================================================= */}
       {/* MODAL 5: REAL ARTISANAL TABLE QR STAND VIEWER                             */}
       {/* ========================================================================= */}
-      {viewingQrTable && (() => {
+      {mounted && viewingQrTable && (() => {
         const origin = (qrDomain || (typeof window !== "undefined" ? window.location.origin : "http://localhost:3000")).replace(/\/$/, "");
         const tableUrl = getTableUrl(origin, viewingQrTable.section, viewingQrTable.label);
 
-        return (
+        return createPortal(
           <div
             onClick={(e) => {
               if (e.target === e.currentTarget) setViewingQrTable(null);
             }}
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-xs p-4 animate-fade-in overflow-y-auto print:p-0 print:bg-transparent print:static print:block"
+            className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 dark:bg-black/85 backdrop-blur-md p-4 animate-fade-in overflow-y-auto print:p-0 print:bg-transparent print:static print:block"
           >
             {/* Prominent Floating Close Button (Always Visible On-Screen) */}
             <button
@@ -1768,57 +1778,64 @@ export const TableManager: React.FC<TableManagerProps> = ({
                 </p>
 
                 {/* Domain & Host Target Input Selector */}
-                <div className="rounded-2xl border border-[#C9AE8B]/40 dark:border-stone-800 bg-[#F3E7D3]/40 dark:bg-stone-900/60 p-3 space-y-2 text-left">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[10.5px] font-mono font-bold text-[#241F1C] dark:text-stone-300 uppercase tracking-wider flex items-center gap-1.5">
-                      <QrCode className="h-3.5 w-3.5 text-[#B72E35]" />
+                <div className="rounded-2xl border border-[#C9AE8B]/40 dark:border-stone-800 bg-[#F3E7D3]/40 dark:bg-stone-900/60 p-3.5 space-y-2.5 text-left shadow-xs">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[11px] font-mono font-extrabold text-[#241F1C] dark:text-stone-200 uppercase tracking-wider flex items-center gap-1.5">
+                      <QrCode className="h-3.5 w-3.5 text-[#B72E35] dark:text-[#F2C84B]" />
                       Target QR Host URL
                     </span>
-                    <span className="text-[10px] font-mono text-stone-500">Phone scan target</span>
+                    <span className="text-[10px] font-mono text-stone-500 dark:text-stone-400">Phone scan target</span>
                   </div>
-                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+
+                  {/* Dedicated full-width input */}
+                  <div>
                     <input
                       type="text"
                       value={qrDomain}
                       onChange={(e) => setQrDomain(e.target.value)}
-                      placeholder="e.g. http://192.168.1.100:3000"
-                      className="flex-1 rounded-xl border border-[#C9AE8B]/50 dark:border-stone-700 bg-white dark:bg-stone-900 px-3 py-1.5 text-xs font-mono text-[#241F1C] dark:text-white focus:outline-none focus:ring-1 focus:ring-[#B72E35]"
+                      placeholder="e.g. https://www.smolcafe.in or http://192.168.1.100:3000"
+                      className="w-full rounded-xl border border-[#C9AE8B]/50 dark:border-stone-700 bg-white dark:bg-stone-900 px-3 py-2 text-xs font-mono text-[#241F1C] dark:text-white placeholder-stone-400 focus:outline-none focus:ring-2 focus:ring-[#B72E35]/40 dark:focus:ring-amber-500/40 shadow-xs"
                     />
-                    <div className="flex items-center gap-1 shrink-0 overflow-x-auto">
-                      <button
-                        type="button"
-                        onClick={() => setQrDomain(DEFAULT_QR_DOMAIN)}
-                        className={`px-2.5 py-1 rounded-xl text-[10.5px] font-mono font-bold transition cursor-pointer ${
-                          qrDomain === DEFAULT_QR_DOMAIN
-                            ? "bg-[#B72E35] text-white shadow-xs"
-                            : "bg-white dark:bg-stone-800 text-stone-700 dark:text-stone-300 border border-stone-300 dark:border-stone-700 hover:bg-[#F3E7D3]"
-                        }`}
-                      >
-                        ✨ www.smolcafe.in
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setQrDomain(typeof window !== "undefined" ? window.location.origin : "http://localhost:3000")}
-                        className={`px-2.5 py-1 rounded-xl text-[10.5px] font-mono font-bold transition cursor-pointer ${
-                          qrDomain === (typeof window !== "undefined" ? window.location.origin : "http://localhost:3000") && qrDomain !== DEFAULT_QR_DOMAIN
-                            ? "bg-[#241F1C] text-white dark:bg-white dark:text-[#241F1C]"
-                            : "bg-white dark:bg-stone-800 text-stone-700 dark:text-stone-300 border border-stone-300 dark:border-stone-700 hover:bg-[#F3E7D3]"
-                        }`}
-                      >
-                        📍 Active App
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setQrDomain("http://localhost:3000")}
-                        className={`px-2.5 py-1 rounded-xl text-[10.5px] font-mono font-bold transition cursor-pointer ${
-                          qrDomain === "http://localhost:3000"
-                            ? "bg-[#241F1C] text-white dark:bg-white dark:text-[#241F1C]"
-                            : "bg-white dark:bg-stone-800 text-stone-700 dark:text-stone-300 border border-stone-300 dark:border-stone-700 hover:bg-[#F3E7D3]"
-                        }`}
-                      >
-                        💻 Localhost
-                      </button>
-                    </div>
+                  </div>
+
+                  {/* Preset Pills */}
+                  <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
+                    <span className="text-[10px] font-mono font-semibold text-stone-500 dark:text-stone-400 mr-1">
+                      Presets:
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setQrDomain(DEFAULT_QR_DOMAIN)}
+                      className={`px-2.5 py-1 rounded-lg text-[10.5px] font-mono font-bold transition cursor-pointer active:scale-95 ${
+                        qrDomain === DEFAULT_QR_DOMAIN
+                          ? "bg-[#B72E35] text-white shadow-xs"
+                          : "bg-white dark:bg-stone-800 text-stone-700 dark:text-stone-300 border border-stone-300/80 dark:border-stone-700 hover:bg-[#F3E7D3] dark:hover:bg-stone-700"
+                      }`}
+                    >
+                      ✨ www.smolcafe.in
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setQrDomain(typeof window !== "undefined" ? window.location.origin : "http://localhost:3000")}
+                      className={`px-2.5 py-1 rounded-lg text-[10.5px] font-mono font-bold transition cursor-pointer active:scale-95 ${
+                        qrDomain === (typeof window !== "undefined" ? window.location.origin : "http://localhost:3000") && qrDomain !== DEFAULT_QR_DOMAIN
+                          ? "bg-[#241F1C] text-white dark:bg-white dark:text-[#241F1C] shadow-xs"
+                          : "bg-white dark:bg-stone-800 text-stone-700 dark:text-stone-300 border border-stone-300/80 dark:border-stone-700 hover:bg-[#F3E7D3] dark:hover:bg-stone-700"
+                      }`}
+                    >
+                      📍 Active App
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setQrDomain("http://localhost:3000")}
+                      className={`px-2.5 py-1 rounded-lg text-[10.5px] font-mono font-bold transition cursor-pointer active:scale-95 ${
+                        qrDomain === "http://localhost:3000"
+                          ? "bg-[#241F1C] text-white dark:bg-white dark:text-[#241F1C] shadow-xs"
+                          : "bg-white dark:bg-stone-800 text-stone-700 dark:text-stone-300 border border-stone-300/80 dark:border-stone-700 hover:bg-[#F3E7D3] dark:hover:bg-stone-700"
+                      }`}
+                    >
+                      💻 Localhost (:3000)
+                    </button>
                   </div>
                 </div>
               </div>
@@ -1973,22 +1990,23 @@ export const TableManager: React.FC<TableManagerProps> = ({
                 </button>
               </div>
             </div>
-          </div>
+          </div>,
+          document.body
         );
       })()}
 
       {/* ========================================================================= */}
       {/* MODAL 6: BATCH PRINT ALL TABLE STANDS                                      */}
       {/* ========================================================================= */}
-      {isBatchQrModalOpen && (() => {
+      {mounted && isBatchQrModalOpen && (() => {
         const origin = (qrDomain || (typeof window !== "undefined" ? window.location.origin : "http://localhost:3000")).replace(/\/$/, "");
 
-        return (
+        return createPortal(
           <div
             onClick={(e) => {
               if (e.target === e.currentTarget) setIsBatchQrModalOpen(false);
             }}
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-xs p-4 animate-fade-in overflow-y-auto print:p-0 print:m-0 print:bg-transparent print:static print:block print:w-full"
+            className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 dark:bg-black/85 backdrop-blur-md p-4 animate-fade-in overflow-y-auto print:p-0 print:m-0 print:bg-transparent print:static print:block print:w-full"
           >
             {/* Prominent Floating Close Button (Always Visible On-Screen) */}
             <button
@@ -2014,57 +2032,64 @@ export const TableManager: React.FC<TableManagerProps> = ({
                   </p>
                   
                   {/* Domain & Host Target Input Selector */}
-                  <div className="mt-2 rounded-2xl border border-[#C9AE8B]/40 dark:border-stone-800 bg-[#F3E7D3]/40 dark:bg-stone-900/60 p-3 space-y-2 text-left">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[10.5px] font-mono font-bold text-[#241F1C] dark:text-stone-300 uppercase tracking-wider flex items-center gap-1.5">
-                        <QrCode className="h-3.5 w-3.5 text-[#B72E35]" />
+                  <div className="mt-2 rounded-2xl border border-[#C9AE8B]/40 dark:border-stone-800 bg-[#F3E7D3]/40 dark:bg-stone-900/60 p-3.5 space-y-2.5 text-left shadow-xs">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[11px] font-mono font-extrabold text-[#241F1C] dark:text-stone-200 uppercase tracking-wider flex items-center gap-1.5">
+                        <QrCode className="h-3.5 w-3.5 text-[#B72E35] dark:text-[#F2C84B]" />
                         Target QR Host URL
                       </span>
-                      <span className="text-[10px] font-mono text-stone-500">Phone scan target</span>
+                      <span className="text-[10px] font-mono text-stone-500 dark:text-stone-400">Phone scan target</span>
                     </div>
-                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+
+                    {/* Dedicated full-width input */}
+                    <div>
                       <input
                         type="text"
                         value={qrDomain}
                         onChange={(e) => setQrDomain(e.target.value)}
-                        placeholder="e.g. http://192.168.1.100:3000"
-                        className="flex-1 rounded-xl border border-[#C9AE8B]/50 dark:border-stone-700 bg-white dark:bg-stone-900 px-3 py-1.5 text-xs font-mono text-[#241F1C] dark:text-white focus:outline-none focus:ring-1 focus:ring-[#B72E35]"
+                        placeholder="e.g. https://www.smolcafe.in or http://192.168.1.100:3000"
+                        className="w-full rounded-xl border border-[#C9AE8B]/50 dark:border-stone-700 bg-white dark:bg-stone-900 px-3 py-2 text-xs font-mono text-[#241F1C] dark:text-white placeholder-stone-400 focus:outline-none focus:ring-2 focus:ring-[#B72E35]/40 dark:focus:ring-amber-500/40 shadow-xs"
                       />
-                      <div className="flex items-center gap-1 shrink-0 overflow-x-auto">
-                        <button
-                          type="button"
-                          onClick={() => setQrDomain(DEFAULT_QR_DOMAIN)}
-                          className={`px-2.5 py-1 rounded-xl text-[10.5px] font-mono font-bold transition cursor-pointer ${
-                            qrDomain === DEFAULT_QR_DOMAIN
-                              ? "bg-[#B72E35] text-white shadow-xs"
-                              : "bg-white dark:bg-stone-800 text-stone-700 dark:text-stone-300 border border-stone-300 dark:border-stone-700 hover:bg-[#F3E7D3]"
-                          }`}
-                        >
-                          ✨ www.smolcafe.in
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setQrDomain(typeof window !== "undefined" ? window.location.origin : "http://localhost:3000")}
-                          className={`px-2.5 py-1 rounded-xl text-[10.5px] font-mono font-bold transition cursor-pointer ${
-                            qrDomain === (typeof window !== "undefined" ? window.location.origin : "http://localhost:3000") && qrDomain !== DEFAULT_QR_DOMAIN
-                              ? "bg-[#241F1C] text-white dark:bg-white dark:text-[#241F1C]"
-                              : "bg-white dark:bg-stone-800 text-stone-700 dark:text-stone-300 border border-stone-300 dark:border-stone-700 hover:bg-[#F3E7D3]"
-                          }`}
-                        >
-                          📍 Active App
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setQrDomain("http://localhost:3000")}
-                          className={`px-2.5 py-1 rounded-xl text-[10.5px] font-mono font-bold transition cursor-pointer ${
-                            qrDomain === "http://localhost:3000"
-                              ? "bg-[#241F1C] text-white dark:bg-white dark:text-[#241F1C]"
-                              : "bg-white dark:bg-stone-800 text-stone-700 dark:text-stone-300 border border-stone-300 dark:border-stone-700 hover:bg-[#F3E7D3]"
-                          }`}
-                        >
-                          💻 Localhost
-                        </button>
-                      </div>
+                    </div>
+
+                    {/* Preset Pills */}
+                    <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
+                      <span className="text-[10px] font-mono font-semibold text-stone-500 dark:text-stone-400 mr-1">
+                        Presets:
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setQrDomain(DEFAULT_QR_DOMAIN)}
+                        className={`px-2.5 py-1 rounded-lg text-[10.5px] font-mono font-bold transition cursor-pointer active:scale-95 ${
+                          qrDomain === DEFAULT_QR_DOMAIN
+                            ? "bg-[#B72E35] text-white shadow-xs"
+                            : "bg-white dark:bg-stone-800 text-stone-700 dark:text-stone-300 border border-stone-300/80 dark:border-stone-700 hover:bg-[#F3E7D3] dark:hover:bg-stone-700"
+                        }`}
+                      >
+                        ✨ www.smolcafe.in
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setQrDomain(typeof window !== "undefined" ? window.location.origin : "http://localhost:3000")}
+                        className={`px-2.5 py-1 rounded-lg text-[10.5px] font-mono font-bold transition cursor-pointer active:scale-95 ${
+                          qrDomain === (typeof window !== "undefined" ? window.location.origin : "http://localhost:3000") && qrDomain !== DEFAULT_QR_DOMAIN
+                            ? "bg-[#241F1C] text-white dark:bg-white dark:text-[#241F1C] shadow-xs"
+                            : "bg-white dark:bg-stone-800 text-stone-700 dark:text-stone-300 border border-stone-300/80 dark:border-stone-700 hover:bg-[#F3E7D3] dark:hover:bg-stone-700"
+                        }`}
+                      >
+                        📍 Active App
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setQrDomain("http://localhost:3000")}
+                        className={`px-2.5 py-1 rounded-lg text-[10.5px] font-mono font-bold transition cursor-pointer active:scale-95 ${
+                          qrDomain === "http://localhost:3000"
+                            ? "bg-[#241F1C] text-white dark:bg-white dark:text-[#241F1C] shadow-xs"
+                            : "bg-white dark:bg-stone-800 text-stone-700 dark:text-stone-300 border border-stone-300/80 dark:border-stone-700 hover:bg-[#F3E7D3] dark:hover:bg-stone-700"
+                        }`}
+                      >
+                        💻 Localhost (:3000)
+                      </button>
                     </div>
                   </div>
                 </div>
@@ -2160,7 +2185,8 @@ export const TableManager: React.FC<TableManagerProps> = ({
                 })}
               </div>
             </div>
-          </div>
+          </div>,
+          document.body
         );
       })()}
 

@@ -35,9 +35,13 @@ import {
   Trash2,
   Smartphone,
   Banknote,
-  Gift,
   X,
+  Gift,
+  LogOut,
+  Clock,
+  Loader2,
 } from "lucide-react";
+import { staffBackdoorLogoutAction } from "@/app/smol-backdoor/actions";
 import { useSupabaseRealtime } from "@/hooks/useSupabaseRealtime";
 import { broadcastSyncEvent, subscribeToSyncEvents } from "@/lib/sync-events";
 import { createTableJsonTag, type TableJsonTag } from "@/lib/table-tag";
@@ -576,6 +580,19 @@ export const CashierDashboard: React.FC<CashierDashboardProps> = ({
               Role Portal
             </Link>
 
+            {/* Logout Button */}
+            <button
+              type="button"
+              onClick={async () => {
+                await staffBackdoorLogoutAction();
+              }}
+              className="flex items-center gap-1 rounded-xl border border-[#C9AE8B]/40 dark:border-stone-800 bg-[#FAF4EB] dark:bg-stone-900 px-2.5 sm:px-3 py-1 text-xs font-mono text-[#725039] dark:text-stone-400 hover:text-[#B72E35] dark:hover:text-red-400 hover:border-red-300 transition cursor-pointer"
+              title="Logout staff session"
+            >
+              <LogOut className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">Logout</span>
+            </button>
+
             {/* Theme Toggle Button */}
             <ThemeToggle />
           </div>
@@ -641,17 +658,17 @@ export const CashierDashboard: React.FC<CashierDashboardProps> = ({
         {/* TAB 1: ORDER CONFIRMATION QUEUE */}
         {activeTab === "queue" && (
           <div className="space-y-4">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 sm:gap-4">
               <div>
-                <h1 className="text-xl font-extrabold tracking-tight text-[#241F1C] dark:text-[#FDFBF7]">
+                <h1 className="text-lg sm:text-xl font-extrabold tracking-tight text-[#241F1C] dark:text-[#FDFBF7]">
                   Incoming Cashier Approval Queue
                 </h1>
-                <p className="text-xs text-[#725039] dark:text-stone-400">
+                <p className="text-xs text-[#725039] dark:text-stone-400 mt-0.5">
                   Review &amp; Edit orders placed via &quot;Pay at Cashier&quot; before dispatching to Kitchen / Barista KDS
                 </p>
               </div>
-              <div className="flex items-center gap-2">
-                <span className="rounded-full bg-[#B72E35]/10 dark:bg-[#B72E35]/20 border border-[#B72E35]/30 dark:border-[#B72E35]/50 px-3 py-1 font-mono text-xs font-bold text-[#B72E35] dark:text-[#F2C84B]">
+              <div className="flex items-center gap-2 flex-wrap shrink-0">
+                <span className="inline-flex items-center whitespace-nowrap rounded-full bg-[#B72E35]/10 dark:bg-[#B72E35]/20 border border-[#B72E35]/30 dark:border-[#B72E35]/50 px-3 py-1 font-mono text-xs font-bold text-[#B72E35] dark:text-[#F2C84B]">
                   {pendingOrders.length} Awaiting Approval
                 </span>
                 {pendingOrders.length > 0 && (
@@ -659,10 +676,10 @@ export const CashierDashboard: React.FC<CashierDashboardProps> = ({
                     type="button"
                     onClick={handleClearAllPendingOrders}
                     disabled={isClearingAll}
-                    className="flex items-center gap-1.5 rounded-full border border-rose-300 dark:border-rose-900/60 bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-100 dark:hover:bg-rose-900/60 px-3 py-1 text-xs font-bold text-rose-700 dark:text-rose-300 shadow-xs transition active:scale-95 cursor-pointer disabled:opacity-50"
+                    className="inline-flex items-center whitespace-nowrap gap-1.5 rounded-full border border-rose-300 dark:border-rose-900/60 bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-100 dark:hover:bg-rose-900/60 px-3 py-1 text-xs font-bold text-rose-700 dark:text-rose-300 shadow-xs transition active:scale-95 cursor-pointer disabled:opacity-50"
                     title="Clear all pending orders from queue"
                   >
-                    <Trash2 className="h-3.5 w-3.5" />
+                    <Trash2 className="h-3.5 w-3.5 shrink-0" />
                     <span>{isClearingAll ? "Clearing..." : "Clear All"}</span>
                   </button>
                 )}
@@ -681,34 +698,42 @@ export const CashierDashboard: React.FC<CashierDashboardProps> = ({
               <div className="grid gap-4 sm:grid-cols-2">
                 {pendingOrders.map((order) => {
                   const totalRupees = Math.round(order.totalPaise / 100);
+                  const isSubmitting = submittingOrderIds.has(order.id);
+                  const totalQty = order.items.reduce((s, i) => s + i.qty, 0);
 
                   return (
                     <div
                       key={order.id}
-                      className="relative flex flex-col justify-between rounded-3xl border-2 border-[#F2C84B] dark:border-amber-500/60 bg-[#FAF4EB] dark:bg-[#1A1715] p-5 shadow-lg space-y-4 animate-scale-in transition-colors"
+                      className="relative flex flex-col justify-between rounded-2xl sm:rounded-3xl border-2 border-amber-400/80 dark:border-amber-500/50 bg-gradient-to-b from-[#FFFDF9] via-[#FAF4EB] to-[#F5ECE0] dark:from-[#1E1B18] dark:via-[#1A1715] dark:to-[#141210] p-3.5 sm:p-5 shadow-lg shadow-black/5 dark:shadow-black/30 space-y-3 sm:space-y-4 animate-scale-in transition-all overflow-hidden"
                     >
-                      <div>
-                        {/* Card Header */}
-                        <div className="flex items-center justify-between border-b border-[#C9AE8B]/30 dark:border-stone-800 pb-2.5">
-                          <div className="flex items-center gap-2">
-                            <span className="h-2.5 w-2.5 rounded-full bg-[#B72E35] animate-pulse" />
-                            <span className="font-mono text-xs font-black uppercase tracking-wider text-[#B72E35] dark:text-[#F2C84B]">
-                              PAY AT CASHIER
+                      {/* Top Accent Line */}
+                      <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-amber-400 via-amber-500 to-orange-500" />
+
+                      <div className="space-y-3">
+                        {/* Card Header: Live Status & Badges */}
+                        <div className="flex items-center justify-between gap-2 border-b border-[#C9AE8B]/25 dark:border-stone-800/80 pb-2.5 pt-0.5">
+                          <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-[#B72E35]/10 dark:bg-rose-500/20 border border-[#B72E35]/20 dark:border-rose-500/30 text-[#B72E35] dark:text-rose-300 font-mono text-[10px] sm:text-[11px] font-black uppercase tracking-wider min-w-0">
+                            <span className="relative flex h-2 w-2 shrink-0">
+                              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#B72E35] dark:bg-rose-400 opacity-75" />
+                              <span className="relative inline-flex rounded-full h-2 w-2 bg-[#B72E35] dark:bg-rose-400" />
                             </span>
+                            <span className="truncate">PAY AT CASHIER</span>
                           </div>
-                          <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 dark:bg-amber-950/80 border border-amber-300 dark:border-amber-700/60 px-2.5 py-0.5 font-mono text-[11px] font-extrabold text-amber-800 dark:text-amber-300">
+                          <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 dark:bg-amber-950/80 border border-amber-300 dark:border-amber-700/60 px-2.5 py-0.5 font-mono text-[10px] sm:text-[11px] font-extrabold text-amber-800 dark:text-amber-300 whitespace-nowrap shrink-0">
                             Awaiting Cashier Approval
                           </span>
                         </div>
 
-                        {/* Table and Order # */}
-                        <div className="flex items-start justify-between pt-2.5 pb-2">
-                          <div>
-                            <h2 className="font-mono text-2xl font-black text-[#241F1C] dark:text-white">
+                        {/* Table Number + Order Metadata + Edit Button */}
+                        <div className="flex items-center justify-between gap-2 pt-0.5">
+                          <div className="min-w-0">
+                            <h2 className="font-mono text-xl sm:text-2xl font-black text-[#241F1C] dark:text-white tracking-tight">
                               Table {order.tableLabel}
                             </h2>
-                            <p className="font-mono text-xs text-[#725039] dark:text-stone-400" suppressHydrationWarning>
-                              Order #{order.orderNo} •{" "}
+                            <p className="font-mono text-[11px] sm:text-xs text-[#725039] dark:text-stone-400 flex items-center gap-1.5 mt-0.5" suppressHydrationWarning>
+                              <span>Order #{order.orderNo}</span>
+                              <span className="text-stone-300 dark:text-stone-600">•</span>
+                              <Clock className="h-3 w-3 text-[#8C6D53] dark:text-stone-500 shrink-0" />
                               <span suppressHydrationWarning>
                                 {isMounted
                                   ? new Date(order.submittedAt || Date.now()).toLocaleTimeString([], {
@@ -719,131 +744,142 @@ export const CashierDashboard: React.FC<CashierDashboardProps> = ({
                               </span>
                             </p>
                           </div>
-                        </div>
 
-                        {/* Special Instructions */}
-                        {order.instructions && (
-                          <div className="mt-1 rounded-xl border border-amber-300 dark:border-amber-800/40 bg-amber-50 dark:bg-amber-950/20 p-2 text-xs text-amber-900 dark:text-amber-300 font-serif italic">
-                            &quot;{order.instructions}&quot;
-                          </div>
-                        )}
-
-                        {/* Items Breakdown with Station Tags */}
-                        <div className="mt-2 space-y-1.5 font-sans text-xs divide-y divide-[#C9AE8B]/20 dark:divide-stone-800/60">
-                          {order.items.map((item) => (
-                            <div key={item.id} className="pt-1.5 flex items-center justify-between gap-2">
-                              <div className="flex items-center gap-2 min-w-0">
-                                <span
-                                  className={`inline-flex items-center gap-1 rounded-md px-1.5 py-0.2 font-mono text-[9.5px] font-bold ${
-                                    item.isBeverage
-                                      ? "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 border border-amber-300 dark:border-amber-800"
-                                      : "bg-orange-100 text-orange-800 dark:bg-orange-950 dark:text-orange-300 border border-orange-300 dark:border-orange-800"
-                                  }`}
-                                >
-                                  {item.isBeverage ? <Coffee className="h-2.5 w-2.5" /> : <UtensilsCrossed className="h-2.5 w-2.5" />}
-                                  <span>{item.isBeverage ? "Barista" : "Kitchen"}</span>
-                                </span>
-                                <span className="font-medium text-[#241F1C] dark:text-stone-200 truncate">
-                                  <strong className="font-mono text-[#B72E35] dark:text-[#F6AD55]">{item.qty}×</strong>{" "}
-                                  {item.name}
-                                </span>
-                              </div>
-                              <span className="font-mono text-[#725039] dark:text-stone-400 shrink-0">
-                                ₹{Math.round(item.lineSubtotal / 100)}
-                              </span>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-
-                      {/* Card Bottom / Actions */}
-                      <div className="border-t border-[#C9AE8B]/30 dark:border-stone-800 pt-3 space-y-3">
-                        <div className="flex items-baseline justify-between">
-                          <div>
-                            <span className="block font-mono text-[9px] uppercase font-bold text-[#8C6D53] dark:text-stone-500">
-                              ORDER AMOUNT
-                            </span>
-                            <span className="font-mono text-xl font-black text-[#B72E35] dark:text-[#F6AD55]">
-                              ₹{totalRupees}
-                            </span>
-                          </div>
-
-                          {/* OPTION 1: EDIT ORDER BUTTON */}
+                          {/* Top-Right Quick Edit Button */}
                           <button
                             type="button"
                             onClick={() => setEditingOrder(order)}
-                            className="inline-flex items-center gap-1.5 rounded-xl border border-[#C9AE8B]/60 dark:border-stone-700 bg-[#F3E7D3] dark:bg-stone-800 px-3 py-1.5 text-xs font-bold text-[#725039] dark:text-stone-200 hover:bg-[#EBDDC8] dark:hover:bg-stone-700 active:scale-95 transition cursor-pointer shadow-xs"
+                            className="inline-flex items-center gap-1.5 rounded-xl border border-[#C9AE8B]/60 dark:border-stone-700 bg-[#F3E7D3]/90 dark:bg-stone-800 px-3 py-1.5 text-xs font-bold text-[#725039] dark:text-stone-200 hover:bg-[#EBDDC8] dark:hover:bg-stone-700 active:scale-95 transition cursor-pointer shadow-xs shrink-0"
                           >
                             <Edit3 className="h-3.5 w-3.5 text-[#B72E35] dark:text-[#F6AD55]" />
                             <span>Edit Order</span>
                           </button>
                         </div>
 
-                        {/* OPTION 2: CONFIRMATION DISPATCH BUTTONS */}
+                        {/* Special Instructions */}
+                        {order.instructions && (
+                          <div className="rounded-xl border border-amber-300/80 dark:border-amber-800/60 bg-amber-500/10 dark:bg-amber-950/30 p-2.5 text-xs text-amber-950 dark:text-amber-200 font-serif italic">
+                            &quot;{order.instructions}&quot;
+                          </div>
+                        )}
+
+                        {/* Items Breakdown Box */}
+                        <div className="rounded-xl sm:rounded-2xl bg-[#F0E4D2]/40 dark:bg-stone-900/50 border border-[#C9AE8B]/25 dark:border-stone-800/80 p-2.5 sm:p-3 space-y-2">
+                          <div className="flex items-center justify-between text-[10px] font-mono font-bold uppercase tracking-wider text-[#8C6D53] dark:text-stone-500 border-b border-[#C9AE8B]/20 dark:border-stone-800/60 pb-1 px-0.5">
+                            <span>Items ({totalQty})</span>
+                            <span>Amount</span>
+                          </div>
+
+                          <div className="space-y-1.5 font-sans text-xs divide-y divide-[#C9AE8B]/15 dark:divide-stone-800/40">
+                            {order.items.map((item) => (
+                              <div key={item.id} className="pt-1.5 first:pt-0 flex items-center justify-between gap-2">
+                                <div className="flex items-center gap-2 min-w-0 flex-1">
+                                  <span
+                                    className={`inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 font-mono text-[9px] font-bold shrink-0 ${
+                                      item.isBeverage
+                                        ? "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 border border-amber-300 dark:border-amber-800"
+                                        : "bg-orange-100 text-orange-800 dark:bg-orange-950 dark:text-orange-300 border border-orange-300 dark:border-orange-800"
+                                    }`}
+                                  >
+                                    {item.isBeverage ? <Coffee className="h-2.5 w-2.5" /> : <UtensilsCrossed className="h-2.5 w-2.5" />}
+                                    <span>{item.isBeverage ? "Barista" : "Kitchen"}</span>
+                                  </span>
+                                  <span className="font-medium text-[#241F1C] dark:text-stone-200 truncate">
+                                    <strong className="font-mono text-[#B72E35] dark:text-[#F6AD55] mr-1">{item.qty}×</strong>
+                                    {item.name}
+                                  </span>
+                                </div>
+                                <span className="font-mono font-bold text-[#725039] dark:text-stone-300 shrink-0">
+                                  ₹{Math.round(item.lineSubtotal / 100)}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Card Bottom / Actions */}
+                      <div className="border-t border-[#C9AE8B]/30 dark:border-stone-800 pt-3 space-y-3">
+                        <div className="flex items-baseline justify-between px-0.5">
+                          <div>
+                            <span className="block font-mono text-[9px] uppercase font-bold text-[#8C6D53] dark:text-stone-500 tracking-wider">
+                              ORDER AMOUNT
+                            </span>
+                            <span className="font-mono text-2xl font-black text-[#B72E35] dark:text-[#F6AD55]">
+                              ₹{totalRupees}
+                            </span>
+                          </div>
+
+                          <span className="font-mono text-xs font-semibold text-[#8C6D53] dark:text-stone-400 bg-[#E8DAC5]/60 dark:bg-stone-800/80 px-2.5 py-1 rounded-lg border border-[#C9AE8B]/30 dark:border-stone-700/60">
+                            {totalQty} {totalQty === 1 ? "item" : "items"}
+                          </span>
+                        </div>
+
+                        {/* CONFIRMATION DISPATCH BUTTONS */}
                         <div className="grid grid-cols-1 gap-2">
                           {/* If order has both Food and Beverage items, offer station-wise or combined confirm */}
                           {order.hasFoodItems && order.hasBeverageItems ? (
                             <div className="grid grid-cols-2 gap-2">
                               <button
                                 type="button"
-                                disabled={submittingOrderIds.has(order.id)}
+                                disabled={isSubmitting}
                                 onClick={() => handleInitiateConfirm(order, "KITCHEN")}
-                                className="flex items-center justify-center gap-1 rounded-xl bg-orange-600 hover:bg-orange-500 text-white px-2.5 py-2 text-[11px] font-bold shadow-xs active:scale-95 transition cursor-pointer"
+                                className="flex items-center justify-center gap-1.5 rounded-xl bg-orange-600 hover:bg-orange-500 text-white px-2.5 py-2.5 text-xs font-bold shadow-xs active:scale-[0.98] transition cursor-pointer disabled:opacity-50"
                                 title="Send only Food items to Kitchen KDS"
                               >
-                                <UtensilsCrossed className="h-3.5 w-3.5" />
-                                <span>Confirm for Kitchen</span>
+                                {isSubmitting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <UtensilsCrossed className="h-3.5 w-3.5" />}
+                                <span>Kitchen (Food)</span>
                               </button>
 
                               <button
                                 type="button"
-                                disabled={submittingOrderIds.has(order.id)}
+                                disabled={isSubmitting}
                                 onClick={() => handleInitiateConfirm(order, "BARISTA")}
-                                className="flex items-center justify-center gap-1 rounded-xl bg-amber-600 hover:bg-amber-500 text-white px-2.5 py-2 text-[11px] font-bold shadow-xs active:scale-95 transition cursor-pointer"
+                                className="flex items-center justify-center gap-1.5 rounded-xl bg-amber-600 hover:bg-amber-500 text-white px-2.5 py-2.5 text-xs font-bold shadow-xs active:scale-[0.98] transition cursor-pointer disabled:opacity-50"
                                 title="Send only Beverage items to Barista Desk"
                               >
-                                <Coffee className="h-3.5 w-3.5" />
-                                <span>Confirm for Barista</span>
+                                {isSubmitting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Coffee className="h-3.5 w-3.5" />}
+                                <span>Barista (Drinks)</span>
                               </button>
 
                               <button
                                 type="button"
-                                disabled={submittingOrderIds.has(order.id)}
+                                disabled={isSubmitting}
                                 onClick={() => handleInitiateConfirm(order, "ALL")}
-                                className="col-span-2 flex items-center justify-center gap-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white py-2 text-xs font-bold shadow-md active:scale-95 transition cursor-pointer"
+                                className="col-span-2 flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-emerald-600 via-emerald-500 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white py-3 text-xs sm:text-sm font-extrabold shadow-md active:scale-[0.98] transition cursor-pointer disabled:opacity-50"
                               >
-                                <Check className="h-4 w-4" />
+                                {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
                                 <span>Confirm All (Kitchen &amp; Barista)</span>
                               </button>
                             </div>
                           ) : order.hasFoodItems ? (
                             <button
                               type="button"
-                              disabled={submittingOrderIds.has(order.id)}
+                              disabled={isSubmitting}
                               onClick={() => handleInitiateConfirm(order, "KITCHEN")}
-                              className="flex items-center justify-center gap-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white py-2.5 text-xs font-bold shadow-md active:scale-95 transition cursor-pointer"
+                              className="flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white py-3 text-xs sm:text-sm font-extrabold shadow-md active:scale-[0.98] transition cursor-pointer disabled:opacity-50"
                             >
-                              <UtensilsCrossed className="h-4 w-4" />
+                              {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <UtensilsCrossed className="h-4 w-4" />}
                               <span>Confirm for Kitchen (Food)</span>
                             </button>
                           ) : order.hasBeverageItems ? (
                             <button
                               type="button"
-                              disabled={submittingOrderIds.has(order.id)}
+                              disabled={isSubmitting}
                               onClick={() => handleInitiateConfirm(order, "BARISTA")}
-                              className="flex items-center justify-center gap-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white py-2.5 text-xs font-bold shadow-md active:scale-95 transition cursor-pointer"
+                              className="flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white py-3 text-xs sm:text-sm font-extrabold shadow-md active:scale-[0.98] transition cursor-pointer disabled:opacity-50"
                             >
-                              <Coffee className="h-4 w-4" />
+                              {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Coffee className="h-4 w-4" />}
                               <span>Confirm for Barista (Drinks)</span>
                             </button>
                           ) : (
                             <button
                               type="button"
-                              disabled={submittingOrderIds.has(order.id)}
+                              disabled={isSubmitting}
                               onClick={() => handleInitiateConfirm(order, "ALL")}
-                              className="flex items-center justify-center gap-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white py-2.5 text-xs font-bold shadow-md active:scale-95 transition cursor-pointer"
+                              className="flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white py-3 text-xs sm:text-sm font-extrabold shadow-md active:scale-[0.98] transition cursor-pointer disabled:opacity-50"
                             >
-                              <Check className="h-4 w-4" />
+                              {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
                               <span>Confirm &amp; Dispatch Order</span>
                             </button>
                           )}
@@ -851,9 +887,9 @@ export const CashierDashboard: React.FC<CashierDashboardProps> = ({
                           {/* Reject Option */}
                           <button
                             type="button"
-                            disabled={submittingOrderIds.has(order.id)}
+                            disabled={isSubmitting}
                             onClick={() => handleRejectOrder(order.id)}
-                            className="w-full text-center text-[11px] font-semibold text-rose-700 dark:text-rose-400 hover:underline py-1"
+                            className="w-full text-center text-xs font-semibold text-rose-600 dark:text-rose-400 hover:text-rose-700 hover:bg-rose-500/10 py-1.5 rounded-lg transition active:scale-[0.98] disabled:opacity-50 cursor-pointer"
                           >
                             Reject / Cancel Order
                           </button>

@@ -1,6 +1,7 @@
-import { checkStaffAuthAction, fetchKitchenOrdersAction } from "./actions";
+import { redirect } from "next/navigation";
+import { requireStaffAuth } from "@/lib/auth/rbac";
+import { fetchKitchenOrdersAction } from "./actions";
 import { KitchenBoardView } from "@/components/kitchen/KitchenBoardView";
-import { StaffLoginGate } from "@/components/kitchen/StaffLoginGate";
 
 export const metadata = {
   title: "Kitchen Display (KDS) — smol café",
@@ -8,12 +9,13 @@ export const metadata = {
 };
 
 export default async function KitchenPage() {
-  const isAuthenticated = await checkStaffAuthAction();
-  const initialData = await fetchKitchenOrdersAction();
+  const auth = await requireStaffAuth(["kitchen", "chef", "admin", "super_admin"]);
 
-  if (!isAuthenticated) {
-    return <StaffLoginGate />;
+  if (!auth.authorized) {
+    redirect("/smol-backdoor");
   }
+
+  const initialData = await fetchKitchenOrdersAction();
 
   return <KitchenBoardView initialOrders={initialData.orders} />;
 }
