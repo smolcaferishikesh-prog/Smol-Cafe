@@ -90,22 +90,37 @@ export const ItemDetailModal: React.FC<ItemDetailModalProps> = ({
     const pairingText = (item.metadata?.best_pairing || "").toLowerCase();
 
     // 1. Try to match from pairing metadata in catalog
-    if (pairingText) {
-      const match = allItems.find(
-        (it) =>
-          it.id !== item.id &&
-          (pairingText.includes(it.name.toLowerCase()) ||
-            it.name.toLowerCase().includes("triple decker") && pairingText.includes("triple decker"))
-      );
-      if (match) {
-        return {
-          item: match,
-          name: match.name.replace(/^the\s+/i, ""),
-          tagline: match.description || "Crispy, melty, wildly satisfying.",
-          price: Math.round(match.pricePaise / 100),
-          imageUrl: getFoodImage(match.name, match.imageUrl),
-        };
+    if (pairingText && pairingText.trim() !== "—") {
+      const tokens = pairingText
+        .split(/[\/,]/)
+        .map((t) => t.trim().toLowerCase())
+        .filter(Boolean);
+
+      for (const token of tokens) {
+        const match = allItems.find(
+          (it) =>
+            it.id !== item.id &&
+            (it.name.toLowerCase().includes(token) || token.includes(it.name.toLowerCase()))
+        );
+        if (match) {
+          return {
+            item: match,
+            name: match.name.replace(/^the\s+/i, ""),
+            tagline: match.description || "Crispy, melty, wildly satisfying.",
+            price: Math.round(match.pricePaise / 100),
+            imageUrl: getFoodImage(match.name, match.imageUrl),
+          };
+        }
       }
+
+      // If text exists but no exact catalog item matched, show clean custom paired badge
+      return {
+        item: null,
+        name: item.metadata?.best_pairing?.replace(/^the\s+/i, "") || "Chef Recommendation",
+        tagline: "Recommended pairing for this artisanal dish.",
+        price: 180,
+        imageUrl: getFoodImage(pairingText, null),
+      };
     }
 
     // 2. Default pairing: if beverage -> pair with Triple Decker

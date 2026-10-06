@@ -54,6 +54,7 @@ export const AdminMenuManager: React.FC<AdminMenuManagerProps> = ({ onItemChange
   const [formPriceRupees, setFormPriceRupees] = useState<number | "">("");
   const [formDescription, setFormDescription] = useState<string>("");
   const [formDietary, setFormDietary] = useState<"veg" | "non-veg" | "vegan" | "egg" | "beverage">("veg");
+  const [formBestPairing, setFormBestPairing] = useState<string>("");
   const [formStatus, setFormStatus] = useState<"AVAILABLE" | "SOLD_OUT">("AVAILABLE");
   const [formImageUrl, setFormImageUrl] = useState<string>("");
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
@@ -158,6 +159,7 @@ export const AdminMenuManager: React.FC<AdminMenuManagerProps> = ({ onItemChange
                       description: typeof meta.description === "string" ? meta.description : i.description,
                       imageUrl: meta.imageUrl !== undefined ? (meta.imageUrl as string | null) : i.imageUrl,
                       dietary: typeof meta.dietary === "string" ? meta.dietary : i.dietary,
+                      bestPairing: typeof meta.best_pairing === "string" ? meta.best_pairing : (typeof meta.bestPairing === "string" ? meta.bestPairing : i.bestPairing),
                       categoryId: typeof meta.categoryId === "string" ? meta.categoryId : i.categoryId,
                     }
                   : i
@@ -182,6 +184,7 @@ export const AdminMenuManager: React.FC<AdminMenuManagerProps> = ({ onItemChange
                 description: (meta.description as string) || "",
                 imageUrl: (meta.imageUrl as string | null) || null,
                 dietary: (meta.dietary as string) || "veg",
+                bestPairing: (meta.best_pairing as string) || (meta.bestPairing as string) || "",
                 status: newStatus,
               };
               return [newItem, ...prev];
@@ -215,6 +218,7 @@ export const AdminMenuManager: React.FC<AdminMenuManagerProps> = ({ onItemChange
     setFormPriceRupees("");
     setFormDescription("");
     setFormDietary("veg");
+    setFormBestPairing("");
     setFormStatus("AVAILABLE");
     setFormImageUrl("");
     setIsModalOpen(true);
@@ -228,6 +232,7 @@ export const AdminMenuManager: React.FC<AdminMenuManagerProps> = ({ onItemChange
     setFormPriceRupees(item.priceRupees);
     setFormDescription(item.description);
     setFormDietary((item.dietary as "veg" | "non-veg" | "vegan" | "egg" | "beverage") || "veg");
+    setFormBestPairing(item.bestPairing || "");
     setFormStatus(item.status === "SOLD_OUT" ? "SOLD_OUT" : "AVAILABLE");
     setFormImageUrl(item.imageUrl || "");
     setIsModalOpen(true);
@@ -259,6 +264,7 @@ export const AdminMenuManager: React.FC<AdminMenuManagerProps> = ({ onItemChange
         description: formDescription.trim(),
         imageUrl: formImageUrl.trim() || null,
         dietary: formDietary,
+        bestPairing: formBestPairing.trim(),
         status: formStatus,
       };
 
@@ -275,6 +281,7 @@ export const AdminMenuManager: React.FC<AdminMenuManagerProps> = ({ onItemChange
           priceRupees: dishPrice,
           description: formDescription.trim(),
           dietary: formDietary,
+          bestPairing: formBestPairing.trim(),
           status: formStatus,
           imageUrl: formImageUrl.trim() || null,
         });
@@ -294,6 +301,7 @@ export const AdminMenuManager: React.FC<AdminMenuManagerProps> = ({ onItemChange
               priceRupees: dishPrice,
               description: formDescription.trim(),
               dietary: formDietary,
+              best_pairing: formBestPairing.trim(),
               status: formStatus,
               imageUrl: formImageUrl.trim() || null,
             },
@@ -321,6 +329,7 @@ export const AdminMenuManager: React.FC<AdminMenuManagerProps> = ({ onItemChange
       description: formDescription.trim(),
       imageUrl: formImageUrl.trim() || null,
       dietary: formDietary,
+      bestPairing: formBestPairing.trim(),
       status: formStatus,
     };
 
@@ -337,6 +346,7 @@ export const AdminMenuManager: React.FC<AdminMenuManagerProps> = ({ onItemChange
         priceRupees: dishPrice,
         description: formDescription.trim(),
         dietary: formDietary,
+        bestPairing: formBestPairing.trim(),
         status: formStatus,
         imageUrl: formImageUrl.trim() || null,
       });
@@ -356,6 +366,7 @@ export const AdminMenuManager: React.FC<AdminMenuManagerProps> = ({ onItemChange
             priceRupees: dishPrice,
             description: formDescription.trim(),
             dietary: formDietary,
+            best_pairing: formBestPairing.trim(),
             status: formStatus,
             imageUrl: formImageUrl.trim() || null,
           },
@@ -714,6 +725,13 @@ export const AdminMenuManager: React.FC<AdminMenuManagerProps> = ({ onItemChange
                       {item.description}
                     </p>
                   )}
+
+                  {item.bestPairing && (
+                    <div className="mt-2 flex items-center gap-1.5 text-[11px] font-medium text-amber-800 dark:text-amber-200 bg-amber-50 dark:bg-amber-950/40 border border-amber-200/70 dark:border-amber-800/40 px-2 py-0.5 rounded-lg w-fit">
+                      <Sparkles className="w-3 h-3 text-amber-600 dark:text-amber-400 shrink-0" />
+                      <span>Pairs with: <strong className="font-semibold">{item.bestPairing}</strong></span>
+                    </div>
+                  )}
                 </div>
 
                 {/* 2-BUTTON STOCK CONTROL FOR ADMIN: 1. IN STOCK  2. OUT OF STOCK */}
@@ -912,12 +930,79 @@ export const AdminMenuManager: React.FC<AdminMenuManagerProps> = ({ onItemChange
                   Description &amp; Ingredients
                 </label>
                 <textarea
-                  rows={3}
+                  rows={2}
                   placeholder="Artisanal sourdough toast with whipped salted butter and organic berry jam."
                   value={formDescription}
                   onChange={(e) => setFormDescription(e.target.value)}
                   className="w-full px-3.5 py-2 rounded-xl border border-stone-200 dark:border-stone-800 bg-white dark:bg-stone-900 text-xs text-stone-900 dark:text-stone-100 focus:outline-none focus:ring-2 focus:ring-[#B72E35]/40"
                 />
+              </div>
+
+              {/* Suggestions / Pairings (Pairs with) */}
+              <div className="p-3.5 rounded-xl bg-amber-50/70 dark:bg-amber-950/20 border border-amber-200/80 dark:border-amber-900/40 space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-amber-900 dark:text-amber-200 flex items-center gap-1.5">
+                    <Sparkles className="w-3.5 h-3.5 text-amber-600" />
+                    <span>Customer Suggestions &amp; Best Pairing (Pairs With)</span>
+                  </label>
+                  <span className="text-[10px] text-amber-700/80 dark:text-amber-400 font-mono">
+                    Shown on Menu &amp; Upsell
+                  </span>
+                </div>
+
+                <input
+                  type="text"
+                  placeholder="e.g. Smol Chai / Adrak Chai, Triple Decker, Classic Cold Coffee"
+                  value={formBestPairing}
+                  onChange={(e) => setFormBestPairing(e.target.value)}
+                  className="w-full px-3.5 py-2 rounded-xl border border-amber-200 dark:border-amber-800/60 bg-white dark:bg-stone-900 text-xs font-medium text-stone-900 dark:text-stone-100 focus:outline-none focus:ring-2 focus:ring-amber-500/40"
+                />
+
+                {/* Quick Suggestion Chips */}
+                <div className="space-y-1">
+                  <span className="text-[10px] uppercase tracking-wider font-semibold text-amber-800/80 dark:text-amber-400">
+                    Quick suggestions:
+                  </span>
+                  <div className="flex flex-wrap gap-1.5">
+                    {[
+                      "Smol Chai",
+                      "Classic Cold Coffee",
+                      "Triple Decker",
+                      "Buransh Fizz",
+                      "Masala Chaas",
+                      "Brownie / Affogato",
+                      "Cappuccino",
+                      "Fresh Lime Soda",
+                    ].map((chip) => {
+                      const isSelected = formBestPairing.toLowerCase().includes(chip.toLowerCase());
+                      return (
+                        <button
+                          key={chip}
+                          type="button"
+                          onClick={() => {
+                            if (isSelected) {
+                              // Remove chip if present
+                              const regex = new RegExp(`\\s*\\/?\\s*${chip}`, "gi");
+                              setFormBestPairing((prev) => prev.replace(regex, "").replace(/^[\s\/]+|[\s\/]+$/g, ""));
+                            } else {
+                              // Append chip
+                              setFormBestPairing((prev) =>
+                                prev.trim() ? `${prev.trim()} / ${chip}` : chip
+                              );
+                            }
+                          }}
+                          className={`text-[11px] px-2 py-0.5 rounded-md font-medium transition cursor-pointer ${
+                            isSelected
+                              ? "bg-amber-600 text-white shadow-xs"
+                              : "bg-white dark:bg-stone-800 text-amber-900 dark:text-amber-200 border border-amber-200/80 dark:border-amber-800 hover:bg-amber-100 dark:hover:bg-amber-900/40"
+                          }`}
+                        >
+                          + {chip}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
               </div>
 
               {/* Photo / Image Selection with Camera & Upload Support */}

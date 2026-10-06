@@ -115,10 +115,16 @@ export const MenuItemCard: React.FC<MenuItemCardProps> = ({ item, onOpenDetail }
         )}
 
         {/* Pairing info */}
-        {pairing && (
-          <p className="mt-1 font-serif italic text-[11px] font-normal text-[#8A7868] dark:text-[#A89888] truncate">
-            pairs with: {pairing}
-          </p>
+        {pairing && pairing.trim() !== "—" && (
+          <div className="mt-2 inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg bg-[#F3E7D3]/90 dark:bg-[#2C2420] border border-[#C9AE8B]/50 dark:border-white/10 text-[11px] text-[#725039] dark:text-[#E2D2BF] max-w-full">
+            <Sparkles className="h-3 w-3 text-[#B72E35] dark:text-[#E25C64] shrink-0" />
+            <span className="font-serif italic truncate">
+              <span className="font-sans font-semibold not-italic text-[#B72E35] dark:text-[#E25C64] mr-1">
+                pairs with:
+              </span>
+              {pairing}
+            </span>
+          </div>
         )}
       </div>
 
