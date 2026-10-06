@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useMemo, useCallback } from "react";
+import { createPortal } from "react-dom";
 import {
   UtensilsCrossed,
   Plus,
@@ -56,6 +57,11 @@ export const AdminMenuManager: React.FC<AdminMenuManagerProps> = ({ onItemChange
   const [formStatus, setFormStatus] = useState<"AVAILABLE" | "SOLD_OUT">("AVAILABLE");
   const [formImageUrl, setFormImageUrl] = useState<string>("");
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   // Delete confirmation
   const [deletingItemId, setDeletingItemId] = useState<string | null>(null);
@@ -784,8 +790,8 @@ export const AdminMenuManager: React.FC<AdminMenuManagerProps> = ({ onItemChange
       )}
 
       {/* Add / Edit Modal */}
-      {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
+      {mounted && isModalOpen && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/80 dark:bg-black/85 backdrop-blur-md">
           <div className="bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden max-h-[90vh] flex flex-col">
             <div className="p-5 border-b border-stone-200 dark:border-stone-800 flex items-center justify-between">
               <div>
@@ -946,7 +952,8 @@ export const AdminMenuManager: React.FC<AdminMenuManagerProps> = ({ onItemChange
               </div>
             </form>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

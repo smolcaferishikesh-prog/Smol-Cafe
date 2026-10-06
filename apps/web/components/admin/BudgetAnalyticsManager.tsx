@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import type { BudgetAnalyticsOverview, CategoryBudgetVsActual } from "@/app/admin/budgets/actions";
 import { fetchBudgetVsActualAction, upsertBudgetAction } from "@/app/admin/budgets/actions";
@@ -26,6 +27,11 @@ export const BudgetAnalyticsManager: React.FC<BudgetAnalyticsManagerProps> = ({ 
   const [budgetInputRupees, setBudgetInputRupees] = useState<number>(0);
   const [budgetNotes, setBudgetNotes] = useState<string>("");
   const [isSavingBudget, setIsSavingBudget] = useState(false);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const handleMonthChange = async (newMonth: string) => {
     setSelectedMonth(newMonth);
@@ -500,8 +506,8 @@ export const BudgetAnalyticsManager: React.FC<BudgetAnalyticsManagerProps> = ({ 
       </main>
 
       {/* Edit Budget Modal */}
-      {editingCategory && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+      {mounted && editingCategory && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 dark:bg-black/85 p-4 backdrop-blur-md">
           <div className="w-full max-w-sm rounded-3xl border border-stone-200 bg-white p-6 shadow-2xl dark:border-stone-800 dark:bg-stone-900 space-y-4">
             <div className="flex items-center justify-between">
               <h3 className="text-base font-bold text-stone-900 dark:text-stone-100">
@@ -560,7 +566,8 @@ export const BudgetAnalyticsManager: React.FC<BudgetAnalyticsManagerProps> = ({ 
               </div>
             </form>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

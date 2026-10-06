@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import Image from "next/image";
 import {
@@ -119,6 +120,11 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
   const [overviewData, setOverviewData] = useState<AdminOverviewData | null>(initialOverviewData || null);
   const [orders, setOrders] = useState<AdminOrderRecord[]>(initialOverviewData?.orders || []);
   const [payments, setPayments] = useState<AdminPaymentRecord[]>(initialOverviewData?.payments || []);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   // Procurement & Inventory State
   const [procurementData, setProcurementData] = useState<ProcurementData>({
@@ -671,7 +677,11 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
         setPayments(res.data.payments);
       }
     } catch (e) {
-      console.error("Failed to refresh admin data:", e);
+      if (!isBackground) {
+        console.error("Failed to refresh admin data:", e);
+      } else {
+        console.warn("Background admin refresh notice:", e);
+      }
     } finally {
       isRefreshingRef.current = false;
       if (!isBackground) {
@@ -2813,7 +2823,10 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
     </main>
 
       {/* Floating Glassmorphic 3D Mobile Bottom Navbar (Thin & Adaptive) */}
-      <div className="fixed bottom-2.5 inset-x-2 sm:inset-x-auto sm:left-1/2 sm:-translate-x-1/2 sm:max-w-xl z-40 md:hidden pointer-events-none">
+      <div
+        suppressHydrationWarning
+        className="fixed bottom-2.5 inset-x-2 sm:inset-x-auto sm:left-1/2 sm:-translate-x-1/2 sm:max-w-xl z-40 md:hidden pointer-events-none"
+      >
         <div className="pointer-events-auto rounded-full border border-[#D5C2AA]/80 dark:border-stone-800 bg-[#FAF4EB]/95 dark:bg-[#141010]/95 backdrop-blur-2xl shadow-[0_8px_24px_rgba(114,80,57,0.12),0_1px_4px_rgba(0,0,0,0.04),inset_0_1px_1px_rgba(255,255,255,0.9)] dark:shadow-[0_14px_36px_rgba(0,0,0,0.8),inset_0_1px_1px_rgba(255,255,255,0.1)] px-3 pt-2 pb-1.5 transition-all">
           <nav className="flex items-center gap-2.5 overflow-x-auto scrollbar-none px-1 py-0.5 justify-start">
             {navItems.map((item) => {
@@ -2892,8 +2905,8 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
       )}
 
       {/* Role PIN / Password Edit Modal */}
-      {editingRole && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-fade-in">
+      {mounted && editingRole && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 dark:bg-black/85 backdrop-blur-md p-4 animate-fade-in">
           <div className="relative w-full max-w-md rounded-3xl border border-[#C9AE8B]/50 dark:border-stone-700 bg-[#FAF4EB] dark:bg-[#1A1715] p-6 shadow-2xl space-y-5">
             {/* Modal Header */}
             <div className="flex items-center justify-between border-b border-[#C9AE8B]/30 dark:border-stone-800 pb-3.5">
@@ -3018,12 +3031,13 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
               </div>
             </form>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Adjust Customer Loyalty Points Modal */}
-      {adjustPointsModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-fade-in">
+      {mounted && adjustPointsModal && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 dark:bg-black/85 backdrop-blur-md p-4 animate-fade-in">
           <div className="w-full max-w-md rounded-3xl border border-[#C9AE8B] dark:border-stone-700 bg-[#FAF4EB] dark:bg-[#1A1715] p-6 shadow-2xl">
             <div className="flex items-center justify-between border-b border-[#C9AE8B]/30 dark:border-stone-800 pb-3">
               <div>
@@ -3129,7 +3143,8 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
               </div>
             </form>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

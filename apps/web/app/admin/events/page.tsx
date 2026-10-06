@@ -1,3 +1,5 @@
+import { redirect } from "next/navigation";
+import { requireStaffAuth } from "@/lib/auth/rbac";
 import { fetchAllAdminEventsAction } from "@/app/events/actions";
 import { EventsManager } from "@/components/admin/EventsManager";
 
@@ -9,6 +11,12 @@ export const metadata = {
 };
 
 export default async function AdminEventsPage() {
+  const auth = await requireStaffAuth(["admin", "super_admin"]);
+
+  if (!auth.authorized) {
+    redirect("/smol-backdoor");
+  }
+
   const { events } = await fetchAllAdminEventsAction();
 
   return <EventsManager initialEvents={events} />;

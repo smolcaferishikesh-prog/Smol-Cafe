@@ -25,6 +25,12 @@ function getStatusCopy(status: string): StatusCopy {
     case "PENDING_CONFIRMATION":
     case "SUBMITTED":
     case "DRAFT":
+      return {
+        title: "Awaiting Cashier Approval",
+        subtitle: "Order sent to cashier desk! Verification & payment pending.",
+        badgeColor:
+          "bg-amber-100 dark:bg-amber-950/80 text-amber-800 dark:text-amber-300 border-amber-300 dark:border-amber-700/50",
+      };
     case "CONFIRMED":
     case "ACCEPTED":
       return {

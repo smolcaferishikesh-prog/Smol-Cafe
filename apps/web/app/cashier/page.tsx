@@ -1,3 +1,5 @@
+import { redirect } from "next/navigation";
+import { requireStaffAuth } from "@/lib/auth/rbac";
 import { fetchActiveCashierTablesAction } from "@/app/bill/actions";
 import {
   fetchPendingCashierOrdersAction,
@@ -13,6 +15,12 @@ export const metadata = {
 };
 
 export default async function CashierPage() {
+  const auth = await requireStaffAuth(["cashier", "admin", "super_admin"]);
+
+  if (!auth.authorized) {
+    redirect("/smol-backdoor");
+  }
+
   const [tables, pendingOrdersRes, paidHistoryRes] = await Promise.all([
     fetchActiveCashierTablesAction(),
     fetchPendingCashierOrdersAction(),

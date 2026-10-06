@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import type {
   ProcurementData,
@@ -76,6 +77,11 @@ export const ProcurementManager: React.FC<ProcurementManagerProps> = ({ initialD
   const [categoryFilter, setCategoryFilter] = useState<string>("ALL");
   const [searchQuery, setSearchQuery] = useState("");
   const [feedback, setFeedback] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   // Quick Restock Modal State
   const [quickRestockItem, setQuickRestockItem] = useState<IngredientStockItem | null>(null);
@@ -1153,8 +1159,8 @@ export const ProcurementManager: React.FC<ProcurementManagerProps> = ({ initialD
       </main>
 
       {/* MODAL 1: 1-TAP QUICK RESTOCK (GRN) */}
-      {quickRestockItem && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+      {mounted && quickRestockItem && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 dark:bg-black/85 p-4 backdrop-blur-md">
           <div className="w-full max-w-md rounded-3xl border border-[#C9AE8B]/60 bg-[#FAF4EB] p-6 shadow-2xl dark:border-stone-800 dark:bg-[#1A1715] space-y-4">
             <div className="flex items-center justify-between">
               <div>
@@ -1271,12 +1277,13 @@ export const ProcurementManager: React.FC<ProcurementManagerProps> = ({ initialD
               </div>
             </form>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* MODAL 2: ADJUST STOCK / SPOILAGE */}
-      {adjustItem && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+      {mounted && adjustItem && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 dark:bg-black/85 p-4 backdrop-blur-md">
           <div className="w-full max-w-md rounded-3xl border border-[#C9AE8B]/60 bg-[#FAF4EB] p-6 shadow-2xl dark:border-stone-800 dark:bg-[#1A1715] space-y-4">
             <div className="flex items-center justify-between">
               <div>
@@ -1360,12 +1367,13 @@ export const ProcurementManager: React.FC<ProcurementManagerProps> = ({ initialD
               </div>
             </form>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* MODAL 3: CONFIGURE THRESHOLD & UNIT COST */}
-      {thresholdItem && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+      {mounted && thresholdItem && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 dark:bg-black/85 p-4 backdrop-blur-md">
           <div className="w-full max-w-md rounded-3xl border border-[#C9AE8B]/60 bg-[#FAF4EB] p-6 shadow-2xl dark:border-stone-800 dark:bg-[#1A1715] space-y-4">
             <div className="flex items-center justify-between">
               <div>
@@ -1434,12 +1442,13 @@ export const ProcurementManager: React.FC<ProcurementManagerProps> = ({ initialD
               </div>
             </form>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* MODAL 4: CREATE PURCHASE ORDER */}
-      {isPoModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+      {mounted && isPoModalOpen && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 dark:bg-black/85 p-4 backdrop-blur-md">
           <div className="w-full max-w-lg rounded-3xl border border-[#C9AE8B]/60 bg-[#FAF4EB] p-6 shadow-2xl dark:border-stone-800 dark:bg-[#1A1715] space-y-4 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between">
               <h3 className="text-lg font-serif font-bold text-[#241F1C] dark:text-[#FDFBF7]">
@@ -1585,12 +1594,13 @@ export const ProcurementManager: React.FC<ProcurementManagerProps> = ({ initialD
               </div>
             </form>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* MODAL 5: RECORD GOODS RECEIPT (GRN) */}
-      {activeReceivingPO && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+      {mounted && activeReceivingPO && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 dark:bg-black/85 p-4 backdrop-blur-md">
           <div className="w-full max-w-lg rounded-3xl border border-[#C9AE8B]/60 bg-[#FAF4EB] p-6 shadow-2xl dark:border-stone-800 dark:bg-[#1A1715] space-y-4 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between">
               <div>
@@ -1683,7 +1693,8 @@ export const ProcurementManager: React.FC<ProcurementManagerProps> = ({ initialD
               </div>
             </form>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

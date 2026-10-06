@@ -146,6 +146,8 @@ let isSupabaseChannelReady = false;
 let isConnecting = false;
 let reconnectTimer: NodeJS.Timeout | null = null;
 let retryFlushTimer: NodeJS.Timeout | null = null;
+let reconnectAttempts = 0;
+const MAX_RECONNECT_ATTEMPTS = 3;
 const pendingSupabaseEvents: QueuedEvent[] = [];
 
 async function sendSupabaseEventDirect(channel: RealtimeChannel, payload: SyncPayload): Promise<boolean> {
@@ -185,7 +187,7 @@ async function flushPendingSupabaseEvents(): Promise<void> {
   }
 
   // If there are still failed items to retry, schedule a follow-up flush
-  if (pendingSupabaseEvents.length > 0 && !retryFlushTimer) {
+  if (pendingSupabaseEvents.length > 0 && !retryFlushTimer && reconnectAttempts <= MAX_RECONNECT_ATTEMPTS) {
     retryFlushTimer = setTimeout(() => {
       retryFlushTimer = null;
       flushPendingSupabaseEvents();
@@ -201,6 +203,12 @@ function getOrInitSupabaseChannel(): RealtimeChannel | null {
   }
 
   if (isConnecting) {
+    return globalSupabaseChannel;
+  }
+
+  // Stop hammering the websocket if the remote Realtime service has repeatedly failed.
+  // The app will seamlessly continue using BroadcastChannel & localStorage events.
+  if (reconnectAttempts > MAX_RECONNECT_ATTEMPTS) {
     return globalSupabaseChannel;
   }
 
@@ -367,15 +375,25 @@ function getOrInitSupabaseChannel(): RealtimeChannel | null {
       isConnecting = false;
       if (status === "SUBSCRIBED") {
         isSupabaseChannelReady = true;
+        reconnectAttempts = 0;
         flushPendingSupabaseEvents();
       } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
         isSupabaseChannelReady = false;
-        // Schedule auto-reconnect backoff (fast 1s recovery)
-        if (!reconnectTimer) {
-          reconnectTimer = setTimeout(() => {
+        reconnectAttempts++;
+        if (reconnectAttempts <= MAX_RECONNECT_ATTEMPTS) {
+          if (!reconnectTimer) {
+            const delay = Math.min(3000 * Math.pow(2, reconnectAttempts - 1), 30000);
+            reconnectTimer = setTimeout(() => {
+              reconnectTimer = null;
+              getOrInitSupabaseChannel();
+            }, delay);
+          }
+        } else {
+          // Channel is unreachable/500; gracefully suspend retries and rely on local sync
+          if (reconnectTimer) {
+            clearTimeout(reconnectTimer);
             reconnectTimer = null;
-            getOrInitSupabaseChannel();
-          }, 1000);
+          }
         }
       }
     });
@@ -393,12 +411,15 @@ function getOrInitSupabaseChannel(): RealtimeChannel | null {
 if (typeof window !== "undefined") {
   window.addEventListener("online", () => {
     isSupabaseChannelReady = false;
+    reconnectAttempts = 0; // reset retry counter on fresh connection
     getOrInitSupabaseChannel();
   });
 
   window.addEventListener("focus", () => {
     if (!isSupabaseChannelReady) {
-      getOrInitSupabaseChannel();
+      if (reconnectAttempts <= MAX_RECONNECT_ATTEMPTS) {
+        getOrInitSupabaseChannel();
+      }
     } else {
       flushPendingSupabaseEvents();
     }
@@ -407,7 +428,9 @@ if (typeof window !== "undefined") {
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible") {
       if (!isSupabaseChannelReady) {
-        getOrInitSupabaseChannel();
+        if (reconnectAttempts <= MAX_RECONNECT_ATTEMPTS) {
+          getOrInitSupabaseChannel();
+        }
       } else {
         flushPendingSupabaseEvents();
       }
