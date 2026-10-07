@@ -4,19 +4,11 @@ import React, { useState, useEffect } from "react";
 import Image from "next/image";
 
 export const AppSplashScreen: React.FC = () => {
+  const [mounted, setMounted] = useState(false);
   const [isVisible, setIsVisible] = useState(true);
   const [isFadingOut, setIsFadingOut] = useState(false);
   const [progress, setProgress] = useState(12);
   const [tapScale, setTapScale] = useState(false);
-  const [isDark, setIsDark] = useState(() => {
-    if (typeof document !== "undefined") {
-      return (
-        document.documentElement.classList.contains("dark") ||
-        document.documentElement.getAttribute("data-theme") === "night"
-      );
-    }
-    return false;
-  });
 
   // States narrative milestone
   const states = [
@@ -28,6 +20,8 @@ export const AppSplashScreen: React.FC = () => {
   ];
 
   useEffect(() => {
+    setMounted(true);
+
     // Check if splash has already run in this session
     try {
       const alreadyShown = sessionStorage.getItem("smol_splash_shown");
@@ -39,24 +33,10 @@ export const AppSplashScreen: React.FC = () => {
       // safe
     }
 
-    // Detect initial theme
-    const checkDark = () => {
-      const darkActive =
-        document.documentElement.classList.contains("dark") ||
-        document.documentElement.getAttribute("data-theme") === "night";
-      setIsDark(darkActive);
-    };
-    checkDark();
-
-    // Listen for theme changes
-    const observer = new MutationObserver(checkDark);
-    observer.observe(document.documentElement, { attributes: true, attributeFilter: ["class", "data-theme"] });
-    window.addEventListener("smol_theme_changed", checkDark);
-
     // 5-second total loading progress simulation
     const totalDurationMs = 4800;
     const intervalMs = 100;
-    const increment = (100 / (totalDurationMs / intervalMs));
+    const increment = 100 / (totalDurationMs / intervalMs);
 
     const timer = setInterval(() => {
       setProgress((prev) => {
@@ -71,8 +51,6 @@ export const AppSplashScreen: React.FC = () => {
 
     return () => {
       clearInterval(timer);
-      observer.disconnect();
-      window.removeEventListener("smol_theme_changed", checkDark);
     };
   }, []);
 
@@ -111,7 +89,7 @@ export const AppSplashScreen: React.FC = () => {
     });
   };
 
-  if (!isVisible) return null;
+  if (!mounted || !isVisible) return null;
 
   const currentMilestone = states.find((s) => Math.round(progress) <= s.threshold) || states[states.length - 1];
   const roundedPercent = Math.min(Math.round(progress), 100);
@@ -239,7 +217,7 @@ export const AppSplashScreen: React.FC = () => {
           animation: gentleSteam 2.8s ease-out infinite 1.7s;
         }
 
-        .splash-bar-light {
+        .splash-bar-shimmer {
           background: linear-gradient(
             90deg,
             #C93834 0%,
@@ -252,7 +230,10 @@ export const AppSplashScreen: React.FC = () => {
           animation: shimmerBarLight 2.2s infinite linear;
         }
 
-        .splash-bar-dark {
+        .dark .splash-bar-shimmer,
+        html.dark .splash-bar-shimmer,
+        [data-theme="night"] .splash-bar-shimmer,
+        html[data-theme="night"] .splash-bar-shimmer {
           background: linear-gradient(
             90deg,
             #754CFF 0%,
@@ -264,7 +245,7 @@ export const AppSplashScreen: React.FC = () => {
           ) !important;
           background-size: 240% 100% !important;
           animation: shimmerBarDark 2.2s infinite linear !important;
-          box-shadow: 0 0 14px rgba(168, 85, 247, 0.8) !important;
+          box-shadow: 0 0 14px rgba(168, 85, 247, 0.85) !important;
         }
 
         .pulse-halo {
@@ -388,15 +369,9 @@ export const AppSplashScreen: React.FC = () => {
             role="progressbar"
           >
             <div
-              className={`h-full rounded-full transition-all duration-200 ease-out shadow-xs ${
-                isDark ? "splash-bar-dark" : "splash-bar-light"
-              }`}
+              className="h-full rounded-full transition-all duration-200 ease-out shadow-xs splash-bar-shimmer"
               style={{
                 width: `${roundedPercent}%`,
-                background: isDark
-                  ? "linear-gradient(90deg, #754CFF 0%, #C084FC 48%, #A855F7 78%, #754CFF 100%)"
-                  : "linear-gradient(90deg, #C93834 0%, #e35752 45%, #fce8e6 55%, #C93834 70%, #A82A26 100%)",
-                boxShadow: isDark ? "0 0 14px rgba(168, 85, 247, 0.85)" : undefined,
               }}
             />
           </div>

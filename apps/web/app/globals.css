@@ -37,7 +37,7 @@
     padding-bottom: env(safe-area-inset-bottom, 0px);
   }
 
-  .splash-bar-light {
+  .splash-bar-shimmer {
     background: linear-gradient(
       90deg,
       #C93834 0%,
@@ -49,7 +49,10 @@
     background-size: 240% 100%;
   }
 
-  .splash-bar-dark {
+  .dark .splash-bar-shimmer,
+  html.dark .splash-bar-shimmer,
+  [data-theme="night"] .splash-bar-shimmer,
+  html[data-theme="night"] .splash-bar-shimmer {
     background: linear-gradient(
       90deg,
       #754CFF 0%,
@@ -60,7 +63,7 @@
       #754CFF 100%
     ) !important;
     background-size: 240% 100% !important;
-    box-shadow: 0 0 14px rgba(168, 85, 247, 0.8) !important;
+    box-shadow: 0 0 14px rgba(168, 85, 247, 0.85) !important;
   }
 }
 
