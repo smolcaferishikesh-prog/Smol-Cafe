@@ -8,7 +8,15 @@ export const AppSplashScreen: React.FC = () => {
   const [isFadingOut, setIsFadingOut] = useState(false);
   const [progress, setProgress] = useState(12);
   const [tapScale, setTapScale] = useState(false);
-  const [isDark, setIsDark] = useState(false);
+  const [isDark, setIsDark] = useState(() => {
+    if (typeof document !== "undefined") {
+      return (
+        document.documentElement.classList.contains("dark") ||
+        document.documentElement.getAttribute("data-theme") === "night"
+      );
+    }
+    return false;
+  });
 
   // States narrative milestone
   const states = [
@@ -33,7 +41,8 @@ export const AppSplashScreen: React.FC = () => {
 
     // Detect initial theme
     const checkDark = () => {
-      const darkActive = document.documentElement.classList.contains("dark") ||
+      const darkActive =
+        document.documentElement.classList.contains("dark") ||
         document.documentElement.getAttribute("data-theme") === "night";
       setIsDark(darkActive);
     };
@@ -230,7 +239,7 @@ export const AppSplashScreen: React.FC = () => {
           animation: gentleSteam 2.8s ease-out infinite 1.7s;
         }
 
-        .shimmer-active-light {
+        .splash-bar-light {
           background: linear-gradient(
             90deg,
             #C93834 0%,
@@ -243,7 +252,7 @@ export const AppSplashScreen: React.FC = () => {
           animation: shimmerBarLight 2.2s infinite linear;
         }
 
-        .shimmer-active-dark {
+        .splash-bar-dark {
           background: linear-gradient(
             90deg,
             #754CFF 0%,
@@ -252,10 +261,10 @@ export const AppSplashScreen: React.FC = () => {
             #F3E8FF 56%,
             #A855F7 78%,
             #754CFF 100%
-          );
-          background-size: 240% 100%;
-          animation: shimmerBarDark 2.2s infinite linear;
-          box-shadow: 0 0 12px rgba(168, 85, 247, 0.65);
+          ) !important;
+          background-size: 240% 100% !important;
+          animation: shimmerBarDark 2.2s infinite linear !important;
+          box-shadow: 0 0 14px rgba(168, 85, 247, 0.8) !important;
         }
 
         .pulse-halo {
@@ -370,7 +379,7 @@ export const AppSplashScreen: React.FC = () => {
             </span>
           </div>
 
-          {/* Purple Shimmer Progress Track */}
+          {/* Progress Track */}
           <div
             aria-valuemax={100}
             aria-valuemin={0}
@@ -380,9 +389,15 @@ export const AppSplashScreen: React.FC = () => {
           >
             <div
               className={`h-full rounded-full transition-all duration-200 ease-out shadow-xs ${
-                isDark ? "shimmer-active-dark" : "shimmer-active-light"
+                isDark ? "splash-bar-dark" : "splash-bar-light"
               }`}
-              style={{ width: `${roundedPercent}%` }}
+              style={{
+                width: `${roundedPercent}%`,
+                background: isDark
+                  ? "linear-gradient(90deg, #754CFF 0%, #C084FC 48%, #A855F7 78%, #754CFF 100%)"
+                  : "linear-gradient(90deg, #C93834 0%, #e35752 45%, #fce8e6 55%, #C93834 70%, #A82A26 100%)",
+                boxShadow: isDark ? "0 0 14px rgba(168, 85, 247, 0.85)" : undefined,
+              }}
             />
           </div>
 

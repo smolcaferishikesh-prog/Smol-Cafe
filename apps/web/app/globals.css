@@ -36,6 +36,32 @@
   .pb-safe {
     padding-bottom: env(safe-area-inset-bottom, 0px);
   }
+
+  .splash-bar-light {
+    background: linear-gradient(
+      90deg,
+      #C93834 0%,
+      #e35752 45%,
+      #fce8e6 55%,
+      #C93834 70%,
+      #A82A26 100%
+    );
+    background-size: 240% 100%;
+  }
+
+  .splash-bar-dark {
+    background: linear-gradient(
+      90deg,
+      #754CFF 0%,
+      #9333EA 28%,
+      #C084FC 48%,
+      #F3E8FF 56%,
+      #A855F7 78%,
+      #754CFF 100%
+    ) !important;
+    background-size: 240% 100% !important;
+    box-shadow: 0 0 14px rgba(168, 85, 247, 0.8) !important;
+  }
 }
 
 html {
