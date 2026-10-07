@@ -7,7 +7,6 @@ export const AppSplashScreen: React.FC = () => {
   const [isVisible, setIsVisible] = useState(true);
   const [isFadingOut, setIsFadingOut] = useState(false);
   const [progress, setProgress] = useState(12);
-  const [currentTime, setCurrentTime] = useState("13:45");
   const [tapScale, setTapScale] = useState(false);
 
   // States narrative milestone
@@ -30,15 +29,6 @@ export const AppSplashScreen: React.FC = () => {
     } catch {
       // safe
     }
-
-    // Set real time for status bar
-    const updateTime = () => {
-      const now = new Date();
-      let h = now.getHours().toString();
-      let m = now.getMinutes().toString().padStart(2, "0");
-      setCurrentTime(`${h}:${m}`);
-    };
-    updateTime();
 
     // 5-second total loading progress simulation
     const totalDurationMs = 4800;
@@ -237,34 +227,8 @@ export const AppSplashScreen: React.FC = () => {
         className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-80 h-80 rounded-full bg-orange-300/35 dark:bg-[#B72E35]/20 blur-3xl pulse-halo"
       />
 
-      {/* Top iOS Safe Area Simulation / Status Bar */}
-      <header className="relative z-20 pt-[calc(0.75rem+env(safe-area-inset-top,0px))] px-6 sm:px-8 flex items-center justify-between text-xs sm:text-sm font-semibold tracking-tight text-[#2B2320]/80 dark:text-[#F3E7D3]/80">
-        <span>{currentTime}</span>
-
-        {/* Sensor Notch / Dynamic Island pill */}
-        <div className="w-20 sm:w-24 h-4.5 sm:h-5 bg-neutral-900/10 dark:bg-white/10 rounded-full flex items-center justify-center">
-          <span className="w-2 h-2 rounded-full bg-neutral-900/30 dark:bg-white/30" />
-        </div>
-
-        {/* Mobile Status Bar Icons */}
-        <div className="flex items-center space-x-1.5 sm:space-x-2 text-[12px]">
-          {/* Signal */}
-          <svg className="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24">
-            <path d="M12 3c-4.97 0-9 4.03-9 9 0 2.12.74 4.07 1.97 5.61L4 18.59l1.41 1.41.98-.98C8.03 20.26 9.92 21 12 21c4.97 0 9-4.03 9-9s-4.03-9-9-9zm0 2c3.87 0 7 3.13 7 7 0 1.54-.5 2.97-1.35 4.14L6.86 5.35C8.03 4.5 9.46 4 11 4h1zm-7 8c0-1.54.5-2.97 1.35-4.14l10.79 10.79C14.97 19.5 13.54 20 12 20c-3.87 0-7-3.13-7-7z" />
-          </svg>
-          {/* Wifi */}
-          <svg className="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24">
-            <path d="M12 4C7.31 4 3.07 5.9 0 8.98L12 21 24 8.98A17.92 17.92 0 0012 4zm0 3.32c3.75 0 7.15 1.48 9.69 3.89L12 19.46 2.31 11.21C4.85 8.8 8.25 7.32 12 7.32z" />
-          </svg>
-          {/* Battery */}
-          <div className="flex items-center space-x-0.5">
-            <div className="w-4.5 sm:w-5 h-2.5 rounded-[3px] border border-current p-0.5 flex items-center">
-              <div className="w-3 sm:w-3.5 h-1.5 bg-current rounded-xs" />
-            </div>
-            <div className="w-0.5 h-1 bg-current rounded-r-xs" />
-          </div>
-        </div>
-      </header>
+      {/* Top Safe Area Spacer */}
+      <div className="h-[env(safe-area-inset-top,0px)] shrink-0" />
 
       {/* Main Centerpiece Logo Hero Area */}
       <section className="relative z-10 flex-1 flex flex-col items-center justify-center px-6">
@@ -375,11 +339,6 @@ export const AppSplashScreen: React.FC = () => {
             </button>
           </div>
         </div>
-
-        {/* iOS Home Indicator */}
-        <footer className="mt-4 sm:mt-6 w-full flex justify-center pt-2">
-          <div className="w-28 sm:w-32 h-1 bg-neutral-400/40 dark:bg-neutral-600/40 rounded-full" />
-        </footer>
       </section>
     </div>
   );
