@@ -337,7 +337,13 @@ export const StaffBackdoorPortal: React.FC = () => {
         </section>
 
         {/* Station Passcode Terminal Card */}
-        <div
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (pin.length > 0 && !isSubmitting) {
+              submitLogin(selectedRole, pin);
+            }
+          }}
           className={`relative rounded-3xl border border-[#C9AE8B]/50 dark:border-stone-800/80 bg-white/95 dark:bg-[#181412] p-4 sm:p-6 shadow-xl dark:shadow-[0_12px_40px_rgba(0,0,0,0.6)] space-y-3.5 sm:space-y-4 transition-all duration-300 backdrop-blur-md ${currentRole.glowColor} ${
             shake ? "animate-shake" : ""
           }`}
@@ -415,6 +421,7 @@ export const StaffBackdoorPortal: React.FC = () => {
               type={showPin ? "text" : "password"}
               maxLength={8}
               value={pin}
+              autoComplete="current-password"
               onChange={(e) => {
                 const clean = e.target.value.replace(/\D/g, "");
                 setPin(clean);
@@ -425,6 +432,7 @@ export const StaffBackdoorPortal: React.FC = () => {
               }}
               onKeyDown={(e) => {
                 if (e.key === "Enter") {
+                  e.preventDefault();
                   submitLogin(selectedRole, pin);
                 }
               }}
@@ -532,9 +540,8 @@ export const StaffBackdoorPortal: React.FC = () => {
           {/* Master Unlock Button */}
           <div className="pt-1.5">
             <button
-              type="button"
+              type="submit"
               disabled={isSubmitting || pin.length === 0}
-              onClick={() => submitLogin(selectedRole, pin)}
               className={`w-full flex items-center justify-center gap-2.5 rounded-2xl bg-[#B72E35] hover:bg-[#9E242B] dark:bg-gradient-to-r dark:from-[#7C3AED] dark:to-[#9333EA] dark:hover:from-[#6D28D9] dark:hover:to-[#7E22CE] dark:text-white dark:shadow-[0_4px_24px_rgba(147,51,234,0.4)] px-4 py-3.5 sm:py-4 font-mono text-xs sm:text-sm font-bold text-white shadow-lg active:scale-98 transition-all duration-200 ${
                 isSubmitting
                   ? "opacity-90 cursor-wait ring-2 ring-white/20 dark:ring-purple-400/40"
@@ -557,7 +564,7 @@ export const StaffBackdoorPortal: React.FC = () => {
               )}
             </button>
           </div>
-        </div>
+        </form>
       </main>
 
       {/* Footer Branding */}
