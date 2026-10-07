@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect } from "react";
 import Image from "next/image";
 
 export const AppSplashScreen: React.FC = () => {
@@ -8,6 +8,7 @@ export const AppSplashScreen: React.FC = () => {
   const [isFadingOut, setIsFadingOut] = useState(false);
   const [progress, setProgress] = useState(12);
   const [tapScale, setTapScale] = useState(false);
+  const [isDark, setIsDark] = useState(false);
 
   // States narrative milestone
   const states = [
@@ -30,6 +31,19 @@ export const AppSplashScreen: React.FC = () => {
       // safe
     }
 
+    // Detect initial theme
+    const checkDark = () => {
+      const darkActive = document.documentElement.classList.contains("dark") ||
+        document.documentElement.getAttribute("data-theme") === "night";
+      setIsDark(darkActive);
+    };
+    checkDark();
+
+    // Listen for theme changes
+    const observer = new MutationObserver(checkDark);
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ["class", "data-theme"] });
+    window.addEventListener("smol_theme_changed", checkDark);
+
     // 5-second total loading progress simulation
     const totalDurationMs = 4800;
     const intervalMs = 100;
@@ -46,7 +60,11 @@ export const AppSplashScreen: React.FC = () => {
       });
     }, intervalMs);
 
-    return () => clearInterval(timer);
+    return () => {
+      clearInterval(timer);
+      observer.disconnect();
+      window.removeEventListener("smol_theme_changed", checkDark);
+    };
   }, []);
 
   // When progress reaches 100%, trigger smooth exit
@@ -91,7 +109,7 @@ export const AppSplashScreen: React.FC = () => {
 
   return (
     <div
-      className={`fixed inset-0 z-[9999] flex flex-col justify-between overflow-hidden select-none bg-gradient-to-b from-[#FFFDF9] via-[#FAF3EA] to-[#F3E7D8] dark:from-[#201A17] dark:via-[#181412] dark:to-[#100D0C] text-[#2B2320] dark:text-[#F3E7D3] font-sans transition-all duration-500 ease-out ${
+      className={`fixed inset-0 z-[9999] flex flex-col justify-between overflow-hidden select-none bg-gradient-to-b from-[#FFFDF9] via-[#FAF3EA] to-[#F3E7D8] dark:from-[#181311] dark:via-[#120F0E] dark:to-[#0A0807] text-[#2B2320] dark:text-[#FAF4EB] font-sans transition-all duration-500 ease-out ${
         isFadingOut ? "opacity-0 scale-105 pointer-events-none" : "opacity-100 scale-100"
       }`}
     >
@@ -162,7 +180,16 @@ export const AppSplashScreen: React.FC = () => {
           }
         }
 
-        @keyframes shimmerBar {
+        @keyframes shimmerBarLight {
+          0% {
+            background-position: -200% 0;
+          }
+          100% {
+            background-position: 200% 0;
+          }
+        }
+
+        @keyframes shimmerBarDark {
           0% {
             background-position: -200% 0;
           }
@@ -203,7 +230,7 @@ export const AppSplashScreen: React.FC = () => {
           animation: gentleSteam 2.8s ease-out infinite 1.7s;
         }
 
-        .shimmer-active {
+        .shimmer-active-light {
           background: linear-gradient(
             90deg,
             #C93834 0%,
@@ -213,7 +240,21 @@ export const AppSplashScreen: React.FC = () => {
             #A82A26 100%
           );
           background-size: 240% 100%;
-          animation: shimmerBar 2.2s infinite linear;
+          animation: shimmerBarLight 2.2s infinite linear;
+        }
+
+        .shimmer-active-dark {
+          background: linear-gradient(
+            90deg,
+            #754CFF 0%,
+            #A855F7 35%,
+            #F2C84B 50%,
+            #FFE494 60%,
+            #B72E35 85%,
+            #754CFF 100%
+          );
+          background-size: 240% 100%;
+          animation: shimmerBarDark 2.2s infinite linear;
         }
 
         .pulse-halo {
@@ -221,10 +262,14 @@ export const AppSplashScreen: React.FC = () => {
         }
       `}</style>
 
-      {/* Warm Ambient Halo Glow */}
+      {/* Ambient Halo Glow */}
       <div
         aria-hidden="true"
-        className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-80 h-80 rounded-full bg-orange-300/35 dark:bg-[#B72E35]/20 blur-3xl pulse-halo"
+        className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-80 h-80 rounded-full bg-orange-300/35 dark:bg-[#754CFF]/20 blur-3xl pulse-halo"
+      />
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-64 h-64 rounded-full hidden dark:block bg-[#B72E35]/15 blur-2xl pulse-halo"
       />
 
       {/* Top Safe Area Spacer */}
@@ -234,13 +279,25 @@ export const AppSplashScreen: React.FC = () => {
       <section className="relative z-10 flex-1 flex flex-col items-center justify-center px-6">
         {/* Steam Wisps */}
         <div aria-hidden="true" className="relative w-28 h-12 flex justify-center items-end space-x-4 mb-2 pointer-events-none">
-          <svg className="w-3.5 h-9 text-[#B72E35]/60 stroke-current steam-wisp-1" fill="none" viewBox="0 0 20 50">
+          <svg
+            className="w-3.5 h-9 text-[#B72E35]/60 dark:text-[#A855F7]/80 stroke-current steam-wisp-1"
+            fill="none"
+            viewBox="0 0 20 50"
+          >
             <path d="M10 48C4 36 16 26 10 12C7 6 12 2 10 0" strokeLinecap="round" strokeWidth="2.5" />
           </svg>
-          <svg className="w-4 h-11 text-[#B72E35]/75 stroke-current steam-wisp-2" fill="none" viewBox="0 0 20 50">
+          <svg
+            className="w-4 h-11 text-[#B72E35]/75 dark:text-[#F2C84B]/85 stroke-current steam-wisp-2"
+            fill="none"
+            viewBox="0 0 20 50"
+          >
             <path d="M10 48C16 36 4 24 11 12C14 7 8 2 10 0" strokeLinecap="round" strokeWidth="3" />
           </svg>
-          <svg className="w-3.5 h-8 text-[#B72E35]/50 stroke-current steam-wisp-3" fill="none" viewBox="0 0 20 50">
+          <svg
+            className="w-3.5 h-8 text-[#B72E35]/50 dark:text-[#A855F7]/65 stroke-current steam-wisp-3"
+            fill="none"
+            viewBox="0 0 20 50"
+          >
             <path d="M10 48C5 38 15 28 9 14C6 8 11 3 10 0" strokeLinecap="round" strokeWidth="2.5" />
           </svg>
         </div>
@@ -255,12 +312,21 @@ export const AppSplashScreen: React.FC = () => {
         >
           <div className="animate-bouncy-logo select-none filter drop-shadow-md">
             <div className="relative w-44 sm:w-48 h-56 sm:h-60 mx-auto">
+              {/* Light Mode Logo: Classic Smol Cherry Door */}
               <Image
                 src="/icon-512.png"
                 alt="Smol Café Logo"
                 fill
                 priority
-                className="object-contain drop-shadow-sm transition-transform"
+                className="object-contain drop-shadow-sm transition-transform dark:hidden block"
+              />
+              {/* Dark Mode Logo: Electric Violet Neon Door */}
+              <Image
+                src="/logo-dark-transparent.png"
+                alt="Smol Café Neon Logo"
+                fill
+                priority
+                className="object-contain drop-shadow-[0_0_25px_rgba(117,76,255,0.45)] transition-transform hidden dark:block"
               />
             </div>
           </div>
@@ -268,23 +334,23 @@ export const AppSplashScreen: React.FC = () => {
           {/* Dynamic Ground Contact Shadow */}
           <div
             aria-hidden="true"
-            className="mx-auto w-32 sm:w-36 h-3 sm:h-3.5 bg-[#2B2320]/30 dark:bg-black/50 rounded-full blur-[4px] animate-bouncy-shadow mt-1"
+            className="mx-auto w-32 sm:w-36 h-3 sm:h-3.5 bg-[#2B2320]/30 dark:bg-black/70 rounded-full blur-[4px] dark:blur-[6px] animate-bouncy-shadow mt-1"
           />
         </div>
 
         {/* Sub-brand Tagline */}
         <div className="mt-8 text-center">
-          <h1 className="font-serif italic font-bold text-2xl sm:text-3xl text-[#2B2320] dark:text-[#FAF4EB] tracking-wide lowercase">
+          <h1 className="font-serif italic font-bold text-2xl sm:text-3xl text-[#2B2320] dark:text-[#FAF4EB] tracking-wide lowercase dark:drop-shadow-[0_0_12px_rgba(242,200,75,0.15)]">
             smol café
           </h1>
-          <p className="text-[11px] sm:text-xs uppercase font-semibold tracking-[0.25em] text-[#B72E35] dark:text-[#FF6B6B] mt-1.5">
+          <p className="text-[11px] sm:text-xs uppercase font-semibold tracking-[0.25em] text-[#B72E35] dark:text-[#F2C84B] mt-1.5">
             cozy moments • handcrafted
           </p>
         </div>
       </section>
 
       {/* Bottom Progress Bar & Milestone Section */}
-      <section className="relative z-10 px-6 sm:px-8 pb-8 sm:pb-10 flex flex-col items-center">
+      <section className="relative z-10 px-6 sm:px-8 pb-[calc(1.75rem+env(safe-area-inset-bottom,0px))] flex flex-col items-center">
         <div className="w-full max-w-xs space-y-3">
           {/* Status Label & Percentage */}
           <div className="flex items-center justify-between text-xs text-[#2B2320]/80 dark:text-[#FAF4EB]/80 font-medium px-1">
@@ -293,12 +359,12 @@ export const AppSplashScreen: React.FC = () => {
                 className={`w-2 h-2 rounded-full ${
                   roundedPercent >= 100
                     ? "bg-emerald-500"
-                    : "bg-[#B72E35] animate-ping"
+                    : "bg-[#B72E35] dark:bg-[#F2C84B] animate-ping"
                 }`}
               />
               <span>{currentMilestone.message}</span>
             </span>
-            <span className="font-mono font-semibold text-[#B72E35] dark:text-[#FF6B6B]">
+            <span className="font-mono font-semibold text-[#B72E35] dark:text-[#F2C84B]">
               {roundedPercent}%
             </span>
           </div>
@@ -308,11 +374,13 @@ export const AppSplashScreen: React.FC = () => {
             aria-valuemax={100}
             aria-valuemin={0}
             aria-valuenow={roundedPercent}
-            className="relative w-full h-2.5 bg-neutral-200/80 dark:bg-stone-800 rounded-full overflow-hidden p-0.5 shadow-inner border border-amber-900/10 dark:border-white/10"
+            className="relative w-full h-2.5 bg-neutral-200/80 dark:bg-[#1C1715] rounded-full overflow-hidden p-0.5 shadow-inner border border-amber-900/10 dark:border-stone-800"
             role="progressbar"
           >
             <div
-              className="h-full rounded-full shimmer-active transition-all duration-200 ease-out shadow-xs"
+              className={`h-full rounded-full transition-all duration-200 ease-out shadow-xs ${
+                isDark ? "shimmer-active-dark" : "shimmer-active-light"
+              }`}
               style={{ width: `${roundedPercent}%` }}
             />
           </div>
@@ -327,10 +395,10 @@ export const AppSplashScreen: React.FC = () => {
             <button
               onClick={handleDismiss}
               type="button"
-              className="group text-[11px] font-medium text-neutral-400 hover:text-[#B72E35] active:scale-95 transition-all flex items-center gap-1 py-1 px-3 rounded-full hover:bg-neutral-100/50 dark:hover:bg-white/5 cursor-pointer"
+              className="group text-[11px] font-medium text-neutral-400 hover:text-[#B72E35] dark:text-stone-400 dark:hover:text-[#F2C84B] active:scale-95 transition-all flex items-center gap-1 py-1 px-3 rounded-full hover:bg-neutral-100/50 dark:hover:bg-white/5 cursor-pointer"
             >
               {roundedPercent >= 100 ? (
-                <span className="text-[#B72E35] dark:text-[#FF6B6B] font-semibold animate-pulse">
+                <span className="text-[#B72E35] dark:text-[#F2C84B] font-semibold animate-pulse">
                   Ready! Entering café... →
                 </span>
               ) : (
