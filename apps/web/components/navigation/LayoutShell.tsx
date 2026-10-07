@@ -6,6 +6,7 @@ import { RoleSwitcherBar } from "@/components/navigation/RoleSwitcherBar";
 import { InstallAppPrompt } from "@/components/common/InstallAppPrompt";
 import { OfflineSyncBanner } from "@/components/common/OfflineSyncBanner";
 import { BottomNavBar } from "@/components/navigation/BottomNavBar";
+import { AppSplashScreen } from "@/components/common/AppSplashScreen";
 
 interface LayoutShellProps {
   children: React.ReactNode;
@@ -97,6 +98,7 @@ export const LayoutShell: React.FC<LayoutShellProps> = ({ children }) => {
 
   return (
     <>
+      <AppSplashScreen />
       <OfflineSyncBanner />
       {showRoleSwitcher && <RoleSwitcherBar />}
       {children}
