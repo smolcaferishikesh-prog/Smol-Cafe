@@ -13,7 +13,7 @@ export const HomeClientHeader: React.FC<HomeClientHeaderProps> = ({ tableLabel }
 
   return (
     <>
-      <header className="sticky top-0 z-40 border-b border-[#C9AE8B]/40 bg-[#F3E7D3]/90 px-5 py-4 backdrop-blur-md">
+      <header className="sticky top-0 z-40 border-b border-[#C9AE8B]/40 bg-[#F3E7D3]/90 px-5 pt-[calc(1rem+env(safe-area-inset-top,0px))] pb-4 backdrop-blur-md">
         <div className="mx-auto flex max-w-md items-center justify-between">
           {/* Hamburger Menu Button */}
           <button

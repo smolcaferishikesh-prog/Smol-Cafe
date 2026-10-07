@@ -490,11 +490,11 @@ export const BaristaBoardView: React.FC<BaristaBoardViewProps> = ({ initialOrder
   return (
     <div className="flex min-h-screen flex-col bg-[#F3E7D3] dark:bg-[#181412] text-[#241F1C] dark:text-[#FAF4EB] font-sans transition-colors duration-200">
       {/* Top Barista Header */}
-      <header className="sticky top-0 z-30 border-b border-[#C9AE8B]/40 dark:border-white/10 bg-[#FAF4EB]/95 dark:bg-[#1D1815]/95 px-3 sm:px-5 lg:px-6 py-2 sm:py-2.5 backdrop-blur-md">
+      <header className="sticky top-0 z-30 border-b border-[#C9AE8B]/40 dark:border-white/10 bg-[#FAF4EB]/95 dark:bg-[#1D1815]/95 px-3 sm:px-5 lg:px-6 pt-[calc(0.5rem+env(safe-area-inset-top,0px))] pb-2 sm:pb-2.5 backdrop-blur-md transition-colors duration-200">
         <div className="flex items-center justify-between gap-2 sm:gap-4 flex-nowrap">
           {/* Brand & Station Indicator with Custom Barista Logos */}
-          <div className="flex items-center gap-2 sm:gap-2.5 shrink-0 min-w-0">
-            <div className="relative h-8 w-6 sm:h-10 sm:w-7.5 shrink-0 select-none">
+          <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0 min-w-0">
+            <div className="relative h-7 w-5.5 sm:h-10 sm:w-7.5 shrink-0 select-none">
               <Image
                 src="/barista-logo.png"
                 alt="smol café barista logo"
@@ -515,12 +515,12 @@ export const BaristaBoardView: React.FC<BaristaBoardViewProps> = ({ initialOrder
                 <span className="font-serif text-sm sm:text-lg font-bold tracking-tight text-[#241F1C] dark:text-[#FAF4EB] whitespace-nowrap">
                   smol café
                 </span>
-                <span className="text-[10px] text-[#F2C84B]">✦</span>
-                <span className="rounded-md border border-[#C9AE8B]/40 dark:border-white/10 bg-[#F3E7D3] dark:bg-white/5 px-1.5 py-0.5 font-mono text-[9.5px] sm:text-[10.5px] font-bold text-[#B72E35] dark:text-[#FF6B6B] shrink-0 whitespace-nowrap">
+                <span className="text-[9px] text-[#F2C84B]">✦</span>
+                <span className="rounded-md border border-[#C9AE8B]/40 dark:border-white/10 bg-[#F3E7D3] dark:bg-white/5 px-1 sm:px-1.5 py-0.5 font-mono text-[9px] sm:text-[10.5px] font-bold text-[#B72E35] dark:text-[#FF6B6B] shrink-0 whitespace-nowrap">
                   barista
                 </span>
               </div>
-              <p className="font-mono text-[10px] text-[#725039] dark:text-[#C9AE8B] -mt-0.5 hidden sm:block truncate">
+              <p className="font-mono text-[10px] text-[#725039] dark:text-[#C9AE8B] -mt-0.5 hidden md:block truncate">
                 single-origin espresso &amp; artisanal pour overs
               </p>
             </div>
@@ -531,7 +531,7 @@ export const BaristaBoardView: React.FC<BaristaBoardViewProps> = ({ initialOrder
             {dismissedTicketIds.size > 0 && (
               <button
                 onClick={handleRestoreDismissed}
-                className="flex items-center gap-1 rounded-full border border-[#C9AE8B]/60 dark:border-stone-700 bg-[#FAF4EB] dark:bg-[#1D1815] px-2 sm:px-2.5 py-1 text-[11px] sm:text-xs font-mono text-[#725039] dark:text-[#C9AE8B] hover:text-[#B72E35] transition cursor-pointer shadow-xs whitespace-nowrap"
+                className="flex items-center gap-1 rounded-full border border-[#C9AE8B]/60 dark:border-stone-700 bg-[#FAF4EB] dark:bg-[#1D1815] px-1.5 sm:px-2.5 py-1 text-[10.5px] sm:text-xs font-mono text-[#725039] dark:text-[#C9AE8B] hover:text-[#B72E35] transition cursor-pointer shadow-xs whitespace-nowrap"
                 title="Restore dismissed tickets"
               >
                 <RotateCcw className="h-3 w-3 shrink-0" />
@@ -551,7 +551,7 @@ export const BaristaBoardView: React.FC<BaristaBoardViewProps> = ({ initialOrder
                   return next;
                 });
               }}
-              className={`flex items-center gap-1 rounded-full border px-2 sm:px-2.5 py-1 text-xs font-mono transition cursor-pointer whitespace-nowrap ${
+              className={`flex items-center justify-center h-7 sm:h-auto gap-1 rounded-full border px-2 sm:px-2.5 py-1 text-xs font-mono transition cursor-pointer whitespace-nowrap shrink-0 ${
                 soundEnabled
                   ? "border-[#F2C84B]/60 bg-[#F2C84B]/20 text-[#8C6207] dark:text-[#F2C84B]"
                   : "border-[#C9AE8B]/40 dark:border-white/10 bg-[#FAF4EB] dark:bg-[#1D1815] text-[#725039] dark:text-[#C9AE8B]"
@@ -561,12 +561,12 @@ export const BaristaBoardView: React.FC<BaristaBoardViewProps> = ({ initialOrder
               {soundEnabled ? (
                 <>
                   <Bell className="h-3.5 w-3.5 text-[#8C6207] dark:text-[#F2C84B] shrink-0" />
-                  <span className="hidden sm:inline">chime</span>
+                  <span className="hidden md:inline">chime</span>
                 </>
               ) : (
                 <>
                   <BellOff className="h-3.5 w-3.5 shrink-0" />
-                  <span className="hidden sm:inline">mute</span>
+                  <span className="hidden md:inline">mute</span>
                 </>
               )}
             </button>
@@ -577,7 +577,7 @@ export const BaristaBoardView: React.FC<BaristaBoardViewProps> = ({ initialOrder
               className="flex h-7 w-7 sm:h-8 sm:w-8 items-center justify-center rounded-full border border-[#C9AE8B]/40 dark:border-white/10 bg-[#FAF4EB] dark:bg-[#1D1815] text-[#725039] dark:text-[#C9AE8B] hover:text-[#241F1C] transition cursor-pointer shrink-0"
               title="Refresh tickets"
             >
-              <RefreshCw className={`h-3 w-3 sm:h-3.5 sm:w-3.5 ${isRefreshing ? "animate-spin" : ""}`} />
+              <RefreshCw className={`h-3 w-3 sm:h-3.5 sm:w-3.5 shrink-0 ${isRefreshing ? "animate-spin" : ""}`} />
             </button>
 
             {/* Theme Toggle */}

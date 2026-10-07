@@ -314,7 +314,7 @@ const MenuContentInner: React.FC<MenuClientViewProps> = ({
   return (
     <div className="min-h-screen bg-[#F3E7D3] dark:bg-[#151110] text-[#241F1C] dark:text-[#FAF4EB] pb-44 font-sans transition-colors duration-200">
       {/* Top Header */}
-      <header className="sticky top-0 z-40 border-b border-[#C9AE8B]/40 dark:border-white/10 bg-[#F3E7D3]/90 dark:bg-[#181412]/90 px-4 py-3.5 backdrop-blur-md transition-colors duration-200">
+      <header className="sticky top-0 z-40 border-b border-[#C9AE8B]/40 dark:border-white/10 bg-[#F3E7D3]/90 dark:bg-[#181412]/90 px-4 pt-[calc(0.875rem+env(safe-area-inset-top,0px))] pb-3.5 backdrop-blur-md transition-colors duration-200">
         <div className="mx-auto flex max-w-md items-center justify-between">
           {/* Back Button */}
           <Link

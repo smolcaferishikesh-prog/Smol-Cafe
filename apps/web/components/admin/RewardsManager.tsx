@@ -149,7 +149,7 @@ export const RewardsManager: React.FC<RewardsManagerProps> = ({ initialRewards }
   return (
     <div className="min-h-screen bg-[#FDFBF7] text-[#1C1917] pb-24 dark:bg-[#141211] dark:text-[#FDFBF7]">
       {/* Top Bar */}
-      <header className="border-b border-stone-200/80 bg-white/70 px-4 py-4 backdrop-blur-md dark:border-stone-800 dark:bg-stone-900/60">
+      <header className="border-b border-stone-200/80 bg-white/70 px-4 pt-[calc(1rem+env(safe-area-inset-top,0px))] pb-4 backdrop-blur-md dark:border-stone-800 dark:bg-stone-900/60">
         <div className="mx-auto flex max-w-4xl items-center justify-between">
           <div className="flex items-center gap-3">
             <Link

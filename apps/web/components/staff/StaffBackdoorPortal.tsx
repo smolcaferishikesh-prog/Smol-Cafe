@@ -222,7 +222,7 @@ export const StaffBackdoorPortal: React.FC = () => {
   };
 
   return (
-    <div className="min-h-[100dvh] bg-[#FAF4EB] dark:bg-[#14110E] text-[#241F1C] dark:text-[#F3E7D3] font-sans flex flex-col justify-between p-3 sm:p-5 md:p-8 transition-colors duration-300 selection:bg-[#B72E35] selection:text-white">
+    <div className="min-h-[100dvh] bg-[#FAF4EB] dark:bg-[#14110E] text-[#241F1C] dark:text-[#F3E7D3] font-sans flex flex-col justify-between px-3 pt-[calc(0.75rem+env(safe-area-inset-top,0px))] pb-3 sm:p-5 md:p-8 transition-colors duration-300 selection:bg-[#B72E35] selection:text-white">
       {/* Top Header */}
       <header className="mx-auto flex w-full max-w-lg items-center justify-between py-2 sm:py-3">
         <div className="flex items-center gap-2.5 sm:gap-3.5">

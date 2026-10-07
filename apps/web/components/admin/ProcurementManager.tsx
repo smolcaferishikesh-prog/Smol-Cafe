@@ -486,7 +486,7 @@ export const ProcurementManager: React.FC<ProcurementManagerProps> = ({ initialD
     <div className={`${embedded ? "w-full space-y-5" : "min-h-screen bg-[#F3E7D3] pb-28"} text-[#241F1C] dark:text-[#FDFBF7] transition-colors duration-200`}>
       {/* Top Header - Rendered only when not embedded in Admin Tower */}
       {!embedded && (
-        <header className="sticky top-0 z-30 border-b border-[#C9AE8B]/40 bg-[#FAF4EB]/90 px-4 py-3.5 backdrop-blur-md dark:border-stone-800 dark:bg-[#1A1715]/90">
+        <header className="sticky top-0 z-30 border-b border-[#C9AE8B]/40 bg-[#FAF4EB]/90 px-4 pt-[calc(0.875rem+env(safe-area-inset-top,0px))] pb-3.5 backdrop-blur-md dark:border-stone-800 dark:bg-[#1A1715]/90">
           <div className="mx-auto flex max-w-6xl items-center justify-between">
             <div className="flex items-center gap-3">
               <Link

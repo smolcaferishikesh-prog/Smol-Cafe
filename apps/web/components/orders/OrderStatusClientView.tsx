@@ -305,7 +305,7 @@ export const OrderStatusClientView: React.FC<OrderStatusClientViewProps> = ({
   return (
     <div className="min-h-screen bg-[#F3E7D3] dark:bg-[#151110] text-[#241F1C] dark:text-[#FAF4EB] pb-28 font-serif transition-colors duration-200">
       {/* Top Header */}
-      <header className="sticky top-0 z-40 border-b border-[#C9AE8B]/40 dark:border-white/10 bg-[#F3E7D3]/95 dark:bg-[#181412]/95 px-4 py-3.5 backdrop-blur-md transition-colors duration-200">
+      <header className="sticky top-0 z-40 border-b border-[#C9AE8B]/40 dark:border-white/10 bg-[#F3E7D3]/95 dark:bg-[#181412]/95 px-4 pt-[calc(0.875rem+env(safe-area-inset-top,0px))] pb-3.5 backdrop-blur-md transition-colors duration-200">
         <div className="mx-auto flex max-w-md items-start justify-between gap-2.5">
           <div className="flex items-start gap-2 min-w-0">
             {/* Back Button */}

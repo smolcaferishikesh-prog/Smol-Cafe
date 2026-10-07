@@ -82,7 +82,7 @@ export const CustomerHomeClientView: React.FC<CustomerHomeClientProps> = ({
   return (
     <div className="min-h-screen bg-[#F3E7D3] dark:bg-[#151110] text-[#241F1C] dark:text-[#FAF4EB] pb-28 font-serif selection:bg-[#B72E35]/20 selection:text-[#B72E35] transition-colors duration-200">
       {/* Top App Header */}
-      <header className="sticky top-0 z-40 bg-[#F3E7D3]/95 dark:bg-[#181412]/95 backdrop-blur-md px-5 pt-3 pb-2 border-b border-[#C9AE8B]/40 dark:border-white/10 transition-colors duration-200">
+      <header className="sticky top-0 z-40 bg-[#F3E7D3]/95 dark:bg-[#181412]/95 backdrop-blur-md px-5 pt-[calc(0.75rem+env(safe-area-inset-top,0px))] pb-2 border-b border-[#C9AE8B]/40 dark:border-white/10 transition-colors duration-200">
         <div className="mx-auto flex max-w-md items-center justify-between">
           {/* Hamburger Menu button */}
           <button

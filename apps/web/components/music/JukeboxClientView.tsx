@@ -101,7 +101,7 @@ export const JukeboxClientView: React.FC<JukeboxClientViewProps> = ({ initialDat
   return (
     <div className="min-h-screen bg-[#F3E7D3] text-[#241F1C] pb-28 font-sans">
       {/* Top Bar */}
-      <header className="sticky top-0 z-40 border-b border-[#C9AE8B]/40 bg-[#F3E7D3]/90 px-4 py-3.5 backdrop-blur-md">
+      <header className="sticky top-0 z-40 border-b border-[#C9AE8B]/40 bg-[#F3E7D3]/90 px-4 pt-[calc(0.875rem+env(safe-area-inset-top,0px))] pb-3.5 backdrop-blur-md">
         <div className="mx-auto flex max-w-md items-center justify-between">
           <Link
             href="/home"

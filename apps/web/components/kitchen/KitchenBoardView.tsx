@@ -518,12 +518,12 @@ export const KitchenBoardView: React.FC<KitchenBoardViewProps> = ({ initialOrder
   return (
     <div className="flex min-h-screen flex-col bg-[#F3E7D3] dark:bg-[#241F1C] text-[#241F1C] dark:text-[#F3E7D3] font-sans transition-colors duration-200">
       {/* Header */}
-      <header className="sticky top-0 z-30 border-b border-[#C9AE8B]/40 dark:border-[#C9AE8B]/20 bg-[#FAF4EB]/95 dark:bg-[#1D1815]/95 px-3 sm:px-5 lg:px-6 py-2 sm:py-3 backdrop-blur-md transition-colors duration-200 shadow-xs">
+      <header className="sticky top-0 z-30 border-b border-[#C9AE8B]/40 dark:border-[#C9AE8B]/20 bg-[#FAF4EB]/95 dark:bg-[#1D1815]/95 px-3 sm:px-5 lg:px-6 pt-[calc(0.5rem+env(safe-area-inset-top,0px))] pb-2 sm:pb-3 backdrop-blur-md transition-colors duration-200 shadow-xs">
         {/* Top Header Row: Brand (Left) + Full Action Bar (Right) */}
         <div className="flex items-center justify-between gap-2 sm:gap-4 flex-nowrap">
           {/* Brand */}
-          <div className="flex items-center gap-2 sm:gap-3 shrink-0 min-w-0">
-            <div className="relative h-8 w-6 sm:h-10 sm:w-7.5 shrink-0 select-none">
+          <div className="flex items-center gap-1.5 sm:gap-3 shrink-0 min-w-0">
+            <div className="relative h-7 w-5.5 sm:h-10 sm:w-7.5 shrink-0 select-none">
               <Image
                 src="/kitchen-logo.png"
                 alt="smol café kitchen logo"
@@ -544,12 +544,12 @@ export const KitchenBoardView: React.FC<KitchenBoardViewProps> = ({ initialOrder
                 <span className="font-serif text-sm sm:text-lg font-bold tracking-tight text-[#241F1C] dark:text-[#F3E7D3] lowercase whitespace-nowrap">
                   smol café
                 </span>
-                <span className="text-[10px] text-[#754CFF]">✦</span>
-                <span className="rounded-md border border-[#C9AE8B]/40 dark:border-[#C9AE8B]/30 bg-[#F3E7D3] dark:bg-[#241F1C] px-1.5 py-0.5 font-mono text-[9.5px] sm:text-[11px] font-bold text-[#B72E35] dark:text-[#F2C84B] shrink-0 whitespace-nowrap">
+                <span className="text-[9px] text-[#754CFF]">✦</span>
+                <span className="rounded-md border border-[#C9AE8B]/40 dark:border-[#C9AE8B]/30 bg-[#F3E7D3] dark:bg-[#241F1C] px-1 sm:px-1.5 py-0.5 font-mono text-[9px] sm:text-[11px] font-bold text-[#B72E35] dark:text-[#F2C84B] shrink-0 whitespace-nowrap">
                   kds
                 </span>
               </div>
-              <p className="hidden sm:block font-serif italic text-[10.5px] text-[#725039] dark:text-[#C9AE8B] -mt-0.5 truncate whitespace-nowrap">
+              <p className="hidden md:block font-serif italic text-[10.5px] text-[#725039] dark:text-[#C9AE8B] -mt-0.5 truncate whitespace-nowrap">
                 order preparation &amp; ticket dispatch
               </p>
             </div>
@@ -598,7 +598,7 @@ export const KitchenBoardView: React.FC<KitchenBoardViewProps> = ({ initialOrder
             {dismissedTicketIds.size > 0 && (
               <button
                 onClick={handleRestoreDismissed}
-                className="flex items-center gap-1 rounded-full border border-[#C9AE8B]/60 dark:border-stone-700 bg-[#FAF4EB] dark:bg-[#1D1815] px-2 sm:px-2.5 py-1 text-[11px] sm:text-xs font-mono text-[#725039] dark:text-[#C9AE8B] hover:text-[#B72E35] transition cursor-pointer shadow-xs whitespace-nowrap"
+                className="flex items-center gap-1 rounded-full border border-[#C9AE8B]/60 dark:border-stone-700 bg-[#FAF4EB] dark:bg-[#1D1815] px-1.5 sm:px-2.5 py-1 text-[10.5px] sm:text-xs font-mono text-[#725039] dark:text-[#C9AE8B] hover:text-[#B72E35] transition cursor-pointer shadow-xs whitespace-nowrap"
                 title="Restore dismissed tickets"
               >
                 <RotateCcw className="h-3 w-3 shrink-0" />
@@ -610,7 +610,7 @@ export const KitchenBoardView: React.FC<KitchenBoardViewProps> = ({ initialOrder
             {/* Station Load Toggle */}
             <button
               onClick={() => setShowEtaAnalytics(!showEtaAnalytics)}
-              className={`flex items-center gap-1 rounded-full border px-2 sm:px-3 py-1 text-xs font-mono font-medium transition cursor-pointer whitespace-nowrap shadow-xs ${
+              className={`flex items-center justify-center h-7 sm:h-auto gap-1 rounded-full border px-2 sm:px-3 py-1 text-xs font-mono font-medium transition cursor-pointer whitespace-nowrap shadow-xs shrink-0 ${
                 showEtaAnalytics
                   ? "border-[#B72E35] bg-[#B72E35]/15 text-[#B72E35] dark:text-[#F2C84B]"
                   : "border-[#C9AE8B]/50 dark:border-stone-700 bg-[#FAF4EB] dark:bg-[#241F1C] text-[#725039] dark:text-[#C9AE8B]"
@@ -632,7 +632,7 @@ export const KitchenBoardView: React.FC<KitchenBoardViewProps> = ({ initialOrder
                   return next;
                 });
               }}
-              className={`flex items-center gap-1 rounded-full border px-2 sm:px-2.5 py-1 text-xs font-mono font-medium transition cursor-pointer whitespace-nowrap shadow-xs ${
+              className={`flex items-center justify-center h-7 sm:h-auto gap-1 rounded-full border px-2 sm:px-2.5 py-1 text-xs font-mono font-medium transition cursor-pointer whitespace-nowrap shadow-xs shrink-0 ${
                 soundEnabled
                   ? "border-[#F2C84B]/60 bg-[#F2C84B]/20 text-[#8C6207] dark:text-[#F2C84B]"
                   : "border-[#C9AE8B]/50 dark:border-stone-700 bg-[#FAF4EB] dark:bg-[#241F1C] text-[#725039] dark:text-[#C9AE8B]"
@@ -652,8 +652,8 @@ export const KitchenBoardView: React.FC<KitchenBoardViewProps> = ({ initialOrder
               )}
             </button>
 
-            {/* Live Status Indicator */}
-            <div className="flex items-center gap-1 sm:gap-1.5 rounded-full border border-[#C9AE8B]/50 dark:border-stone-700 bg-[#FAF4EB] dark:bg-[#241F1C] px-2 sm:px-2.5 py-1 text-[11px] sm:text-xs font-mono text-[#725039] dark:text-[#C9AE8B] whitespace-nowrap shadow-xs">
+            {/* Live Status Indicator (Visible on tablets and desktop, compact on mobile) */}
+            <div className="hidden sm:flex items-center gap-1 sm:gap-1.5 rounded-full border border-[#C9AE8B]/50 dark:border-stone-700 bg-[#FAF4EB] dark:bg-[#241F1C] px-2 sm:px-2.5 py-1 text-[11px] sm:text-xs font-mono text-[#725039] dark:text-[#C9AE8B] whitespace-nowrap shadow-xs">
               <span
                 className={`h-2 w-2 rounded-full bg-[#75AFA7] shrink-0 ${
                   isRefreshing ? "scale-125 opacity-70" : "animate-pulse"

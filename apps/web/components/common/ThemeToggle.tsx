@@ -85,7 +85,7 @@ export const ThemeToggle: React.FC<ThemeToggleProps> = ({
     <button
       type="button"
       onClick={toggleTheme}
-      className={`flex items-center gap-1.5 rounded-full border px-3 py-1 font-mono text-xs transition cursor-pointer select-none shadow-xs active:scale-95 ${
+      className={`flex items-center justify-center gap-1.5 rounded-full border h-7 sm:h-auto px-2 sm:px-3 py-1 font-mono text-xs transition cursor-pointer select-none shadow-xs active:scale-95 shrink-0 ${
         isDark
           ? "border-stone-700 bg-[#241F1C] text-[#F2C84B] hover:bg-stone-800/80 hover:text-white"
           : "border-[#C9AE8B]/50 bg-[#FAF4EB] text-[#725039] hover:bg-[#F3E7D3] hover:text-[#241F1C]"
@@ -95,13 +95,13 @@ export const ThemeToggle: React.FC<ThemeToggleProps> = ({
     >
       {isDark ? (
         <>
-          <Sun className="h-3.5 w-3.5 text-[#F2C84B]" />
-          <span className="font-semibold">Light</span>
+          <Sun className="h-3.5 w-3.5 text-[#F2C84B] shrink-0" />
+          <span className="font-semibold hidden sm:inline">Light</span>
         </>
       ) : (
         <>
-          <Moon className="h-3.5 w-3.5 text-[#B72E35]" />
-          <span className="font-semibold">Dark</span>
+          <Moon className="h-3.5 w-3.5 text-[#B72E35] shrink-0" />
+          <span className="font-semibold hidden sm:inline">Dark</span>
         </>
       )}
     </button>

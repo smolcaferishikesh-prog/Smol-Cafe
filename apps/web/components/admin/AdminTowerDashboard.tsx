@@ -987,7 +987,7 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
       {/* Main Content Area */}
       <main className="flex-1 flex flex-col min-w-0 overflow-y-auto pb-28 md:pb-6">
         {/* Top App Header */}
-        <header className="sticky top-0 z-30 border-b border-[#C9AE8B]/40 dark:border-stone-800 bg-[#FAF4EB]/95 dark:bg-[#1C1917]/95 px-3.5 sm:px-5 lg:px-6 py-2.5 sm:py-3.5 backdrop-blur-md flex items-center justify-between transition-colors duration-200 gap-2">
+        <header className="sticky top-0 z-30 border-b border-[#C9AE8B]/40 dark:border-stone-800 bg-[#FAF4EB]/95 dark:bg-[#1C1917]/95 px-3.5 sm:px-5 lg:px-6 pt-[calc(0.625rem+env(safe-area-inset-top,0px))] pb-2.5 sm:pb-3.5 backdrop-blur-md flex items-center justify-between transition-colors duration-200 gap-2">
           <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
             {/* Hamburger Button for Mobile */}
             <button

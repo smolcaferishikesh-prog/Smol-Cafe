@@ -515,18 +515,18 @@ export const CashierDashboard: React.FC<CashierDashboardProps> = ({
   return (
     <div className="min-h-screen bg-[#F3E7D3] dark:bg-[#141211] text-[#241F1C] dark:text-[#FDFBF7] transition-colors duration-200">
       {/* Header */}
-      <header className="sticky top-0 z-30 border-b border-[#C9AE8B]/40 dark:border-stone-800 bg-[#FAF4EB]/95 dark:bg-[#1C1917]/95 px-3 sm:px-6 py-2.5 sm:py-3.5 backdrop-blur-md transition-colors duration-200">
+      <header className="sticky top-0 z-30 border-b border-[#C9AE8B]/40 dark:border-stone-800 bg-[#FAF4EB]/95 dark:bg-[#1C1917]/95 px-3 sm:px-6 pt-[calc(0.625rem+env(safe-area-inset-top,0px))] pb-2.5 sm:pb-3.5 backdrop-blur-md transition-colors duration-200">
         <div className="mx-auto flex max-w-5xl items-center justify-between gap-2">
           {/* Brand Left */}
-          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+          <div className="flex items-center gap-1.5 sm:gap-3 min-w-0">
             <Link
               href="/smol-backdoor"
-              className="flex h-8 w-8 sm:h-9 sm:w-9 items-center justify-center rounded-xl border border-[#C9AE8B]/40 dark:border-stone-800 bg-[#F3E7D3] dark:bg-stone-800 text-[#725039] dark:text-stone-300 hover:bg-[#EBDDC8] dark:hover:bg-stone-700 transition cursor-pointer shrink-0"
+              className="flex h-7 w-7 sm:h-9 sm:w-9 items-center justify-center rounded-xl border border-[#C9AE8B]/40 dark:border-stone-800 bg-[#F3E7D3] dark:bg-stone-800 text-[#725039] dark:text-stone-300 hover:bg-[#EBDDC8] dark:hover:bg-stone-700 transition cursor-pointer shrink-0"
               title="Back to staff portal"
             >
               ←
             </Link>
-            <div className="relative h-9 w-7 sm:h-11 sm:w-8 shrink-0 select-none">
+            <div className="relative h-7 w-5.5 sm:h-11 sm:w-8 shrink-0 select-none">
               <Image
                 src="/cashier-logo.png"
                 alt="smol café cashier logo"
@@ -544,16 +544,13 @@ export const CashierDashboard: React.FC<CashierDashboardProps> = ({
             </div>
             <div className="min-w-0">
               <div className="flex items-center gap-1.5 flex-wrap">
-                <span className="text-base sm:text-xl font-black tracking-tight text-[#B72E35] dark:text-[#F6AD55] truncate">
-                  smol café • Cashier Desk
+                <span className="text-sm sm:text-lg font-black tracking-tight text-[#B72E35] dark:text-[#F6AD55] truncate">
+                  smol café • cashier
                 </span>
-                <span className="hidden sm:inline rounded-md border border-[#C9AE8B]/30 dark:border-stone-700 bg-[#F3E7D3] dark:bg-stone-800 px-2 py-0.5 font-mono text-[10px] text-[#725039] dark:text-stone-400 shrink-0">
-                  Front-Desk Queue &amp; Gatekeeper
+                <span className="hidden md:inline rounded-md border border-[#C9AE8B]/30 dark:border-stone-700 bg-[#F3E7D3] dark:bg-stone-800 px-2 py-0.5 font-mono text-[10px] text-[#725039] dark:text-stone-400 shrink-0">
+                  Front-Desk Queue
                 </span>
               </div>
-              <p className="sm:hidden font-mono text-[10px] text-[#725039] dark:text-stone-400 truncate">
-                Front-Desk Queue &amp; Gatekeeper
-              </p>
             </div>
           </div>
 

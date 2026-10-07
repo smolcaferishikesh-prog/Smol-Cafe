@@ -67,7 +67,7 @@ export const RoleSwitcherBar: React.FC = () => {
 
   return (
     <>
-      <aside aria-label="Portal Mode Switcher" className="sticky top-0 z-40 w-full border-b border-[#241F1C]/10 bg-[#241F1C] text-[#F3E7D3] shadow-md backdrop-blur-md">
+      <aside aria-label="Portal Mode Switcher" className="sticky top-0 z-40 w-full border-b border-[#241F1C]/10 bg-[#241F1C] text-[#F3E7D3] shadow-md backdrop-blur-md pt-[env(safe-area-inset-top,0px)]">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-3 py-1.5 text-xs">
           {/* Brand & Sync Beacon */}
           <div className="flex items-center gap-2">

@@ -181,7 +181,7 @@ export const RunningBillView: React.FC<RunningBillViewProps> = ({ initialBill, h
   return (
     <div className="min-h-screen bg-[#F3E7D3] dark:bg-[#151110] text-[#241F1C] dark:text-[#FAF4EB] font-sans antialiased flex flex-col justify-between selection:bg-[#B72E35]/20 selection:text-[#B72E35] transition-colors duration-200">
       {/* Mobile-Proportioned Container */}
-      <div className="w-full max-w-[420px] mx-auto px-4 pt-3 pb-6 flex-1 flex flex-col justify-between">
+      <div className="w-full max-w-[420px] mx-auto px-4 pt-[calc(0.75rem+env(safe-area-inset-top,0px))] pb-6 flex-1 flex flex-col justify-between">
         {/* Top Header Bar */}
         <header className="flex items-center justify-between py-1 px-1 mb-2">
           {/* Back Arrow Button */}
