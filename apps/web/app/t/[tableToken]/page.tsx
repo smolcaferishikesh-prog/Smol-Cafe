@@ -11,13 +11,31 @@ interface PageProps {
   params: Promise<{ tableToken: string }>;
 }
 
-function getDisplayTableNumber(tableLabel?: string, tableToken?: string): string {
-  const source = tableLabel || tableToken || "07";
-  const match = source.match(/\d+/);
-  if (match) {
-    return match[0].padStart(2, "0");
+function getPlacardFontSize(text: string): string {
+  const len = text.length;
+  if (len <= 2) {
+    return "text-3xl sm:text-4xl font-serif font-bold tracking-tight";
   }
-  return source.replace(/^(table|t)[-\s_]*/i, "").trim().toUpperCase() || "07";
+  if (len <= 4) {
+    return "text-xl sm:text-2xl font-serif font-bold tracking-tight";
+  }
+  if (len <= 7) {
+    return "text-xs sm:text-sm font-sans font-black tracking-wide uppercase break-all leading-tight";
+  }
+  return "text-[10px] sm:text-[11px] font-sans font-black tracking-tight uppercase break-all leading-none";
+}
+
+function getDisplayTableNumber(tableLabel?: string, tableToken?: string): string {
+  const source = (tableLabel || tableToken || "07").trim();
+  if (/^\d+$/.test(source)) {
+    return source.padStart(2, "0");
+  }
+  const match = source.match(/^(?:table|t)[-\s_]*(\d+)$/i);
+  if (match) {
+    return match[1].padStart(2, "0");
+  }
+  const cleaned = source.replace(/^(?:table|t)[-\s_]+/i, "").trim();
+  return cleaned || source;
 }
 
 export default async function TableEntryPage({ params }: PageProps) {
@@ -126,47 +144,64 @@ export default async function TableEntryPage({ params }: PageProps) {
 
           {/* Day Mode Dynamic Table Placard overlay for ALL tables */}
           <div
-            className="absolute flex flex-col items-center justify-center text-center pointer-events-none select-none dark:hidden"
+            className="absolute flex flex-col items-center justify-center text-center pointer-events-none select-none dark:hidden px-1 overflow-hidden"
             style={{
               top: "50%",
               left: "40.2%",
               transform: "translate(-50%, -50%)",
-              width: "22%",
+              width: "24%",
               height: "28%",
             }}
           >
-            <span className="text-[10px] sm:text-[11px] font-sans font-semibold tracking-[0.16em] text-[#241F1C] uppercase">
+            <span className="text-[9px] sm:text-[10px] font-sans font-bold tracking-[0.16em] text-[#241F1C]/75 uppercase mb-0.5">
               TABLE
             </span>
-            <span className="font-serif text-3xl sm:text-4xl font-bold tracking-tight text-[#241F1C] leading-none mt-1">
+            <span
+              className={`text-[#241F1C] max-w-full px-0.5 line-clamp-2 ${getPlacardFontSize(
+                displayTableNumber
+              )}`}
+              title={displayTableNumber}
+            >
               {displayTableNumber}
             </span>
           </div>
 
           {/* Night Mode Dynamic Placard overlay for ALL tables */}
           <div
-            className="absolute hidden dark:flex flex-col items-center justify-center text-center pointer-events-none select-none"
+            className="absolute hidden dark:flex flex-col items-center justify-center text-center pointer-events-none select-none px-1 overflow-hidden"
             style={{
               top: "56.9%",
               left: "42.2%",
               transform: "translate(-50%, -50%)",
-              width: "20%",
+              width: "22%",
               height: "30%",
             }}
           >
-            <span className="text-[10px] sm:text-[11px] font-sans font-semibold tracking-[0.18em] text-[#C4B5FD] uppercase drop-shadow-[0_0_8px_rgba(196,181,253,0.6)]">
+            <span className="text-[9px] sm:text-[10px] font-sans font-bold tracking-[0.16em] text-[#C4B5FD] uppercase drop-shadow-[0_0_8px_rgba(196,181,253,0.6)] mb-0.5">
               TABLE
             </span>
-            <span className="font-serif text-3xl sm:text-4xl font-bold tracking-tight text-[#E9D5FF] leading-none mt-1 drop-shadow-[0_0_12px_rgba(233,213,255,0.85)]">
+            <span
+              className={`text-[#E9D5FF] max-w-full px-0.5 drop-shadow-[0_0_12px_rgba(233,213,255,0.85)] line-clamp-2 ${getPlacardFontSize(
+                displayTableNumber
+              )}`}
+              title={displayTableNumber}
+            >
               {displayTableNumber}
             </span>
           </div>
         </div>
 
         {/* Headline: EB Garamond, espresso ink + smol cherry (#B72E35) */}
-        <h1 className="font-serif text-3xl sm:text-4xl font-bold tracking-tight text-[#241F1C] dark:text-[#FAF4EB] pt-1">
-          You&apos;re at <span className="text-[#B72E35] dark:text-[#F2C84B]">Table {displayTableNumber}</span>
-        </h1>
+        <div className="text-center pt-1 px-2 max-w-xs sm:max-w-sm mx-auto">
+          <h1 className="font-serif text-2xl sm:text-3xl font-bold tracking-tight text-[#241F1C] dark:text-[#FAF4EB] leading-tight break-words">
+            You&apos;re at{" "}
+            <span className="text-[#B72E35] dark:text-[#F2C84B] font-extrabold">
+              {displayTableNumber.toLowerCase().startsWith("table")
+                ? displayTableNumber
+                : `Table ${displayTableNumber}`}
+            </span>
+          </h1>
+        </div>
 
         {/* Coffee Bean Divider */}
         <div className="flex items-center justify-center my-1.5">
