@@ -247,14 +247,15 @@ export const AppSplashScreen: React.FC = () => {
           background: linear-gradient(
             90deg,
             #754CFF 0%,
-            #A855F7 35%,
-            #F2C84B 50%,
-            #FFE494 60%,
-            #B72E35 85%,
+            #9333EA 28%,
+            #C084FC 48%,
+            #F3E8FF 56%,
+            #A855F7 78%,
             #754CFF 100%
           );
           background-size: 240% 100%;
           animation: shimmerBarDark 2.2s infinite linear;
+          box-shadow: 0 0 12px rgba(168, 85, 247, 0.65);
         }
 
         .pulse-halo {
@@ -265,11 +266,11 @@ export const AppSplashScreen: React.FC = () => {
       {/* Ambient Halo Glow */}
       <div
         aria-hidden="true"
-        className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-80 h-80 rounded-full bg-orange-300/35 dark:bg-[#754CFF]/20 blur-3xl pulse-halo"
+        className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-80 h-80 rounded-full bg-orange-300/35 dark:bg-[#754CFF]/25 blur-3xl pulse-halo"
       />
       <div
         aria-hidden="true"
-        className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-64 h-64 rounded-full hidden dark:block bg-[#B72E35]/15 blur-2xl pulse-halo"
+        className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-64 h-64 rounded-full hidden dark:block bg-[#A855F7]/20 blur-2xl pulse-halo"
       />
 
       {/* Top Safe Area Spacer */}
@@ -280,21 +281,21 @@ export const AppSplashScreen: React.FC = () => {
         {/* Steam Wisps */}
         <div aria-hidden="true" className="relative w-28 h-12 flex justify-center items-end space-x-4 mb-2 pointer-events-none">
           <svg
-            className="w-3.5 h-9 text-[#B72E35]/60 dark:text-[#A855F7]/80 stroke-current steam-wisp-1"
+            className="w-3.5 h-9 text-[#B72E35]/60 dark:text-[#A855F7]/85 stroke-current steam-wisp-1"
             fill="none"
             viewBox="0 0 20 50"
           >
             <path d="M10 48C4 36 16 26 10 12C7 6 12 2 10 0" strokeLinecap="round" strokeWidth="2.5" />
           </svg>
           <svg
-            className="w-4 h-11 text-[#B72E35]/75 dark:text-[#F2C84B]/85 stroke-current steam-wisp-2"
+            className="w-4 h-11 text-[#B72E35]/75 dark:text-[#C084FC]/90 stroke-current steam-wisp-2"
             fill="none"
             viewBox="0 0 20 50"
           >
             <path d="M10 48C16 36 4 24 11 12C14 7 8 2 10 0" strokeLinecap="round" strokeWidth="3" />
           </svg>
           <svg
-            className="w-3.5 h-8 text-[#B72E35]/50 dark:text-[#A855F7]/65 stroke-current steam-wisp-3"
+            className="w-3.5 h-8 text-[#B72E35]/50 dark:text-[#A855F7]/70 stroke-current steam-wisp-3"
             fill="none"
             viewBox="0 0 20 50"
           >
@@ -340,10 +341,10 @@ export const AppSplashScreen: React.FC = () => {
 
         {/* Sub-brand Tagline */}
         <div className="mt-8 text-center">
-          <h1 className="font-serif italic font-bold text-2xl sm:text-3xl text-[#2B2320] dark:text-[#FAF4EB] tracking-wide lowercase dark:drop-shadow-[0_0_12px_rgba(242,200,75,0.15)]">
+          <h1 className="font-serif italic font-bold text-2xl sm:text-3xl text-[#2B2320] dark:text-[#FAF4EB] tracking-wide lowercase dark:drop-shadow-[0_0_12px_rgba(168,85,247,0.25)]">
             smol café
           </h1>
-          <p className="text-[11px] sm:text-xs uppercase font-semibold tracking-[0.25em] text-[#B72E35] dark:text-[#F2C84B] mt-1.5">
+          <p className="text-[11px] sm:text-xs uppercase font-semibold tracking-[0.25em] text-[#B72E35] dark:text-[#A855F7] mt-1.5">
             cozy moments • handcrafted
           </p>
         </div>
@@ -359,22 +360,22 @@ export const AppSplashScreen: React.FC = () => {
                 className={`w-2 h-2 rounded-full ${
                   roundedPercent >= 100
                     ? "bg-emerald-500"
-                    : "bg-[#B72E35] dark:bg-[#F2C84B] animate-ping"
+                    : "bg-[#B72E35] dark:bg-[#A855F7] animate-ping"
                 }`}
               />
               <span>{currentMilestone.message}</span>
             </span>
-            <span className="font-mono font-semibold text-[#B72E35] dark:text-[#F2C84B]">
+            <span className="font-mono font-semibold text-[#B72E35] dark:text-[#C084FC]">
               {roundedPercent}%
             </span>
           </div>
 
-          {/* Shimmer Progress Track */}
+          {/* Purple Shimmer Progress Track */}
           <div
             aria-valuemax={100}
             aria-valuemin={0}
             aria-valuenow={roundedPercent}
-            className="relative w-full h-2.5 bg-neutral-200/80 dark:bg-[#1C1715] rounded-full overflow-hidden p-0.5 shadow-inner border border-amber-900/10 dark:border-stone-800"
+            className="relative w-full h-2.5 bg-neutral-200/80 dark:bg-[#1A1424] rounded-full overflow-hidden p-0.5 shadow-inner border border-amber-900/10 dark:border-[#754CFF]/40"
             role="progressbar"
           >
             <div
@@ -395,10 +396,10 @@ export const AppSplashScreen: React.FC = () => {
             <button
               onClick={handleDismiss}
               type="button"
-              className="group text-[11px] font-medium text-neutral-400 hover:text-[#B72E35] dark:text-stone-400 dark:hover:text-[#F2C84B] active:scale-95 transition-all flex items-center gap-1 py-1 px-3 rounded-full hover:bg-neutral-100/50 dark:hover:bg-white/5 cursor-pointer"
+              className="group text-[11px] font-medium text-neutral-400 hover:text-[#B72E35] dark:text-purple-300/80 dark:hover:text-[#C084FC] active:scale-95 transition-all flex items-center gap-1 py-1 px-3 rounded-full hover:bg-neutral-100/50 dark:hover:bg-purple-950/30 cursor-pointer"
             >
               {roundedPercent >= 100 ? (
-                <span className="text-[#B72E35] dark:text-[#F2C84B] font-semibold animate-pulse">
+                <span className="text-[#B72E35] dark:text-[#C084FC] font-semibold animate-pulse">
                   Ready! Entering café... →
                 </span>
               ) : (
