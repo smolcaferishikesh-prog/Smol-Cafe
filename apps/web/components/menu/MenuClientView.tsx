@@ -11,6 +11,7 @@ import { ItemDetailModal } from "./ItemDetailModal";
 import { FloatingCartBar } from "@/components/cart/FloatingCartBar";
 import { CartDrawer } from "@/components/cart/CartDrawer";
 import { ThemeToggle } from "@/components/common/ThemeToggle";
+import { Search, X } from "lucide-react";
 import { subscribeToSyncEvents } from "@/lib/sync-events";
 import { cacheMenuCatalog, getCachedMenuCatalog } from "@/lib/offline-cache";
 import { fetchLiveMenuCatalogAction } from "@/app/admin/menu-actions";
@@ -290,7 +291,9 @@ const MenuContentInner: React.FC<MenuClientViewProps> = ({
   const [activeCategoryId, setActiveCategoryId] = useState<string>("");
   const [selectedItem, setSelectedItem] = useState<MenuItemWithDetails | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [filterVegOnly, setFilterVegOnly] = useState(false);
+  const searchInputRef = React.useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!categoryParam) return;
@@ -423,20 +426,72 @@ const MenuContentInner: React.FC<MenuClientViewProps> = ({
             <button
               type="button"
               onClick={() => {
-                const el = document.getElementById("menu-search-input");
-                el?.focus();
+                setIsSearchOpen((prev) => {
+                  const next = !prev;
+                  if (next) {
+                    setTimeout(() => searchInputRef.current?.focus(), 50);
+                  }
+                  return next;
+                });
               }}
-              className="flex h-9 w-9 items-center justify-center rounded-xl text-[#241F1C] dark:text-[#FAF4EB] transition hover:bg-black/5 dark:hover:bg-white/10 active:scale-95"
+              className={`flex h-9 w-9 items-center justify-center rounded-xl transition active:scale-95 cursor-pointer ${
+                isSearchOpen || searchQuery
+                  ? "bg-[#B72E35] text-white shadow-xs dark:bg-purple-600"
+                  : "text-[#241F1C] dark:text-[#FAF4EB] hover:bg-black/5 dark:hover:bg-white/10"
+              }`}
               aria-label="Search menu"
             >
-              <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                <circle cx="11" cy="11" r="8" />
-                <line x1="21" y1="21" x2="16.65" y2="16.65" />
-              </svg>
+              <Search className="h-4.5 w-4.5" />
             </button>
             <ThemeToggle variant="icon" />
           </div>
         </div>
+
+        {/* Expandable Search Input Bar */}
+        {isSearchOpen && (
+          <div className="mx-auto mt-2.5 max-w-md px-1 animate-in fade-in slide-in-from-top-2 duration-200">
+            <div className="relative flex items-center">
+              <Search className="absolute left-3.5 h-4 w-4 text-[#725039] dark:text-[#C9AE8B] pointer-events-none" />
+              <input
+                id="menu-search-input"
+                ref={searchInputRef}
+                type="search"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search coffee, bowls, sourdough, chai..."
+                autoFocus
+                className="w-full rounded-2xl border border-[#C9AE8B]/60 bg-white/95 dark:bg-stone-900/95 backdrop-blur-md pl-10 pr-9 py-2.5 text-xs text-[#241F1C] dark:text-[#FAF4EB] placeholder-[#725039]/60 dark:placeholder-stone-400 font-serif focus:outline-none focus:ring-2 focus:ring-[#B72E35] dark:focus:ring-purple-500 shadow-sm"
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  if (searchQuery) {
+                    setSearchQuery("");
+                    searchInputRef.current?.focus();
+                  } else {
+                    setIsSearchOpen(false);
+                  }
+                }}
+                className="absolute right-2.5 flex h-6 w-6 items-center justify-center rounded-full text-[#725039] dark:text-stone-400 hover:text-[#B72E35] hover:bg-black/5 dark:hover:bg-white/10 cursor-pointer"
+                aria-label="Close search"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+            {searchQuery && (
+              <div className="mt-1 flex items-center justify-between px-2 text-[10.5px] font-mono text-[#725039] dark:text-[#C9AE8B]">
+                <span>Results for &ldquo;{searchQuery}&rdquo;</span>
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery("")}
+                  className="underline hover:text-[#B72E35] cursor-pointer"
+                >
+                  Clear search
+                </button>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Subtitle & Item Count */}
         <div className="mx-auto mt-2 flex max-w-md items-baseline justify-between px-1">
