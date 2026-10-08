@@ -29,6 +29,8 @@ export interface MenuItemWithDetails {
     primary_equipment?: string;
     serving_ware?: string;
     notes?: string;
+    internal_notes?: string;
+    customer_note?: string;
   };
 }
 
@@ -170,7 +172,7 @@ function getFallbackCatalog(): CategoryWithItems[] {
 
 import { unstable_cache } from "next/cache";
 
-async function fetchMenuCatalogDirectly(): Promise<CategoryWithItems[]> {
+export async function fetchMenuCatalogDirectly(): Promise<CategoryWithItems[]> {
   try {
     const supabase = createAdminClient();
     const nowIso = new Date().toISOString();

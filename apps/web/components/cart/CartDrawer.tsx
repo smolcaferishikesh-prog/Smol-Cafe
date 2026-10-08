@@ -249,7 +249,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ tableLabel, guestName = 
     if (name.includes("(Sourdough)")) return "Sourdough bread";
     if (name.includes("(Extra")) return "Extra Cheese";
     if (name.includes("(Spicy")) return "Spicy Dip";
-    if (cartItem.item.metadata?.notes) return cartItem.item.metadata.notes;
+    if (cartItem.item.metadata?.customer_note) return cartItem.item.metadata.customer_note;
 
     // Realistic defaults matching mockups if no options selected
     if (name.toLowerCase().includes("pour over")) return "No milk";

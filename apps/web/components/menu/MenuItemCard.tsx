@@ -29,7 +29,7 @@ export const MenuItemCard: React.FC<MenuItemCardProps> = ({ item, onOpenDetail }
     item.status === "LOW_STOCK" || (item.metadata as any)?.availability === "LOW_STOCK";
   const lowStockCount = (item.metadata as any)?.low_stock_portions;
   const isChefSpecial = (item.metadata as any)?.chef_special;
-  const chefNotes = (item.metadata as any)?.notes;
+  const chefNotes = (item.metadata as any)?.customer_note || (item.metadata as any)?.chef_note;
 
   return (
     <div
