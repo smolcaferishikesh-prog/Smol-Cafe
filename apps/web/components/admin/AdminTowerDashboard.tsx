@@ -358,6 +358,14 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
   // Dynamic Timeframe Data Sets strictly computed from real customer orders
   const getTimeframeData = () => {
     const validOrders = orders.filter((o) => o.status !== "CANCELLED" && o.status !== "REJECTED");
+    const isOrderPaid = (o: AdminOrderRecord) =>
+      o.status !== "CANCELLED" &&
+      o.status !== "REJECTED" &&
+      Boolean(o.paymentStatus?.startsWith("PAID") || o.paymentMethod === "UPI" || o.paymentMethod === "CASH" || o.paymentMethod === "CARD") &&
+      o.paymentMethod !== "COMPLIMENTARY" &&
+      o.paymentMethod !== "PENDING" &&
+      o.paymentStatus !== "UNPAID (PENDING)" &&
+      o.paymentStatus !== "COMPLIMENTARY";
 
     if (timeframe === "WEEKLY") {
       const days = [
@@ -376,7 +384,7 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
           return dt.getDay() === d.dayIdx;
         });
         const rev = dayOrders
-          .filter((o) => o.status !== "CANCELLED" && o.status !== "REJECTED")
+          .filter(isOrderPaid)
           .reduce((sum, o) => sum + (o.totalRupees || 0), 0);
         return {
           hour: d.label,
@@ -386,7 +394,7 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
       });
 
       const totalOrdersCount = orders.length;
-      const totalRev = validOrders.reduce((sum, o) => sum + (o.totalRupees || 0), 0);
+      const totalRev = orders.filter(isOrderPaid).reduce((sum, o) => sum + (o.totalRupees || 0), 0);
       const maxRev = Math.max(...buckets.map((b) => b.revenue), 100);
 
       const pts = buckets.map((b, i) => ({
@@ -449,7 +457,7 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
           return dom >= w.min && dom <= w.max;
         });
         const rev = weekOrders
-          .filter((o) => o.status !== "CANCELLED" && o.status !== "REJECTED")
+          .filter(isOrderPaid)
           .reduce((sum, o) => sum + (o.totalRupees || 0), 0);
         return {
           hour: w.label,
@@ -459,7 +467,7 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
       });
 
       const totalOrdersCount = orders.length;
-      const totalRev = validOrders.reduce((sum, o) => sum + (o.totalRupees || 0), 0);
+      const totalRev = orders.filter(isOrderPaid).reduce((sum, o) => sum + (o.totalRupees || 0), 0);
       const maxRev = Math.max(...buckets.map((b) => b.revenue), 100);
 
       const pts = buckets.map((b, i) => ({
@@ -515,7 +523,7 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
           return dt.getMonth() === mIdx;
         });
         const rev = monthOrders
-          .filter((o) => o.status !== "CANCELLED" && o.status !== "REJECTED")
+          .filter(isOrderPaid)
           .reduce((sum, o) => sum + (o.totalRupees || 0), 0);
         return {
           hour: mName,
@@ -525,7 +533,7 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
       });
 
       const totalOrdersCount = orders.length;
-      const totalRev = validOrders.reduce((sum, o) => sum + (o.totalRupees || 0), 0);
+      const totalRev = orders.filter(isOrderPaid).reduce((sum, o) => sum + (o.totalRupees || 0), 0);
       const maxRev = Math.max(...buckets.map((b) => b.revenue), 100);
 
       const pts = buckets.map((b, i) => ({
@@ -591,7 +599,7 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
         return h === slot.h;
       });
       const rev = slotOrders
-        .filter((o) => o.status !== "CANCELLED" && o.status !== "REJECTED")
+        .filter(isOrderPaid)
         .reduce((sum, o) => sum + (o.totalRupees || 0), 0);
       return {
         hour: slot.label,
@@ -601,7 +609,7 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
     });
 
     const totalOrdersCount = orders.length;
-    const totalRev = validOrders.reduce((sum, o) => sum + (o.totalRupees || 0), 0);
+    const totalRev = orders.filter(isOrderPaid).reduce((sum, o) => sum + (o.totalRupees || 0), 0);
     const maxRev = Math.max(...buckets.map((b) => b.revenue), 100);
 
     const pts = buckets.map((b, i) => ({
@@ -2018,7 +2026,13 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
                     </div>
 
                     <div className="flex items-center gap-1.5 shrink-0">
-                      <span className="rounded-md bg-emerald-100 text-emerald-800 border border-emerald-300 dark:bg-emerald-950 dark:text-emerald-400 dark:border-emerald-800 px-2 py-0.5 text-[10px] font-mono font-bold">
+                      <span className={`rounded-md border px-2 py-0.5 text-[10px] font-mono font-bold ${
+                        t.st === "PENDING" || t.st === "UNPAID"
+                          ? "bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-950 dark:text-amber-400 dark:border-amber-800"
+                          : t.st === "COMPLIMENTARY"
+                          ? "bg-purple-100 text-purple-800 border-purple-300 dark:bg-purple-950 dark:text-purple-400 dark:border-purple-800"
+                          : "bg-emerald-100 text-emerald-800 border-emerald-300 dark:bg-emerald-950 dark:text-emerald-400 dark:border-emerald-800"
+                      }`}>
                         {t.st}
                       </span>
                       {t.time && (
@@ -2058,7 +2072,13 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
                         <td className="p-3.5 font-serif font-bold text-[#241F1C] dark:text-white">{t.amt}</td>
                         <td className="p-3.5 text-[#725039] dark:text-stone-400">{t.ord}</td>
                         <td className="p-3.5">
-                          <span className="rounded-md bg-emerald-100 text-emerald-800 border border-emerald-300 dark:bg-emerald-950 dark:text-emerald-400 dark:border-emerald-800 px-2 py-0.5 text-[10px] font-bold">
+                          <span className={`rounded-md border px-2 py-0.5 text-[10px] font-bold ${
+                            t.st === "PENDING" || t.st === "UNPAID"
+                              ? "bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-950 dark:text-amber-400 dark:border-amber-800"
+                              : t.st === "COMPLIMENTARY"
+                              ? "bg-purple-100 text-purple-800 border-purple-300 dark:bg-purple-950 dark:text-purple-400 dark:border-purple-800"
+                              : "bg-emerald-100 text-emerald-800 border-emerald-300 dark:bg-emerald-950 dark:text-emerald-400 dark:border-emerald-800"
+                          }`}>
                             {t.st}
                           </span>
                         </td>

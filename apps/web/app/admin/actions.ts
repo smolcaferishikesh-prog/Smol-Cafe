@@ -274,11 +274,35 @@ export async function fetchAdminOverviewAction(): Promise<{
       }
 
       const upper = (rawMethod || "").toUpperCase();
+      const rawPaymentStatus = (o as unknown as { payment_status?: string }).payment_status?.toUpperCase();
+      const isComplimentary = upper.includes("COMPLIMENTARY") || upper.includes("PROMO") || upper.includes("FREE");
+      
+      const hasRecordedPayment =
+        orderPaymentProviderMap.has(o.id) ||
+        (o.table_session_id ? sessionPaymentProviderMap.has(o.table_session_id) : false) ||
+        rawPaymentStatus === "PAID";
+
+      const isAwaitingApproval =
+        o.status === "SUBMITTED" ||
+        o.status === "DRAFT" ||
+        o.status === "PENDING_CONFIRMATION";
+
+      const isPaid = !isComplimentary && (hasRecordedPayment || (!isAwaitingApproval && (o.status === "ACCEPTED" || o.status === "PREPARING" || o.status === "READY" || o.status === "SERVED" || o.status === "COMPLETED")));
+      const isUnpaidPending = !isPaid && !isComplimentary;
+
       let methodLabel = "PAID (UPI)";
       let paymentCategory: "UPI" | "CASH" | "CARD" = "UPI";
       let displayMethod = "UPI";
 
-      if (upper.includes("CASH")) {
+      if (isComplimentary) {
+        methodLabel = "COMPLIMENTARY";
+        paymentCategory = "CASH";
+        displayMethod = "COMPLIMENTARY";
+      } else if (isUnpaidPending) {
+        methodLabel = "UNPAID (PENDING)";
+        paymentCategory = "UPI";
+        displayMethod = "PENDING";
+      } else if (upper.includes("CASH")) {
         methodLabel = "PAID (CASH)";
         paymentCategory = "CASH";
         displayMethod = "CASH";
@@ -286,10 +310,6 @@ export async function fetchAdminOverviewAction(): Promise<{
         methodLabel = "PAID (CARD)";
         paymentCategory = "CARD";
         displayMethod = "CARD";
-      } else if (upper.includes("COMPLIMENTARY") || upper.includes("PROMO") || upper.includes("FREE")) {
-        methodLabel = "COMPLIMENTARY";
-        paymentCategory = "CASH";
-        displayMethod = "COMPLIMENTARY";
       } else if (upper.includes("TEST") || upper.includes("BYPASS")) {
         methodLabel = "PAID (TEST_MODE)";
         paymentCategory = "UPI";
@@ -298,27 +318,18 @@ export async function fetchAdminOverviewAction(): Promise<{
         methodLabel = "PAID (ONLINE)";
         paymentCategory = "CARD";
         displayMethod = "ONLINE";
-      } else if (upper.includes("UPI")) {
+      } else {
         methodLabel = "PAID (UPI)";
         paymentCategory = "UPI";
         displayMethod = "UPI";
-      } else {
-        const isUnconfirmed = o.status === "DRAFT" || o.status === "PENDING_CONFIRMATION";
-        const hasPaymentStatus = (o as unknown as { payment_status?: string }).payment_status;
-        if (isUnconfirmed && (!hasPaymentStatus || hasPaymentStatus === "PENDING")) {
-          methodLabel = "UNPAID (PENDING)";
-          paymentCategory = "UPI";
-          displayMethod = "PENDING";
-        } else {
-          methodLabel = "PAID (UPI)";
-          paymentCategory = "UPI";
-          displayMethod = "UPI";
-        }
       }
 
       if (o.status !== "CANCELLED" && o.status !== "REJECTED") {
-        grossRevenuePaise += o.total_snapshot || 0;
-        paymentMethodCounts[paymentCategory] = (paymentMethodCounts[paymentCategory] || 0) + 1;
+        // ONLY verified collected funds count towards Gross Revenue (never unpaid or complimentary)
+        if (isPaid) {
+          grossRevenuePaise += o.total_snapshot || 0;
+          paymentMethodCounts[paymentCategory] = (paymentMethodCounts[paymentCategory] || 0) + 1;
+        }
 
         // Tally items
         for (const item of orderItems) {
@@ -375,19 +386,34 @@ export async function fetchAdminOverviewAction(): Promise<{
 
       // Payments ledger entry
       if (o.status !== "CANCELLED" && o.status !== "REJECTED") {
-        mappedPayments.push({
-          txn: `TXN/${orderDate.getFullYear()}/${(o.id || "").replace(/[^0-9]/g, "").slice(-8) || "89412984"}`,
-          mode:
-            displayMethod === "COMPLIMENTARY"
-              ? "Complimentary / Promo"
-              : paymentCategory === "CASH"
+        let ledgerStatus = "VERIFIED";
+        let ledgerMode = "UPI Direct QR";
+        let ledgerTxn = `TXN/${orderDate.getFullYear()}/${(o.id || "").replace(/[^0-9]/g, "").slice(-8) || "89412984"}`;
+
+        if (isComplimentary) {
+          ledgerStatus = "COMPLIMENTARY";
+          ledgerMode = "Complimentary / Promo";
+          ledgerTxn = `COMP-${(o.id || "").replace(/[^0-9]/g, "").slice(-6) || "000000"}`;
+        } else if (isUnpaidPending) {
+          ledgerStatus = "PENDING";
+          ledgerMode = "Pay at Counter / Table";
+          ledgerTxn = "—";
+        } else {
+          ledgerStatus = o.status === "COMPLETED" || o.status === "SERVED" ? "SETTLED" : "VERIFIED";
+          ledgerMode =
+            paymentCategory === "CASH"
               ? "Cash Tendered"
               : paymentCategory === "CARD"
               ? "Card / NFC Tap"
-              : "UPI Direct QR",
-          amt: `₹${totalRupees}`,
+              : "UPI Direct QR";
+        }
+
+        mappedPayments.push({
+          txn: ledgerTxn,
+          mode: ledgerMode,
+          amt: isComplimentary ? "₹0 (Comp)" : `₹${totalRupees}`,
           ord: `ORD-${o.order_no || o.id.slice(-4)}`,
-          st: o.status === "COMPLETED" || o.status === "SERVED" ? "SETTLED" : "VERIFIED",
+          st: ledgerStatus,
           time: orderDate.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
         });
       }

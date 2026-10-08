@@ -1029,7 +1029,9 @@ export async function fetchPaidCashierHistoryAction(): Promise<FetchPaidHistoryR
         };
       });
 
-    const totalRevenueRupees = records.reduce((acc, r) => acc + r.totalRupees, 0);
+    const totalRevenueRupees = records
+      .filter((r) => r.paymentMethod !== "COMPLIMENTARY" && r.paymentMethod !== "PENDING" && r.paymentMethod !== "UNPAID")
+      .reduce((acc, r) => acc + r.totalRupees, 0);
 
     return {
       success: true,
