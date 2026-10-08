@@ -599,20 +599,22 @@ export const CashierDashboard: React.FC<CashierDashboardProps> = ({
             >
               ←
             </Link>
-            <div className="relative h-7 w-5.5 sm:h-11 sm:w-8 shrink-0 select-none">
+            <div className="relative h-8 w-8 sm:h-10 sm:w-10 shrink-0 select-none flex items-center justify-center">
               <Image
                 src="/cashier-logo.png"
                 alt="smol café cashier logo"
-                fill
+                width={40}
+                height={40}
                 priority
-                className="object-contain drop-shadow-xs dark:hidden block"
+                className="h-8 w-auto sm:h-10 object-contain drop-shadow-xs dark:hidden block"
               />
               <Image
                 src="/cashier-logo-dark.png"
                 alt="smol café cashier logo night mode"
-                fill
+                width={40}
+                height={40}
                 priority
-                className="object-contain drop-shadow-[0_0_8px_rgba(168,85,247,0.4)] hidden dark:block"
+                className="h-8 w-auto sm:h-10 object-contain drop-shadow-[0_0_8px_rgba(168,85,247,0.4)] hidden dark:block"
               />
             </div>
             <div className="min-w-0">

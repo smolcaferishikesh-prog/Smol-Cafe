@@ -536,20 +536,22 @@ export const KitchenBoardView: React.FC<KitchenBoardViewProps> = ({ initialOrder
         <div className="flex items-center justify-between gap-2 sm:gap-4 flex-nowrap">
           {/* Brand */}
           <div className="flex items-center gap-1.5 sm:gap-3 shrink-0 min-w-0">
-            <div className="relative h-7 w-5.5 sm:h-10 sm:w-7.5 shrink-0 select-none">
+            <div className="relative h-8 w-8 sm:h-10 sm:w-10 shrink-0 select-none flex items-center justify-center">
               <Image
                 src="/kitchen-logo.png"
                 alt="smol café kitchen logo"
-                fill
+                width={40}
+                height={40}
                 priority
-                className="object-contain drop-shadow-xs dark:hidden block"
+                className="h-8 w-auto sm:h-10 object-contain drop-shadow-xs dark:hidden block"
               />
               <Image
                 src="/kitchen-logo-dark.png"
                 alt="smol café kitchen logo night mode"
-                fill
+                width={40}
+                height={40}
                 priority
-                className="object-contain drop-shadow-[0_0_8px_rgba(168,85,247,0.4)] hidden dark:block"
+                className="h-8 w-auto sm:h-10 object-contain drop-shadow-[0_0_8px_rgba(168,85,247,0.4)] hidden dark:block"
               />
             </div>
             <div className="min-w-0">
