@@ -14,6 +14,7 @@ import {
   Check,
   X,
   Clock,
+  Send,
 } from "lucide-react";
 import { useCart } from "@/context/CartContext";
 import { DigitalReceiptModal, type ReceiptData } from "./DigitalReceiptModal";
@@ -27,6 +28,7 @@ export interface PostPaymentCelebrationModalProps {
   items?: Array<{ name: string; qty: number; priceRupees: number; subtotalRupees: number }>;
   transactionId?: string;
   appName?: string;
+  paymentStatus?: "PAID" | "PENDING";
   onClose: () => void;
 }
 
@@ -72,8 +74,9 @@ export const PostPaymentCelebrationModal: React.FC<PostPaymentCelebrationModalPr
   zone = "Café",
   totalRupees,
   items = [],
-  transactionId = `UPI/2026/${Math.floor(100000000 + Math.random() * 900000000)}`,
+  transactionId,
   appName = "UPI Instant",
+  paymentStatus = "PAID",
   onClose,
 }) => {
   const { addItem, openCart } = useCart();
@@ -81,6 +84,7 @@ export const PostPaymentCelebrationModal: React.FC<PostPaymentCelebrationModalPr
   const [copiedWifi, setCopiedWifi] = useState(false);
   const [addedItemName, setAddedItemName] = useState<string | null>(null);
 
+  const isPending = paymentStatus === "PENDING" || appName.toLowerCase().includes("counter");
   const pointsEarned = Math.max(10, Math.round(totalRupees / 10));
 
   const handleCopyWifi = () => {
@@ -123,8 +127,9 @@ export const PostPaymentCelebrationModal: React.FC<PostPaymentCelebrationModalPr
     subtotalRupees: Math.round(totalRupees / 1.05),
     taxRupees: Math.round(totalRupees - totalRupees / 1.05),
     totalRupees,
-    paymentMethod: "UPI",
-    transactionId,
+    paymentMethod: isPending ? "CASHIER" : "UPI",
+    paymentStatus: isPending ? "PENDING" : "PAID",
+    transactionId: isPending ? undefined : transactionId,
     paidAt: new Date().toISOString(),
     merchantName: "smol café Tapovan",
     gstin: "05AAACH7409R1ZZ",
@@ -170,9 +175,16 @@ export const PostPaymentCelebrationModal: React.FC<PostPaymentCelebrationModalPr
               className="h-8 w-auto object-contain hidden dark:block"
               priority
             />
-            <span className="rounded-full bg-emerald-100 dark:bg-emerald-950/70 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800 px-2.5 py-0.5 font-mono text-[9.5px] font-bold uppercase tracking-wider">
-              PAYMENT VERIFIED &amp; SETTLED
-            </span>
+            {isPending ? (
+              <span className="rounded-full bg-amber-100 dark:bg-amber-950/70 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-800 px-2.5 py-0.5 font-mono text-[9.5px] font-bold uppercase tracking-wider flex items-center gap-1">
+                <Clock className="h-3 w-3 text-amber-600 dark:text-amber-400" />
+                ORDER SENT • PAY AT CASHIER
+              </span>
+            ) : (
+              <span className="rounded-full bg-emerald-100 dark:bg-emerald-950/70 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800 px-2.5 py-0.5 font-mono text-[9.5px] font-bold uppercase tracking-wider">
+                PAYMENT VERIFIED &amp; SETTLED
+              </span>
+            )}
           </div>
           <button
             onClick={onClose}
@@ -185,28 +197,56 @@ export const PostPaymentCelebrationModal: React.FC<PostPaymentCelebrationModalPr
 
         {/* Scrollable Body Content */}
         <div className="flex-1 overflow-y-auto px-4 sm:px-5 py-4 space-y-4">
-          {/* Celebratory Hero Card */}
+          {/* Hero Card */}
           <div className="text-center space-y-1.5 pt-1 pb-1">
-            <div className="relative mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-emerald-100 dark:bg-emerald-950/70 border-2 border-emerald-300/80 dark:border-emerald-700/60 text-emerald-600 dark:text-emerald-400 shadow-inner">
-              <CheckCircle2 className="h-10 w-10 animate-bounce stroke-[2.5]" />
-              <div className="absolute -top-1 -right-1 flex h-6 w-6 items-center justify-center rounded-full bg-[#FCD34D] text-[#78350F] shadow-sm animate-pulse">
-                <Sparkles className="h-3.5 w-3.5" />
-              </div>
-            </div>
+            {isPending ? (
+              <>
+                <div className="relative mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-amber-100 dark:bg-amber-950/70 border-2 border-amber-300/80 dark:border-amber-700/60 text-amber-700 dark:text-amber-300 shadow-inner">
+                  <Send className="h-9 w-9 stroke-[2.5]" />
+                  <div className="absolute -top-1 -right-1 flex h-6 w-6 items-center justify-center rounded-full bg-[#B72E35] text-white shadow-sm">
+                    <Receipt className="h-3 w-3" />
+                  </div>
+                </div>
 
-            <h2 className="font-serif text-3xl font-bold tracking-tight text-[#241F1C] dark:text-white pt-1">
-              ₹{totalRupees} Received!
-            </h2>
+                <h2 className="font-serif text-3xl font-bold tracking-tight text-[#241F1C] dark:text-white pt-1">
+                  Order #{orderNo ?? (orderId ? orderId.replace(/^ORD-/, "") : "")} Placed!
+                </h2>
 
-            <p className="font-serif italic text-xs text-[#725039] dark:text-[#C9AE8B]">
-              Paid via {appName} • Table {tableLabel} ({zone})
-            </p>
-            <div className="font-mono text-[11px] text-[#8C7E72] dark:text-stone-400 uppercase tracking-wide">
-              Txn ID: {transactionId}
-            </div>
+                <p className="font-serif italic text-xs text-[#725039] dark:text-[#C9AE8B]">
+                  Table {tableLabel} ({zone}) • Total: ₹{totalRupees}
+                </p>
+
+                <div className="inline-flex items-center gap-1.5 px-3 py-1 mt-1 rounded-full bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-300 font-sans text-xs">
+                  <Clock className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
+                  <span>Payment Pending: Settle ₹{totalRupees} at cashier counter</span>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="relative mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-emerald-100 dark:bg-emerald-950/70 border-2 border-emerald-300/80 dark:border-emerald-700/60 text-emerald-600 dark:text-emerald-400 shadow-inner">
+                  <CheckCircle2 className="h-10 w-10 animate-bounce stroke-[2.5]" />
+                  <div className="absolute -top-1 -right-1 flex h-6 w-6 items-center justify-center rounded-full bg-[#FCD34D] text-[#78350F] shadow-sm animate-pulse">
+                    <Sparkles className="h-3.5 w-3.5" />
+                  </div>
+                </div>
+
+                <h2 className="font-serif text-3xl font-bold tracking-tight text-[#241F1C] dark:text-white pt-1">
+                  ₹{totalRupees} Received!
+                </h2>
+
+                <p className="font-serif italic text-xs text-[#725039] dark:text-[#C9AE8B]">
+                  Paid via {appName} • Table {tableLabel} ({zone})
+                </p>
+                {transactionId && (
+                  <div className="font-mono text-[11px] text-[#8C7E72] dark:text-stone-400 uppercase tracking-wide">
+                    Txn ID: {transactionId}
+                  </div>
+                )}
+              </>
+            )}
           </div>
 
-          {/* Smol Club Loyalty Points Card (Coming Soon) */}
+          {/* Smol Club Loyalty Points Card */}
           <div className="rounded-2xl border border-[#FDE68A] dark:border-amber-800/40 bg-[#FFFBEB] dark:bg-amber-950/25 p-4 space-y-2.5 shadow-2xs">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2.5">
@@ -230,7 +270,7 @@ export const PostPaymentCelebrationModal: React.FC<PostPaymentCelebrationModalPr
             <div className="border-t border-[#FDE68A]/80 dark:border-amber-900/50 pt-2.5 flex items-center justify-between text-xs text-[#78350F] dark:text-stone-300">
               <span>Tier Status: <strong>Regular Patron Pass</strong></span>
               <span className="font-mono text-[11px] text-[#B72E35] dark:text-[#F87171] font-bold">
-                +{pointsEarned} Points Reserved
+                +{pointsEarned} Points {isPending ? "Payable at Settle" : "Reserved"}
               </span>
             </div>
           </div>
@@ -243,7 +283,7 @@ export const PostPaymentCelebrationModal: React.FC<PostPaymentCelebrationModalPr
               className="flex items-center justify-center gap-1.5 rounded-2xl border border-[#E2D7C7] dark:border-stone-700 bg-white dark:bg-stone-900/80 py-3 px-3 font-serif text-xs font-bold text-[#241F1C] dark:text-stone-200 shadow-xs hover:bg-[#F3E7D3]/40 dark:hover:bg-stone-800 transition active:scale-98 cursor-pointer"
             >
               <Receipt className="h-4 w-4 text-[#B72E35] dark:text-[#FF6B6B]" />
-              <span className="truncate">View Digital Tax Chit →</span>
+              <span className="truncate">{isPending ? "View Order Chit →" : "View Digital Tax Chit →"}</span>
             </button>
 
             <Link

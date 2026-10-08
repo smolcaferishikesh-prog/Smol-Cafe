@@ -294,7 +294,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ tableLabel = "07", guest
           metadata: {
             paymentStatus: orderPaymentStatus,
             paymentMethod,
-            transactionId: transactionId || `TXN-${Date.now().toString().slice(-6)}`,
+            transactionId: isCashier ? undefined : (transactionId || `TXN-${Date.now().toString().slice(-6)}`),
             amountPaise: finalTotalPaise,
             itemsCount: items.length,
           },
@@ -396,13 +396,12 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ tableLabel = "07", guest
     }
   };
 
-  const handleTestBypassPayment = async () => {
+  const handleSendOrderToCashier = async () => {
     if (isBypassing) return;
     setIsBypassing(true);
     setErrorMessage(null);
 
     try {
-      const transactionId = `CSH-${Date.now().toString().slice(-6)}`;
       const currentItemsSnapshot = items.map((i) => ({
         name: i.item.name,
         qty: i.qty,
@@ -410,20 +409,17 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ tableLabel = "07", guest
         subtotalRupees: Math.round((i.item.pricePaise / 100) * i.qty),
       }));
 
-      // 1. Create paid & confirmed order in DB
-      const orderRes = await handleProcessPaidOrder("CASHIER", transactionId);
+      // 1. Create order in DB for cashier desk (DRAFT / PENDING)
+      const orderRes = await handleProcessPaidOrder("CASHIER");
       if (!orderRes) {
         setIsBypassing(false);
         return;
       }
 
-      // Order created in PENDING_CONFIRMATION status for cashier desk.
-      // Settle bill will happen when Cashier clicks confirm & collects payment.
-
-      // 3. Clear cart
+      // 2. Clear cart
       clearCart();
 
-      // 4. Trigger celebration modal
+      // 3. Trigger order confirmation modal with PENDING payment status (no fake settlement)
       setCelebrationData({
         orderId: orderRes.orderId,
         orderNo: orderRes.orderNo,
@@ -433,24 +429,17 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ tableLabel = "07", guest
         items: currentItemsSnapshot.length > 0 ? currentItemsSnapshot : [
           { name: "Artisanal Table Order", qty: 1, priceRupees: Math.round(orderRes.totalPaise / 100), subtotalRupees: Math.round(orderRes.totalPaise / 100) }
         ],
-        transactionId,
         appName: "Cashier Desk (Pay at Counter)",
+        paymentStatus: "PENDING",
         onClose: () => {
           setCelebrationData(null);
           closeCart();
-          router.push("/orders");
+          router.push(`/orders/${orderRes.orderId}?t=${orderRes.orderNo}`);
         },
       });
-
-      // Automated fallback redirect after celebration window
-      setTimeout(() => {
-        closeCart();
-        setCelebrationData(null);
-        router.push("/orders");
-      }, 2000);
     } catch (err) {
-      console.error("Test bypass payment failed:", err);
-      setErrorMessage("Payment failed. Please try again.");
+      console.error("Order dispatch to cashier failed:", err);
+      setErrorMessage("Could not send order to cashier. Please try again.");
     } finally {
       setIsBypassing(false);
     }
@@ -754,7 +743,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ tableLabel = "07", guest
                   {/* Primary CTA Dispatch Button */}
                   <button
                     type="button"
-                    onClick={handleTestBypassPayment}
+                    onClick={handleSendOrderToCashier}
                     disabled={isBypassing}
                     className="group relative w-full mt-3 overflow-hidden rounded-2xl bg-gradient-to-r from-[#B72E35] via-[#A0242B] to-[#7D1217] dark:from-[#9333EA] dark:via-[#7E22CE] dark:to-[#581C87] border border-transparent dark:border-purple-400/40 p-4 text-left text-white shadow-[0_4px_16px_rgba(183,46,53,0.35)] dark:shadow-[0_4px_24px_rgba(126,34,206,0.45)] hover:shadow-[0_6px_22px_rgba(183,46,53,0.5)] dark:hover:shadow-[0_6px_30px_rgba(168,85,247,0.6)] hover:scale-[1.01] active:scale-[0.99] transition-all duration-200 cursor-pointer disabled:opacity-60"
                   >
