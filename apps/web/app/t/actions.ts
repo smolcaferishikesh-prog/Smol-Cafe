@@ -311,31 +311,40 @@ export async function onboardGuestAndRedirectAction(formData: FormData): Promise
     return { success: false, error: result.message || "Failed to start table session." };
   }
 
-  // Upsert profile record with deterministic E.164 phone UUID so order history & loyalty rewards immediately associate with this phone
-  try {
-    const supabase = createAdminClient();
-    const phoneUuid = getPhoneUuid(e164Phone);
-    const { data: existingProf } = await supabase
-      .from("profiles")
-      .select("id")
-      .eq("phone", e164Phone)
-      .maybeSingle();
-
-    const targetProfileId = existingProf?.id || phoneUuid;
-    await supabase.from("profiles").upsert(
-      {
-        id: targetProfileId,
-        display_name: guestName,
-        phone: e164Phone,
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: "phone" }
-    );
-  } catch (err) {
-    console.warn("Could not upsert profile during onboarding:", err);
-  }
+  // Non-blocking profile upsert in background so guest onboarding is instantaneous
+  (async () => {
+    try {
+      const supabase = createAdminClient();
+      const phoneUuid = getPhoneUuid(e164Phone);
+      await supabase.from("profiles").upsert(
+        {
+          id: phoneUuid,
+          display_name: guestName,
+          phone: e164Phone,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "phone" }
+      );
+    } catch (err) {
+      console.warn("Could not upsert profile during onboarding:", err);
+    }
+  })();
 
   return { success: true };
+}
+
+/**
+ * Server Action: Establishes an anonymous dining session for guests skipping onboarding.
+ * Ensures the table session is created in the database and the signed JWT session cookie
+ * is set before navigating to /home.
+ */
+export async function skipGuestOnboardingAction(tableToken: string): Promise<{ success: boolean; tableLabel?: string; error?: string }> {
+  const token = tableToken || "table-01";
+  const result = await resolveQrToken(token, true, "Guest", undefined);
+  if (!result.success || !result.session) {
+    return { success: false, error: result.message || "Failed to establish table session." };
+  }
+  return { success: true, tableLabel: result.session.tableLabel };
 }
 
 /**
@@ -356,7 +365,7 @@ export async function activateTableAndRedirectAction(formData: FormData): Promis
  */
 export async function clearTableSession(): Promise<void> {
   await clearTableSessionCookie();
-  redirect("/");
+  redirect("/home");
 }
 
 /**

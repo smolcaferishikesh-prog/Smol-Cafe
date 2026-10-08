@@ -170,6 +170,40 @@ export const ProcurementManager: React.FC<ProcurementManagerProps> = ({ initialD
               },
             };
           });
+        } else if (ingId && typeof meta.minThreshold === "number") {
+          const newThreshold = meta.minThreshold;
+          setData((prev) => {
+            if (!prev.radarData) return prev;
+            const updatedIngredients = prev.radarData.ingredients.map((ing) => {
+              if (ing.id === ingId) {
+                const status =
+                  ing.currentStock <= newThreshold * 0.4
+                    ? ("CRITICAL_LOW" as const)
+                    : ing.currentStock <= newThreshold
+                    ? ("LOW_STOCK" as const)
+                    : ing.currentStock >= newThreshold * 2.5
+                    ? ("OVERSTOCKED" as const)
+                    : ("OPTIMAL" as const);
+                return {
+                  ...ing,
+                  minThreshold: newThreshold,
+                  costPerUnitPaise: typeof meta.costPerUnitPaise === "number" ? meta.costPerUnitPaise : ing.costPerUnitPaise,
+                  status,
+                };
+              }
+              return ing;
+            });
+            return {
+              ...prev,
+              radarData: {
+                ...prev.radarData,
+                ingredients: updatedIngredients,
+                criticalCount: updatedIngredients.filter((i) => i.status === "CRITICAL_LOW").length,
+                lowStockCount: updatedIngredients.filter((i) => i.status === "LOW_STOCK").length,
+                healthyCount: updatedIngredients.filter((i) => i.status === "OPTIMAL" || i.status === "OVERSTOCKED").length,
+              },
+            };
+          });
         }
         refreshData();
       } else if (event.type === "ORDER_PLACED" || event.type === "ORDER_CONFIRMED") {
@@ -310,18 +344,58 @@ export const ProcurementManager: React.FC<ProcurementManagerProps> = ({ initialD
     setIsUpdatingThreshold(true);
     setFeedback(null);
 
+    const targetId = thresholdItem.id;
+    const targetMin = thresholdVal;
+    const targetCost = Math.round(unitCostVal * 100);
+
     try {
       const res = await updateIngredientThresholdAction({
-        ingredientId: thresholdItem.id,
-        minThreshold: thresholdVal,
-        costPerUnitPaise: Math.round(unitCostVal * 100),
+        ingredientId: targetId,
+        minThreshold: targetMin,
+        costPerUnitPaise: targetCost,
       });
 
       if (res.success) {
         setFeedback({ type: "success", text: res.message || "Threshold updated." });
         setThresholdItem(null);
+
+        const confirmedMin = res.updatedThreshold ?? targetMin;
+        setData((prev) => {
+          if (!prev.radarData) return prev;
+          const updatedIngredients = prev.radarData.ingredients.map((ing) => {
+            if (ing.id === targetId) {
+              const currentStock = ing.currentStock;
+              const status =
+                currentStock <= confirmedMin * 0.4
+                  ? ("CRITICAL_LOW" as const)
+                  : currentStock <= confirmedMin
+                  ? ("LOW_STOCK" as const)
+                  : currentStock >= confirmedMin * 2.5
+                  ? ("OVERSTOCKED" as const)
+                  : ("OPTIMAL" as const);
+              return {
+                ...ing,
+                minThreshold: confirmedMin,
+                costPerUnitPaise: targetCost,
+                status,
+              };
+            }
+            return ing;
+          });
+
+          return {
+            ...prev,
+            radarData: {
+              ...prev.radarData,
+              ingredients: updatedIngredients,
+              criticalCount: updatedIngredients.filter((i) => i.status === "CRITICAL_LOW").length,
+              lowStockCount: updatedIngredients.filter((i) => i.status === "LOW_STOCK").length,
+              healthyCount: updatedIngredients.filter((i) => i.status === "OPTIMAL" || i.status === "OVERSTOCKED").length,
+            },
+          };
+        });
+
         await refreshData();
-        broadcastSyncEvent({ type: "INVENTORY_UPDATED" });
       } else {
         setFeedback({ type: "error", text: res.message || "Failed to update threshold." });
       }
@@ -1399,10 +1473,13 @@ export const ProcurementManager: React.FC<ProcurementManagerProps> = ({ initialD
                 </label>
                 <input
                   type="number"
-                  step="0.5"
-                  min="0.1"
+                  step="any"
+                  min="0.01"
                   value={thresholdVal}
-                  onChange={(e) => setThresholdVal(parseFloat(e.target.value) || 1)}
+                  onChange={(e) => {
+                    const parsed = parseFloat(e.target.value);
+                    setThresholdVal(isNaN(parsed) ? 0 : parsed);
+                  }}
                   className="w-full rounded-xl border border-[#C9AE8B]/60 bg-[#F3E7D3]/50 px-3 py-2 text-xs text-[#241F1C] font-mono dark:border-stone-700 dark:bg-stone-800 dark:text-stone-100"
                 />
                 <p className="text-[10px] text-[#725039] dark:text-stone-400 mt-1">
@@ -1416,10 +1493,13 @@ export const ProcurementManager: React.FC<ProcurementManagerProps> = ({ initialD
                 </label>
                 <input
                   type="number"
-                  step="1"
+                  step="any"
                   min="0"
                   value={unitCostVal}
-                  onChange={(e) => setUnitCostVal(parseFloat(e.target.value) || 0)}
+                  onChange={(e) => {
+                    const parsed = parseFloat(e.target.value);
+                    setUnitCostVal(isNaN(parsed) ? 0 : parsed);
+                  }}
                   className="w-full rounded-xl border border-[#C9AE8B]/60 bg-[#F3E7D3]/50 px-3 py-2 text-xs text-[#241F1C] font-mono dark:border-stone-700 dark:bg-stone-800 dark:text-stone-100"
                 />
               </div>

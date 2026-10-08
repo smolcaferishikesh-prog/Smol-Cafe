@@ -1,8 +1,10 @@
 "use server";
 
+import { revalidatePath } from "next/cache";
 import { createAdminClient, isMockDatabase } from "@/lib/supabase/admin";
 import { isBeverageItem } from "@/lib/station-utils";
 import { broadcastSyncEvent } from "@/lib/sync-events";
+import { safeUpdateOrderWithInstructions, extractOrderInstructions } from "@/lib/order-instructions";
 import type { OrderStatus } from "@smol-cafe/db";
 
 export interface PendingOrderItem {
@@ -13,6 +15,7 @@ export interface PendingOrderItem {
   unitPricePaise: number;
   lineSubtotal: number;
   isBeverage: boolean;
+  itemStatus?: string;
 }
 
 export interface PendingOrderVerification {
@@ -33,6 +36,8 @@ export interface PendingOrderVerification {
   items: PendingOrderItem[];
   hasFoodItems: boolean;
   hasBeverageItems: boolean;
+  hasPendingFood: boolean;
+  hasPendingBeverage: boolean;
 }
 
 export interface FetchPendingOrdersResult {
@@ -44,6 +49,8 @@ export interface FetchPendingOrdersResult {
 export interface ConfirmOrderResult {
   success: boolean;
   orderId?: string;
+  isFullyDispatched?: boolean;
+  stationTarget?: "KITCHEN" | "BARISTA" | "ALL";
   message?: string;
 }
 
@@ -192,6 +199,7 @@ export async function fetchPendingCashierOrdersAction(): Promise<FetchPendingOrd
       unit_price_snapshot: number;
       qty: number;
       line_subtotal: number;
+      item_status?: string;
     }>) || []) {
       if (!itemsByOrder.has(item.order_id)) {
         itemsByOrder.set(item.order_id, []);
@@ -210,35 +218,42 @@ export async function fetchPendingCashierOrdersAction(): Promise<FetchPendingOrd
         unitPricePaise: item.unit_price_snapshot,
         lineSubtotal: item.line_subtotal,
         isBeverage: isBev,
+        itemStatus: item.item_status || "PENDING",
       });
     }
 
-    const verificationQueue: PendingOrderVerification[] = relevantOrders.map((o) => {
-      const tableInfo = o.table_session_id ? tableLabelMap.get(o.table_session_id) : null;
-      const items = itemsByOrder.get(o.id) || [];
-      const hasFoodItems = items.some((i) => !i.isBeverage);
-      const hasBeverageItems = items.some((i) => i.isBeverage);
+    const verificationQueue: PendingOrderVerification[] = relevantOrders
+      .map((o) => {
+        const tableInfo = o.table_session_id ? tableLabelMap.get(o.table_session_id) : null;
+        const items = itemsByOrder.get(o.id) || [];
+        const hasFoodItems = items.some((i) => !i.isBeverage);
+        const hasBeverageItems = items.some((i) => i.isBeverage);
+        const hasPendingFood = items.some((i) => !i.isBeverage && (!i.itemStatus || i.itemStatus === "PENDING" || i.itemStatus === "DRAFT"));
+        const hasPendingBeverage = items.some((i) => i.isBeverage && (!i.itemStatus || i.itemStatus === "PENDING" || i.itemStatus === "DRAFT"));
 
-      return {
-        id: o.id,
-        orderNo: o.order_no,
-        tableLabel: tableInfo?.label || "01",
-        tableId: tableInfo?.tableId || "",
-        tableSessionId: o.table_session_id || "",
-        verificationCode: o.verification_code || "4821",
-        status: o.status,
-        paymentStatus: (o as unknown as { payment_status?: string }).payment_status || "PENDING",
-        paymentMethod: (o as unknown as { payment_method?: string }).payment_method || "CASHIER",
-        submittedAt: o.submitted_at || o.created_at,
-        totalPaise: o.total_snapshot || 0,
-        subtotalPaise: (o as unknown as { subtotal_snapshot?: number }).subtotal_snapshot || 0,
-        taxPaise: (o as unknown as { tax_snapshot?: number }).tax_snapshot || 0,
-        instructions: o.instructions || null,
-        items,
-        hasFoodItems,
-        hasBeverageItems,
-      };
-    });
+        return {
+          id: o.id,
+          orderNo: o.order_no,
+          tableLabel: tableInfo?.label || "01",
+          tableId: tableInfo?.tableId || "",
+          tableSessionId: o.table_session_id || "",
+          verificationCode: o.verification_code || "4821",
+          status: o.status,
+          paymentStatus: (o as unknown as { payment_status?: string }).payment_status || "PENDING",
+          paymentMethod: (o as unknown as { payment_method?: string }).payment_method || "CASHIER",
+          submittedAt: o.submitted_at || o.created_at,
+          totalPaise: o.total_snapshot || 0,
+          subtotalPaise: (o as unknown as { subtotal_snapshot?: number }).subtotal_snapshot || 0,
+          taxPaise: (o as unknown as { tax_snapshot?: number }).tax_snapshot || 0,
+          instructions: extractOrderInstructions(o),
+          items,
+          hasFoodItems,
+          hasBeverageItems,
+          hasPendingFood,
+          hasPendingBeverage,
+        };
+      })
+      .filter((o) => o.items.length === 0 || o.hasPendingFood || o.hasPendingBeverage);
 
     return {
       success: true,
@@ -277,6 +292,17 @@ export async function editCashierOrderAction(
   try {
     const isUuid = (str?: string) => Boolean(str && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str));
 
+    // 0. Fetch existing order to verify existence and get table_session_id & current version
+    const { data: existingOrder, error: fetchErr } = await supabase
+      .from("orders")
+      .select("id, table_session_id, version, status")
+      .eq("id", orderId)
+      .maybeSingle();
+
+    if (fetchErr || !existingOrder) {
+      return { success: false, message: "Order not found in database." };
+    }
+
     let subtotalPaise = 0;
     const orderItemsPayload = items.map((it) => {
       const lineSubtotal = it.unitPricePaise * it.qty;
@@ -297,65 +323,145 @@ export async function editCashierOrderAction(
     const taxPaise = Math.round(subtotalPaise * 0.05); // 5% GST
     const totalPaise = subtotalPaise + taxPaise;
 
-    // 1. Update order totals
+    // 1. Update order totals & instructions with fail-safe rollback
     const updatePayload: Record<string, any> = {
       subtotal_snapshot: subtotalPaise,
       tax_snapshot: taxPaise,
       total_snapshot: totalPaise,
+      version: (existingOrder.version || 1) + 1,
       updated_at: nowIso,
     };
-    if (instructions !== undefined) {
-      updatePayload.instructions = instructions;
+
+    const updateRes = await safeUpdateOrderWithInstructions(
+      supabase,
+      orderId,
+      updatePayload,
+      instructions
+    );
+
+    if (!updateRes.success) {
+      console.error("Failed to update order snapshot in editCashierOrderAction:", updateRes.error);
+      return {
+        success: false,
+        message: "Failed to update order totals in database. Edit was rolled back.",
+      };
     }
 
-    const { error: orderUpdateErr } = await supabase
-      .from("orders")
-      .update(updatePayload)
-      .eq("id", orderId);
+    // 2. Atomically replace order items
+    const { error: delErr } = await supabase
+      .from("order_items")
+      .delete()
+      .eq("order_id", orderId);
 
-    if (orderUpdateErr) {
-      console.error("Failed to update order snapshot in editCashierOrderAction:", orderUpdateErr);
+    if (delErr) {
+      console.error("Failed to delete existing order items in editCashierOrderAction:", delErr);
+      return { success: false, message: "Failed to update order line items." };
     }
 
-    // 2. If paymentMethod provided and order has session, update payment_attempts
-    if (paymentMethod && paymentMethod.trim().length > 0) {
-      const cleanMethod = paymentMethod.trim().toUpperCase();
+    const { error: insErr } = await supabase
+      .from("order_items")
+      .insert(orderItemsPayload);
+
+    if (insErr) {
+      console.error("Failed to insert updated order items in editCashierOrderAction:", insErr);
+      return { success: false, message: "Failed to save updated line items." };
+    }
+
+    // 3. Atomically synchronize table session running bill
+    const sessionId = existingOrder.table_session_id;
+    if (sessionId) {
       try {
-        const { data: ord } = await supabase
+        const { data: sessionOrders } = await supabase
           .from("orders")
-          .select("table_session_id")
-          .eq("id", orderId)
-          .single();
+          .select("id, status, subtotal_snapshot, tax_snapshot, total_snapshot")
+          .eq("table_session_id", sessionId);
 
-        if (ord?.table_session_id) {
-          const { data: b } = await supabase
+        if (sessionOrders && sessionOrders.length > 0) {
+          const activeOrders = sessionOrders.filter(
+            (o) => o.status !== "CANCELLED" && o.status !== "REJECTED"
+          );
+          const newSessionSubtotal = activeOrders.reduce(
+            (sum, o) => sum + (o.id === orderId ? subtotalPaise : (o.subtotal_snapshot || 0)),
+            0
+          );
+          const newSessionTax = activeOrders.reduce(
+            (sum, o) => sum + (o.id === orderId ? taxPaise : (o.tax_snapshot || 0)),
+            0
+          );
+          const newSessionTotal = activeOrders.reduce(
+            (sum, o) => sum + (o.id === orderId ? totalPaise : (o.total_snapshot || 0)),
+            0
+          );
+
+          const { data: existingBill } = await supabase
             .from("bills")
             .select("id")
-            .eq("table_session_id", ord.table_session_id)
+            .eq("table_session_id", sessionId)
             .maybeSingle();
 
-          if (b?.id) {
-            await supabase.from("payment_attempts").insert({
-              bill_id: b.id,
-              provider: cleanMethod,
-              amount: totalPaise,
-              currency: "INR",
-              status: "CAPTURED",
-              idempotency_key: `cashier_edit_${orderId}_${Date.now()}`,
-              created_at: nowIso,
-              captured_at: nowIso,
-            });
+          if (existingBill) {
+            await supabase
+              .from("bills")
+              .update({
+                subtotal: newSessionSubtotal,
+                tax: newSessionTax,
+                total: newSessionTotal,
+              })
+              .eq("id", existingBill.id);
           }
+        }
+      } catch (billSyncErr) {
+        console.warn("Notice syncing running bill after cashier order edit:", billSyncErr);
+      }
+    }
+
+    // 4. If paymentMethod provided and order has session, update payment_attempts
+    if (paymentMethod && paymentMethod.trim().length > 0 && sessionId) {
+      const cleanMethod = paymentMethod.trim().toUpperCase();
+      try {
+        const { data: b } = await supabase
+          .from("bills")
+          .select("id")
+          .eq("table_session_id", sessionId)
+          .maybeSingle();
+
+        if (b?.id) {
+          await supabase.from("payment_attempts").insert({
+            bill_id: b.id,
+            provider: cleanMethod,
+            amount: totalPaise,
+            currency: "INR",
+            status: "CAPTURED",
+            idempotency_key: `cashier_edit_${orderId}_${Date.now()}`,
+            created_at: nowIso,
+            captured_at: nowIso,
+          });
         }
       } catch (err) {
         console.warn("Notice updating payment attempt in editCashierOrderAction:", err);
       }
     }
 
-    // 3. Delete old order items & insert updated ones
-    await supabase.from("order_items").delete().eq("order_id", orderId);
-    await supabase.from("order_items").insert(orderItemsPayload);
+    // 5. Broadcast sync events
+    broadcastSyncEvent({
+      type: "STATUS_CHANGED",
+      orderId,
+      status: existingOrder.status,
+      timestamp: Date.now(),
+    });
+    broadcastSyncEvent({
+      type: "ORDER_PENDING_CASHIER",
+      orderId,
+      timestamp: Date.now(),
+    });
 
+    try {
+      revalidatePath("/cashier");
+      revalidatePath("/orders");
+      revalidatePath("/bill");
+    } catch {
+      // ignore outside request lifecycle
+    }
 
     return {
       success: true,
@@ -393,13 +499,57 @@ export async function confirmCashierOrderAction(
     const orderTotalPaise = currentOrder?.total_snapshot || 0;
     const sessionId = currentOrder?.table_session_id;
 
-    // 2. Mark order as ACCEPTED and PAID in PostgreSQL
+    // 2. Update item statuses according to stationTarget first
+    try {
+      const { data: dbItems } = await supabase
+        .from("order_items")
+        .select("id, name_snapshot")
+        .eq("order_id", orderId);
+
+      if (dbItems && dbItems.length > 0) {
+        if (stationTarget === "KITCHEN") {
+          const foodIds = dbItems.filter((i) => !isBeverageItem(i.name_snapshot)).map((i) => i.id);
+          if (foodIds.length > 0) {
+            await supabase.from("order_items").update({ item_status: "ACCEPTED" }).in("id", foodIds);
+          }
+        } else if (stationTarget === "BARISTA") {
+          const drinkIds = dbItems.filter((i) => isBeverageItem(i.name_snapshot)).map((i) => i.id);
+          if (drinkIds.length > 0) {
+            await supabase.from("order_items").update({ item_status: "ACCEPTED" }).in("id", drinkIds);
+          }
+        } else {
+          await supabase.from("order_items").update({ item_status: "ACCEPTED" }).eq("order_id", orderId);
+        }
+      }
+    } catch (itemStatusErr) {
+      console.warn("Notice updating item statuses on dispatch:", itemStatusErr);
+    }
+
+    // 2b. Check if any items still remain pending in this order
+    let isFullyDispatched = true;
+    try {
+      const { data: allItems } = await supabase
+        .from("order_items")
+        .select("id, item_status")
+        .eq("order_id", orderId);
+
+      const hasPending = (allItems || []).some(
+        (i) => !i.item_status || i.item_status === "PENDING" || i.item_status === "DRAFT"
+      );
+      isFullyDispatched = !hasPending;
+    } catch (checkErr) {
+      console.warn("Notice checking remaining items:", checkErr);
+    }
+
+    // 2c. Update order status and payment status in PostgreSQL
     const orderUpdatePayload: Record<string, unknown> = {
-      status: "ACCEPTED",
+      status: isFullyDispatched ? "ACCEPTED" : "SUBMITTED",
       payment_status: "PAID",
-      accepted_at: nowIso,
       updated_at: nowIso,
     };
+    if (isFullyDispatched) {
+      orderUpdatePayload.accepted_at = nowIso;
+    }
     if (isMockDatabase()) {
       orderUpdatePayload.payment_method = cleanMethod;
     }
@@ -410,7 +560,7 @@ export async function confirmCashierOrderAction(
       .eq("id", orderId);
 
     if (updateErr) {
-      console.error("Failed to confirm order directly:", updateErr);
+      console.error("Failed to update order status on dispatch:", updateErr);
       return { success: false, message: `Failed to confirm order: ${updateErr.message || "database error"}` };
     }
 
@@ -478,11 +628,22 @@ export async function confirmCashierOrderAction(
     }
 
     broadcastSyncEvent({
+      type: "ORDER_CONFIRMED",
+      orderId,
+      orderNo: currentOrder?.order_no,
+      station: stationTarget,
+      status: isFullyDispatched ? "ACCEPTED" : "SUBMITTED",
+      timestamp: Date.now(),
+      metadata: { stationTarget, isFullyDispatched },
+    });
+
+    broadcastSyncEvent({
       type: "STATUS_CHANGED",
       orderId,
-      status: "ACCEPTED",
+      station: stationTarget,
+      status: isFullyDispatched ? "ACCEPTED" : "SUBMITTED",
       timestamp: Date.now(),
-      metadata: { stationTarget },
+      metadata: { stationTarget, isFullyDispatched },
     });
 
     const destinationLabel =
@@ -495,6 +656,8 @@ export async function confirmCashierOrderAction(
     return {
       success: true,
       orderId,
+      isFullyDispatched,
+      stationTarget,
       message: `Order #${currentOrder?.order_no || ""} confirmed as ${cleanMethod} & dispatched to ${destinationLabel}!`,
     };
   } catch (err) {
@@ -866,7 +1029,9 @@ export async function fetchPaidCashierHistoryAction(): Promise<FetchPaidHistoryR
         };
       });
 
-    const totalRevenueRupees = records.reduce((acc, r) => acc + r.totalRupees, 0);
+    const totalRevenueRupees = records
+      .filter((r) => r.paymentMethod !== "COMPLIMENTARY" && r.paymentMethod !== "PENDING" && r.paymentMethod !== "UNPAID")
+      .reduce((acc, r) => acc + r.totalRupees, 0);
 
     return {
       success: true,

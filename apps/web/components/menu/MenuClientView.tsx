@@ -4,12 +4,14 @@ import React, { useState, useEffect, useCallback, Suspense } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import type { CategoryWithItems, MenuItemWithDetails } from "@/lib/queries/menu";
-import { CartProvider } from "@/context/CartContext";
+import { CartProvider, useCart } from "@/context/CartContext";
+import type { EditableCustomerOrder } from "@/app/menu/actions";
 import { MenuItemCard } from "./MenuItemCard";
 import { ItemDetailModal } from "./ItemDetailModal";
 import { FloatingCartBar } from "@/components/cart/FloatingCartBar";
 import { CartDrawer } from "@/components/cart/CartDrawer";
 import { ThemeToggle } from "@/components/common/ThemeToggle";
+import { Search, X } from "lucide-react";
 import { subscribeToSyncEvents } from "@/lib/sync-events";
 import { cacheMenuCatalog, getCachedMenuCatalog } from "@/lib/offline-cache";
 import { fetchLiveMenuCatalogAction } from "@/app/admin/menu-actions";
@@ -23,6 +25,7 @@ interface MenuClientViewProps {
   locationName?: string;
   guestName?: string;
   customTitle?: string;
+  initialEditingOrder?: EditableCustomerOrder | null;
 }
 
 const MenuContentInner: React.FC<MenuClientViewProps> = ({
@@ -31,7 +34,9 @@ const MenuContentInner: React.FC<MenuClientViewProps> = ({
   locationName = "Smol Café",
   guestName = "",
   customTitle,
+  initialEditingOrder,
 }) => {
+  const { loadOrderForEditing, editingOrder, openCart, totalCount } = useCart();
   const searchParams = useSearchParams();
   const categoryParam = searchParams ? searchParams.get("category") : null;
 
@@ -41,6 +46,46 @@ const MenuContentInner: React.FC<MenuClientViewProps> = ({
     return cached && cached.length > 0 ? cached : initialCategories;
   });
   const [currentGuestName, setCurrentGuestName] = useState(guestName);
+
+  // Hydrate cart when customer is editing an existing pending order
+  useEffect(() => {
+    if (initialEditingOrder) {
+      const allCatalogItems = categories.flatMap((cat) => cat.items);
+      const loadedCartItems: Array<{ item: MenuItemWithDetails; qty: number }> = [];
+
+      for (const ordItem of initialEditingOrder.items) {
+        const catalogMatch = allCatalogItems.find(
+          (ci) => ci.id === ordItem.menuItemId || ci.name.toLowerCase() === ordItem.name.toLowerCase()
+        );
+        if (catalogMatch) {
+          loadedCartItems.push({ item: catalogMatch, qty: ordItem.qty });
+        } else {
+          const fallbackItem: MenuItemWithDetails = {
+            id: ordItem.menuItemId || crypto.randomUUID(),
+            name: ordItem.name,
+            description: "Customer ordered item",
+            pricePaise: ordItem.unitPricePaise,
+            imageUrl: "/images/food-placeholder.png",
+            categoryId: "cat_default",
+            status: "ACTIVE",
+            metadata: { dietary: "Vegetarian" },
+          };
+          loadedCartItems.push({ item: fallbackItem, qty: ordItem.qty });
+        }
+      }
+
+      loadOrderForEditing(
+        {
+          orderId: initialEditingOrder.orderId,
+          orderNo: initialEditingOrder.orderNo,
+          status: initialEditingOrder.status,
+          instructions: initialEditingOrder.instructions,
+          tableLabel: initialEditingOrder.tableLabel,
+        },
+        loadedCartItems
+      );
+    }
+  }, [initialEditingOrder, categories, loadOrderForEditing]);
 
   useEffect(() => {
     if (initialCategories && initialCategories.length > 0) {
@@ -246,7 +291,9 @@ const MenuContentInner: React.FC<MenuClientViewProps> = ({
   const [activeCategoryId, setActiveCategoryId] = useState<string>("");
   const [selectedItem, setSelectedItem] = useState<MenuItemWithDetails | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [filterVegOnly, setFilterVegOnly] = useState(false);
+  const searchInputRef = React.useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!categoryParam) return;
@@ -296,10 +343,18 @@ const MenuContentInner: React.FC<MenuClientViewProps> = ({
           item.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
           item.metadata.core_ingredients?.toLowerCase().includes(searchQuery.toLowerCase());
 
-        const isVeg =
-          !filterVegOnly ||
-          (item.metadata.dietary || "").toLowerCase().includes("veg") ||
-          (item.metadata.dietary || "").toLowerCase().includes("vegan");
+        const dietaryLower = (item.metadata?.dietary || "").toLowerCase();
+        const containsEgg =
+          dietaryLower.includes("egg") ||
+          item.name.toLowerCase().includes("egg") ||
+          item.name.toLowerCase().includes("omelette") ||
+          (item.metadata?.core_ingredients || "").toLowerCase().includes("egg");
+
+        const isPureVeg =
+          !containsEgg &&
+          (dietaryLower.includes("veg") || dietaryLower.includes("vegan"));
+
+        const isVeg = !filterVegOnly || isPureVeg;
 
         return matchesSearch && isVeg;
       });
@@ -313,8 +368,35 @@ const MenuContentInner: React.FC<MenuClientViewProps> = ({
 
   return (
     <div className="min-h-screen bg-[#F3E7D3] dark:bg-[#151110] text-[#241F1C] dark:text-[#FAF4EB] pb-44 font-sans transition-colors duration-200">
+      {/* Pending Order Edit Banner */}
+      {editingOrder && (
+        <div className="sticky top-0 z-50 bg-gradient-to-r from-[#B72E35] to-[#8C1D23] text-white px-4 py-2.5 flex items-center justify-between text-xs font-mono shadow-md">
+          <div className="flex items-center gap-2 truncate">
+            <span className="bg-white/20 border border-white/40 px-2 py-0.5 rounded text-[10px] font-bold">
+              EDITING
+            </span>
+            <span className="font-bold">Order #{editingOrder.orderNo}</span>
+            <span className="opacity-80 hidden sm:inline">• Pending Verification. Add/remove items and update.</span>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              onClick={openCart}
+              className="bg-white text-[#B72E35] px-3 py-1 rounded-lg font-bold hover:bg-stone-100 transition shadow-2xs cursor-pointer"
+            >
+              Update Order ({totalCount})
+            </button>
+            <Link
+              href="/orders"
+              className="text-white/80 hover:text-white underline text-[11px] ml-1"
+            >
+              Exit
+            </Link>
+          </div>
+        </div>
+      )}
+
       {/* Top Header */}
-      <header className="sticky top-0 z-40 border-b border-[#C9AE8B]/40 dark:border-white/10 bg-[#F3E7D3]/90 dark:bg-[#181412]/90 px-4 pt-[calc(0.875rem+env(safe-area-inset-top,0px))] pb-3.5 backdrop-blur-md transition-colors duration-200">
+      <header className={`sticky ${editingOrder ? "top-[41px]" : "top-0"} z-40 border-b border-[#C9AE8B]/40 dark:border-white/10 bg-[#F3E7D3]/90 dark:bg-[#181412]/90 px-4 pt-[calc(0.875rem+env(safe-area-inset-top,0px))] pb-3.5 backdrop-blur-md transition-colors duration-200`}>
         <div className="mx-auto flex max-w-md items-center justify-between">
           {/* Back Button */}
           <Link
@@ -344,20 +426,72 @@ const MenuContentInner: React.FC<MenuClientViewProps> = ({
             <button
               type="button"
               onClick={() => {
-                const el = document.getElementById("menu-search-input");
-                el?.focus();
+                setIsSearchOpen((prev) => {
+                  const next = !prev;
+                  if (next) {
+                    setTimeout(() => searchInputRef.current?.focus(), 50);
+                  }
+                  return next;
+                });
               }}
-              className="flex h-9 w-9 items-center justify-center rounded-xl text-[#241F1C] dark:text-[#FAF4EB] transition hover:bg-black/5 dark:hover:bg-white/10 active:scale-95"
+              className={`flex h-9 w-9 items-center justify-center rounded-xl transition active:scale-95 cursor-pointer ${
+                isSearchOpen || searchQuery
+                  ? "bg-[#B72E35] text-white shadow-xs dark:bg-purple-600"
+                  : "text-[#241F1C] dark:text-[#FAF4EB] hover:bg-black/5 dark:hover:bg-white/10"
+              }`}
               aria-label="Search menu"
             >
-              <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                <circle cx="11" cy="11" r="8" />
-                <line x1="21" y1="21" x2="16.65" y2="16.65" />
-              </svg>
+              <Search className="h-4.5 w-4.5" />
             </button>
             <ThemeToggle variant="icon" />
           </div>
         </div>
+
+        {/* Expandable Search Input Bar */}
+        {isSearchOpen && (
+          <div className="mx-auto mt-2.5 max-w-md px-1 animate-in fade-in slide-in-from-top-2 duration-200">
+            <div className="relative flex items-center">
+              <Search className="absolute left-3.5 h-4 w-4 text-[#725039] dark:text-[#C9AE8B] pointer-events-none" />
+              <input
+                id="menu-search-input"
+                ref={searchInputRef}
+                type="search"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search coffee, bowls, sourdough, chai..."
+                autoFocus
+                className="w-full rounded-2xl border border-[#C9AE8B]/60 bg-white/95 dark:bg-stone-900/95 backdrop-blur-md pl-10 pr-9 py-2.5 text-xs text-[#241F1C] dark:text-[#FAF4EB] placeholder-[#725039]/60 dark:placeholder-stone-400 font-serif focus:outline-none focus:ring-2 focus:ring-[#B72E35] dark:focus:ring-purple-500 shadow-sm"
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  if (searchQuery) {
+                    setSearchQuery("");
+                    searchInputRef.current?.focus();
+                  } else {
+                    setIsSearchOpen(false);
+                  }
+                }}
+                className="absolute right-2.5 flex h-6 w-6 items-center justify-center rounded-full text-[#725039] dark:text-stone-400 hover:text-[#B72E35] hover:bg-black/5 dark:hover:bg-white/10 cursor-pointer"
+                aria-label="Close search"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+            {searchQuery && (
+              <div className="mt-1 flex items-center justify-between px-2 text-[10.5px] font-mono text-[#725039] dark:text-[#C9AE8B]">
+                <span>Results for &ldquo;{searchQuery}&rdquo;</span>
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery("")}
+                  className="underline hover:text-[#B72E35] cursor-pointer"
+                >
+                  Clear search
+                </button>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Subtitle & Item Count */}
         <div className="mx-auto mt-2 flex max-w-md items-baseline justify-between px-1">

@@ -5,7 +5,12 @@ import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCart } from "@/context/CartContext";
-import { placeOrderAction, placePaidOrderAction, type ChangedItemDiff } from "@/app/menu/actions";
+import {
+  placeOrderAction,
+  placePaidOrderAction,
+  editPendingOrderAction,
+  type ChangedItemDiff,
+} from "@/app/menu/actions";
 import { useNetworkHealth } from "@/hooks/useNetworkHealth";
 import { broadcastSyncEvent, subscribeToSyncEvents } from "@/lib/sync-events";
 import { UpiPaymentDrawer } from "@/components/payment/UpiPaymentDrawer";
@@ -44,9 +49,10 @@ interface CartDrawerProps {
   guestName?: string;
 }
 
-export const CartDrawer: React.FC<CartDrawerProps> = ({ tableLabel = "07", guestName = "" }) => {
+export const CartDrawer: React.FC<CartDrawerProps> = ({ tableLabel, guestName = "" }) => {
   const router = useRouter();
   const [currentGuestName, setCurrentGuestName] = useState(guestName);
+  const [currentTableLabel, setCurrentTableLabel] = useState(tableLabel || "");
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -54,8 +60,12 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ tableLabel = "07", guest
       if (saved && !currentGuestName) {
         setCurrentGuestName(saved);
       }
+      const savedTable = localStorage.getItem("smol_current_table");
+      if (savedTable && !currentTableLabel) {
+        setCurrentTableLabel(savedTable);
+      }
     }
-  }, [currentGuestName]);
+  }, [currentGuestName, currentTableLabel]);
   const {
     items,
     updateQty,
@@ -66,13 +76,55 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ tableLabel = "07", guest
     subtotalPaise,
     totalCount,
     addItem,
+    editingOrder,
   } = useCart();
   const { isDegraded } = useNetworkHealth();
 
   const [activeView, setActiveView] = useState<"table_order" | "bill">("table_order");
   const [activeActionItemId, setActiveActionItemId] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isUpdatingOrder, setIsUpdatingOrder] = useState(false);
   const [instructions, setInstructions] = useState("");
+
+  useEffect(() => {
+    if (editingOrder?.instructions && !instructions) {
+      setInstructions(editingOrder.instructions);
+    }
+  }, [editingOrder]);
+
+  const handleUpdatePendingOrder = async () => {
+    if (!editingOrder) return;
+    setIsUpdatingOrder(true);
+    setErrorMessage(null);
+
+    const orderPayload = items.map((cartItem) => ({
+      menu_item_id: cartItem.item.id,
+      name: cartItem.item.name,
+      expected_unit_price_paise: cartItem.item.pricePaise,
+      qty: cartItem.qty,
+    }));
+
+    try {
+      const result = await editPendingOrderAction(
+        editingOrder.orderId,
+        orderPayload,
+        instructions || undefined
+      );
+
+      if (result.success) {
+        clearCart();
+        closeCart();
+        router.push("/orders");
+        router.refresh();
+      } else {
+        setErrorMessage(result.message || "Failed to update order.");
+      }
+    } catch (e: any) {
+      setErrorMessage(e.message || "An error occurred while updating the order.");
+    } finally {
+      setIsUpdatingOrder(false);
+    }
+  };
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [priceConflicts, setPriceConflicts] = useState<ChangedItemDiff[] | null>(null);
   const [isUpiDrawerOpen, setIsUpiDrawerOpen] = useState(false);
@@ -112,7 +164,10 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ tableLabel = "07", guest
     return () => unsub();
   }, [isCartOpen]);
 
-  const displayTable = (tableLabel || "07").replace(/^(table|t)[-\s_]*/i, "").trim().padStart(2, "0");
+  const effectiveTable = tableLabel || currentTableLabel;
+  const displayTable = effectiveTable
+    ? effectiveTable.replace(/^(table|t)[-\s_]*/i, "").trim()
+    : "";
   const itemsTotal = items.reduce(
     (sum, it) => sum + Math.round((it.item.pricePaise / 100) * it.qty),
     0
@@ -124,9 +179,10 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ tableLabel = "07", guest
   const maxDiscountRupees = Math.min(userBalance, Math.floor(itemsTotal * (maxDiscountPercent / 100)));
   const pointsDiscountRupees = redeemPoints ? maxDiscountRupees : 0;
   const effectiveItemsTotal = Math.max(0, itemsTotal - pointsDiscountRupees);
-  const taxesAndCharges = 0;
-  const grandTotal = effectiveItemsTotal;
-  const totalRupees = effectiveItemsTotal;
+  // Standard Restaurant GST: 5% (2.5% CGST + 2.5% SGST)
+  const taxesAndCharges = Math.round(effectiveItemsTotal * 0.05);
+  const grandTotal = effectiveItemsTotal + taxesAndCharges;
+  const totalRupees = grandTotal;
 
   // Potential points earned on this order
   const rupeesPerPt = loyaltyData?.config?.rupeesPerPoint ?? 10;
@@ -193,7 +249,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ tableLabel = "07", guest
     if (name.includes("(Sourdough)")) return "Sourdough bread";
     if (name.includes("(Extra")) return "Extra Cheese";
     if (name.includes("(Spicy")) return "Spicy Dip";
-    if (cartItem.item.metadata?.notes) return cartItem.item.metadata.notes;
+    if (cartItem.item.metadata?.customer_note) return cartItem.item.metadata.customer_note;
 
     // Realistic defaults matching mockups if no options selected
     if (name.toLowerCase().includes("pour over")) return "No milk";
@@ -205,14 +261,19 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ tableLabel = "07", guest
 
   const handleAddConversationBoard = () => {
     const boardItem: MenuItemWithDetails = {
-      id: "conversation_board",
-      categoryId: "cat_06",
+      id: "item_35",
+      categoryId: "cat_05",
       name: "Conversation Board",
       status: "ACTIVE",
-      description: "Cheese, fruits, nuts & a little something sweet.",
-      pricePaise: 26000,
+      description:
+        "A changing sharing board with smashed chickpea dip, crispy chana, toast, potatoes, pickle, vegetables and seasonal dips.",
+      pricePaise: 32900,
       imageUrl: getFoodImage("conversation board", null),
-      metadata: { dietary: "Vegetarian" },
+      metadata: {
+        dietary: "Vegetarian; vegan adaptable",
+        core_ingredients:
+          "Chickpeas, bread, potatoes, vegetables, pickle, yoghurt/tahini dips",
+      },
     };
     addItem(boardItem, 1);
     setBoardAdded(true);
@@ -230,6 +291,11 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ tableLabel = "07", guest
     const idempotencyKey = cleanPhone
       ? `smol_ord_${cleanPhone}_${crypto.randomUUID()}`
       : `smol_ord_guest_${crypto.randomUUID()}`;
+
+    if (!displayTable) {
+      setErrorMessage("No active table session found. Please scan your table QR code.");
+      return null;
+    }
 
     const orderPayload = items.map((cartItem) => ({
       menu_item_id: cartItem.item.id,
@@ -294,7 +360,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ tableLabel = "07", guest
           metadata: {
             paymentStatus: orderPaymentStatus,
             paymentMethod,
-            transactionId: transactionId || `TXN-${Date.now().toString().slice(-6)}`,
+            transactionId: isCashier ? undefined : (transactionId || `TXN-${Date.now().toString().slice(-6)}`),
             amountPaise: finalTotalPaise,
             itemsCount: items.length,
           },
@@ -396,13 +462,12 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ tableLabel = "07", guest
     }
   };
 
-  const handleTestBypassPayment = async () => {
+  const handleSendOrderToCashier = async () => {
     if (isBypassing) return;
     setIsBypassing(true);
     setErrorMessage(null);
 
     try {
-      const transactionId = `CSH-${Date.now().toString().slice(-6)}`;
       const currentItemsSnapshot = items.map((i) => ({
         name: i.item.name,
         qty: i.qty,
@@ -410,20 +475,17 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ tableLabel = "07", guest
         subtotalRupees: Math.round((i.item.pricePaise / 100) * i.qty),
       }));
 
-      // 1. Create paid & confirmed order in DB
-      const orderRes = await handleProcessPaidOrder("CASHIER", transactionId);
+      // 1. Create order in DB for cashier desk (DRAFT / PENDING)
+      const orderRes = await handleProcessPaidOrder("CASHIER");
       if (!orderRes) {
         setIsBypassing(false);
         return;
       }
 
-      // Order created in PENDING_CONFIRMATION status for cashier desk.
-      // Settle bill will happen when Cashier clicks confirm & collects payment.
-
-      // 3. Clear cart
+      // 2. Clear cart
       clearCart();
 
-      // 4. Trigger celebration modal
+      // 3. Trigger order confirmation modal with PENDING payment status (no fake settlement)
       setCelebrationData({
         orderId: orderRes.orderId,
         orderNo: orderRes.orderNo,
@@ -433,24 +495,17 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ tableLabel = "07", guest
         items: currentItemsSnapshot.length > 0 ? currentItemsSnapshot : [
           { name: "Artisanal Table Order", qty: 1, priceRupees: Math.round(orderRes.totalPaise / 100), subtotalRupees: Math.round(orderRes.totalPaise / 100) }
         ],
-        transactionId,
         appName: "Cashier Desk (Pay at Counter)",
+        paymentStatus: "PENDING",
         onClose: () => {
           setCelebrationData(null);
           closeCart();
-          router.push("/orders");
+          router.push(`/orders/${orderRes.orderId}?t=${orderRes.orderNo}`);
         },
       });
-
-      // Automated fallback redirect after celebration window
-      setTimeout(() => {
-        closeCart();
-        setCelebrationData(null);
-        router.push("/orders");
-      }, 2000);
     } catch (err) {
-      console.error("Test bypass payment failed:", err);
-      setErrorMessage("Payment failed. Please try again.");
+      console.error("Order dispatch to cashier failed:", err);
+      setErrorMessage("Could not send order to cashier. Please try again.");
     } finally {
       setIsBypassing(false);
     }
@@ -518,7 +573,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ tableLabel = "07", guest
               {activeView === "bill" ? "Settle Up" : "Your Table"}
             </h2>
             <p className="font-serif italic text-[11px] text-[#725039] dark:text-[#C9AE8B]">
-              Table {displayTable}{currentGuestName ? ` • ${currentGuestName}` : ""}
+              {displayTable ? `Table ${displayTable}` : "Artisanal Table"}{currentGuestName ? ` • ${currentGuestName}` : ""}
             </p>
           </div>
 
@@ -534,6 +589,26 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ tableLabel = "07", guest
             </button>
           )}
         </div>
+
+        {/* Editing Order Notice Banner */}
+        {editingOrder && (
+          <div className="bg-[#B72E35]/15 dark:bg-[#B72E35]/30 border-b border-[#B72E35]/30 px-4 py-2 flex items-center justify-between text-xs font-mono text-[#B72E35] dark:text-[#FF5B52]">
+            <div className="flex items-center gap-1.5">
+              <span className="font-bold">Editing Order #{editingOrder.orderNo}</span>
+              <span className="text-[10px] opacity-80">(Pending Confirmation)</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                clearCart();
+                closeCart();
+              }}
+              className="text-[11px] underline opacity-90 hover:opacity-100 cursor-pointer"
+            >
+              Cancel Edit
+            </button>
+          </div>
+        )}
 
         {/* Body Content */}
         <div className="flex-1 overflow-y-auto pb-24">
@@ -564,7 +639,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ tableLabel = "07", guest
                   {orderSuccess.verificationCode || "4821"}
                 </span>
                 <p className="text-[10px] font-mono text-[#725039] mt-1">
-                  Table {displayTable}{currentGuestName ? ` • Guest: ${currentGuestName}` : " • Instant Verification"}
+                  {displayTable ? `Table ${displayTable}` : "Artisanal Table"}{currentGuestName ? ` • Guest: ${currentGuestName}` : " • Instant Verification"}
                 </p>
               </div>
 
@@ -663,6 +738,17 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ tableLabel = "07", guest
                         <span>-₹{pointsDiscountRupees}</span>
                       </div>
                     )}
+
+                    {/* Taxes & Charges Row (5% Restaurant GST: 2.5% CGST + 2.5% SGST) */}
+                    <div className="flex items-center justify-between text-[#725039] dark:text-[#C9AE8B]">
+                      <span className="flex items-center gap-1">
+                        <span>Taxes (GST 5%)</span>
+                        <span className="text-[10px] text-[#725039]/70 dark:text-[#C9AE8B]/70 font-sans">
+                          (CGST 2.5% + SGST 2.5%)
+                        </span>
+                      </span>
+                      <span>₹{taxesAndCharges}</span>
+                    </div>
                   </div>
 
                   {/* Points Earning Notice */}
@@ -754,8 +840,8 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ tableLabel = "07", guest
                   {/* Primary CTA Dispatch Button */}
                   <button
                     type="button"
-                    onClick={handleTestBypassPayment}
-                    disabled={isBypassing}
+                    onClick={editingOrder ? handleUpdatePendingOrder : handleSendOrderToCashier}
+                    disabled={isBypassing || isUpdatingOrder}
                     className="group relative w-full mt-3 overflow-hidden rounded-2xl bg-gradient-to-r from-[#B72E35] via-[#A0242B] to-[#7D1217] dark:from-[#9333EA] dark:via-[#7E22CE] dark:to-[#581C87] border border-transparent dark:border-purple-400/40 p-4 text-left text-white shadow-[0_4px_16px_rgba(183,46,53,0.35)] dark:shadow-[0_4px_24px_rgba(126,34,206,0.45)] hover:shadow-[0_6px_22px_rgba(183,46,53,0.5)] dark:hover:shadow-[0_6px_30px_rgba(168,85,247,0.6)] hover:scale-[1.01] active:scale-[0.99] transition-all duration-200 cursor-pointer disabled:opacity-60"
                   >
                     {/* Ambient shine overlay on hover */}
@@ -764,7 +850,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ tableLabel = "07", guest
                     <div className="relative z-10 flex items-center justify-between gap-3">
                       <div className="flex items-center gap-3.5">
                         <div className="w-11 h-11 rounded-xl bg-white/15 dark:bg-white/20 border border-white/25 dark:border-purple-300/40 flex items-center justify-center shrink-0 shadow-xs backdrop-blur-xs">
-                          {isBypassing ? (
+                          {isBypassing || isUpdatingOrder ? (
                             <Loader2 className="w-5 h-5 text-white animate-spin" />
                           ) : (
                             <Send className="w-5 h-5 text-white transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
@@ -772,10 +858,18 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ tableLabel = "07", guest
                         </div>
                         <div>
                           <h3 className="font-serif font-bold text-[16px] sm:text-[17px] text-white leading-tight">
-                            {isBypassing ? "Sending Order to Cashier..." : "Send Order to Cashier"}
+                            {editingOrder
+                              ? isUpdatingOrder
+                                ? "Updating Order..."
+                                : `Update Order #${editingOrder.orderNo}`
+                              : isBypassing
+                              ? "Sending Order to Cashier..."
+                              : "Send Order to Cashier"}
                           </h3>
                           <p className="font-sans text-[12px] text-[#F3E7D3]/90 dark:text-purple-100/90 mt-0.5 leading-snug">
-                            Instant live dispatch to Cashier Counter &amp; Kitchen
+                            {editingOrder
+                              ? "Saves your revised items directly to this pending order"
+                              : "Instant live dispatch to Cashier Counter & Kitchen"}
                           </p>
                         </div>
                       </div>
@@ -995,8 +1089,8 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ tableLabel = "07", guest
                         <h4 className="font-serif font-bold text-[13.5px] text-[#241F1C] dark:text-[#FAF4EB] leading-snug truncate">
                           Conversation Board
                         </h4>
-                        <p className="font-mono text-[10.5px] text-[#374438] dark:text-[#C9AE8B] leading-tight mt-0.5">
-                          Cheese, fruits, nuts &amp; a little something sweet.
+                        <p className="font-mono text-[10.5px] text-[#374438] dark:text-[#C9AE8B] leading-tight mt-0.5 line-clamp-2">
+                          A changing sharing board with smashed chickpea dip, crispy chana, toast, potatoes, pickle &amp; seasonal dips.
                         </p>
                       </div>
 
@@ -1004,10 +1098,10 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ tableLabel = "07", guest
                       <div className="flex flex-col items-end gap-1.5 shrink-0 pl-1">
                         <div className="flex items-center gap-1 font-serif text-right">
                           <span className="line-through font-mono text-[11px] text-[#725039]/70 dark:text-[#C9AE8B]/60">
-                            ₹350
+                            ₹349
                           </span>
                           <span className="font-serif font-bold text-[13.5px] text-[#241F1C] dark:text-[#FAF4EB]">
-                            ₹260
+                            ₹329
                           </span>
                         </div>
 
@@ -1015,13 +1109,13 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ tableLabel = "07", guest
                           type="button"
                           onClick={handleAddConversationBoard}
                           className={`w-9 h-9 rounded-full border border-[#241F1C] dark:border-white/20 flex items-center justify-center transition-all duration-200 active:scale-90 shadow-xs cursor-pointer ${
-                            boardAdded || items.some((i) => i.item.id === "conversation_board")
+                            boardAdded || items.some((i) => i.item.id === "item_35" || i.item.name.toLowerCase().includes("conversation board"))
                               ? "bg-[#2E5550] text-[#F3E7D3] border-[#241F1C]"
                               : "bg-[#F2C84B] text-[#241F1C] hover:bg-[#DEB63E]"
                           }`}
                           aria-label="Add Conversation Board"
                         >
-                          {boardAdded || items.some((i) => i.item.id === "conversation_board") ? (
+                          {boardAdded || items.some((i) => i.item.id === "item_35" || i.item.name.toLowerCase().includes("conversation board")) ? (
                             <Check className="w-4 h-4 stroke-[2.5]" />
                           ) : (
                             <Plus className="w-4 h-4 stroke-[2.5]" />
@@ -1043,17 +1137,37 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ tableLabel = "07", guest
               {totalCount} {totalCount === 1 ? "item" : "items"} &nbsp;•&nbsp; Total ₹{totalRupees}
             </p>
 
-            <button
-              type="button"
-              onClick={() => setActiveView("bill")}
-              className="group relative overflow-hidden w-full block rounded-full bg-gradient-to-b from-[#E03A43]/70 via-[#B72E35]/80 to-[#7D1217]/90 dark:from-[#A855F7]/70 dark:via-[#7E22CE]/80 dark:to-[#4C1D95]/90 text-white font-serif text-[17.5px] font-medium py-3.5 backdrop-blur-[16px] border border-white/55 dark:border-purple-300/40 shadow-[0_8px_26px_rgba(183,46,53,0.42),inset_0_1.5px_1.5px_rgba(255,255,255,0.85),inset_0_-1.5px_2px_rgba(0,0,0,0.4),inset_0_0_14px_rgba(255,140,140,0.35)] dark:shadow-[0_8px_28px_rgba(126,34,206,0.5),inset_0_1.5px_1.5px_rgba(255,255,255,0.85),inset_0_-1.5px_2px_rgba(0,0,0,0.5),inset_0_0_16px_rgba(192,132,252,0.45)] active:scale-[0.99] transition duration-150 cursor-pointer text-center"
-            >
-              {/* Curved Specular Glass Gloss Reflection */}
-              <span className="absolute inset-x-4 top-1 h-[42%] rounded-full bg-gradient-to-b from-white/50 via-white/15 to-transparent pointer-events-none opacity-90" />
-              <span className="relative z-10 drop-shadow-[0_1.5px_2.5px_rgba(0,0,0,0.35)]">
-                View Bill
-              </span>
-            </button>
+            {editingOrder ? (
+              <button
+                type="button"
+                disabled={isUpdatingOrder}
+                onClick={handleUpdatePendingOrder}
+                className="group relative overflow-hidden w-full block rounded-full bg-gradient-to-b from-[#E03A43]/70 via-[#B72E35]/80 to-[#7D1217]/90 dark:from-[#A855F7]/70 dark:via-[#7E22CE]/80 dark:to-[#4C1D95]/90 text-white font-serif text-[17.5px] font-medium py-3.5 backdrop-blur-[16px] border border-white/55 dark:border-purple-300/40 shadow-[0_8px_26px_rgba(183,46,53,0.42)] active:scale-[0.99] transition duration-150 cursor-pointer text-center"
+              >
+                <span className="relative z-10 flex items-center justify-center gap-2 drop-shadow-[0_1.5px_2.5px_rgba(0,0,0,0.35)]">
+                  {isUpdatingOrder ? (
+                    <>
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                      <span>Updating Order #{editingOrder.orderNo}...</span>
+                    </>
+                  ) : (
+                    <span>Update Order #{editingOrder.orderNo} • ₹{totalRupees}</span>
+                  )}
+                </span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setActiveView("bill")}
+                className="group relative overflow-hidden w-full block rounded-full bg-gradient-to-b from-[#E03A43]/70 via-[#B72E35]/80 to-[#7D1217]/90 dark:from-[#A855F7]/70 dark:via-[#7E22CE]/80 dark:to-[#4C1D95]/90 text-white font-serif text-[17.5px] font-medium py-3.5 backdrop-blur-[16px] border border-white/55 dark:border-purple-300/40 shadow-[0_8px_26px_rgba(183,46,53,0.42),inset_0_1.5px_1.5px_rgba(255,255,255,0.85),inset_0_-1.5px_2px_rgba(0,0,0,0.4),inset_0_0_14px_rgba(255,140,140,0.35)] dark:shadow-[0_8px_28px_rgba(126,34,206,0.5),inset_0_1.5px_1.5px_rgba(255,255,255,0.85),inset_0_-1.5px_2px_rgba(0,0,0,0.5),inset_0_0_16px_rgba(192,132,252,0.45)] active:scale-[0.99] transition duration-150 cursor-pointer text-center"
+              >
+                {/* Curved Specular Glass Gloss Reflection */}
+                <span className="absolute inset-x-4 top-1 h-[42%] rounded-full bg-gradient-to-b from-white/50 via-white/15 to-transparent pointer-events-none opacity-90" />
+                <span className="relative z-10 drop-shadow-[0_1.5px_2.5px_rgba(0,0,0,0.35)]">
+                  View Bill
+                </span>
+              </button>
+            )}
           </div>
         )}
       </div>

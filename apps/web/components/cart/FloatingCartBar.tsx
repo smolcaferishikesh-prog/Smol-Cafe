@@ -4,7 +4,7 @@ import React from "react";
 import { useCart } from "@/context/CartContext";
 
 export const FloatingCartBar: React.FC = () => {
-  const { totalCount, subtotalPaise, openCart } = useCart();
+  const { totalCount, subtotalPaise, openCart, editingOrder } = useCart();
   const [guestName, setGuestName] = React.useState("");
 
   React.useEffect(() => {
@@ -16,7 +16,9 @@ export const FloatingCartBar: React.FC = () => {
 
   if (totalCount === 0) return null;
 
-  const totalRupees = Math.round(subtotalPaise / 100);
+  // Match CartDrawer & server 5% restaurant GST
+  const taxPaise = Math.round(subtotalPaise * 0.05);
+  const totalRupees = Math.round((subtotalPaise + taxPaise) / 100);
 
   return (
     <aside
@@ -38,7 +40,7 @@ export const FloatingCartBar: React.FC = () => {
             </div>
             <div className="drop-shadow-[0_1px_2px_rgba(0,0,0,0.35)]">
               <span className="text-[9.5px] text-white/85 font-mono uppercase tracking-wider block leading-none">
-                {guestName ? `${guestName}'s Order` : "Your Order"}
+                {editingOrder ? `Order #${editingOrder.orderNo}` : guestName ? `${guestName}'s Order` : "Your Order"}
               </span>
               <p className="font-serif text-base font-bold tracking-tight leading-tight mt-0.5">
                 ₹{totalRupees}
@@ -51,7 +53,7 @@ export const FloatingCartBar: React.FC = () => {
             onClick={openCart}
             className="relative z-10 flex items-center gap-1.5 rounded-xl bg-white/20 hover:bg-white/30 dark:bg-white/15 dark:hover:bg-white/25 border border-white/30 backdrop-blur-md px-3.5 py-1.5 font-serif text-xs font-bold text-white shadow-[inset_0_1px_1px_rgba(255,255,255,0.5)] transition active:scale-95 touch-manipulation cursor-pointer drop-shadow-[0_1px_2px_rgba(0,0,0,0.25)]"
           >
-            <span>View Cart</span>
+            <span>{editingOrder ? "Update Order" : "View Cart"}</span>
             <span aria-hidden="true">→</span>
           </button>
         </div>

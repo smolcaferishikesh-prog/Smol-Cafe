@@ -2,6 +2,7 @@ import { getTableSessionCookie } from "@/lib/session";
 import { resolveQrToken } from "@/app/t/actions";
 import { getMenuCatalog } from "@/lib/queries/menu";
 import { MenuClientView } from "@/components/menu/MenuClientView";
+import { fetchCustomerPendingOrderForEditAction } from "@/app/menu/actions";
 
 export const metadata = {
   title: "Smol Menu — smol café",
@@ -10,12 +11,13 @@ export const metadata = {
 };
 
 interface SmolMenuPageProps {
-  searchParams: Promise<{ table?: string; t?: string }>;
+  searchParams: Promise<{ table?: string; t?: string; editOrder?: string }>;
 }
 
 export default async function SmolMenuPage({ searchParams }: SmolMenuPageProps) {
   const params = await searchParams;
   const tableParam = params.table || params.t;
+  const editOrderId = params.editOrder;
 
   let session = await getTableSessionCookie();
 
@@ -36,14 +38,24 @@ export default async function SmolMenuPage({ searchParams }: SmolMenuPageProps) 
     }
   }
 
+  // Fetch pending order for customer editing flow
+  let initialEditingOrder = null;
+  if (editOrderId) {
+    const editRes = await fetchCustomerPendingOrderForEditAction(editOrderId);
+    if (editRes.success && editRes.order) {
+      initialEditingOrder = editRes.order;
+    }
+  }
+
   const categories = await getMenuCatalog();
 
   return (
     <MenuClientView
       categories={categories}
-      tableLabel={session?.tableLabel}
+      tableLabel={initialEditingOrder?.tableLabel || session?.tableLabel}
       locationName={session?.locationName || "Rishikesh"}
       guestName={session?.guestName}
+      initialEditingOrder={initialEditingOrder}
     />
   );
 }

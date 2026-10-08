@@ -358,6 +358,14 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
   // Dynamic Timeframe Data Sets strictly computed from real customer orders
   const getTimeframeData = () => {
     const validOrders = orders.filter((o) => o.status !== "CANCELLED" && o.status !== "REJECTED");
+    const isOrderPaid = (o: AdminOrderRecord) =>
+      o.status !== "CANCELLED" &&
+      o.status !== "REJECTED" &&
+      Boolean(o.paymentStatus?.startsWith("PAID") || o.paymentMethod === "UPI" || o.paymentMethod === "CASH" || o.paymentMethod === "CARD") &&
+      o.paymentMethod !== "COMPLIMENTARY" &&
+      o.paymentMethod !== "PENDING" &&
+      o.paymentStatus !== "UNPAID (PENDING)" &&
+      o.paymentStatus !== "COMPLIMENTARY";
 
     if (timeframe === "WEEKLY") {
       const days = [
@@ -376,7 +384,7 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
           return dt.getDay() === d.dayIdx;
         });
         const rev = dayOrders
-          .filter((o) => o.status !== "CANCELLED" && o.status !== "REJECTED")
+          .filter(isOrderPaid)
           .reduce((sum, o) => sum + (o.totalRupees || 0), 0);
         return {
           hour: d.label,
@@ -386,7 +394,7 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
       });
 
       const totalOrdersCount = orders.length;
-      const totalRev = validOrders.reduce((sum, o) => sum + (o.totalRupees || 0), 0);
+      const totalRev = orders.filter(isOrderPaid).reduce((sum, o) => sum + (o.totalRupees || 0), 0);
       const maxRev = Math.max(...buckets.map((b) => b.revenue), 100);
 
       const pts = buckets.map((b, i) => ({
@@ -449,7 +457,7 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
           return dom >= w.min && dom <= w.max;
         });
         const rev = weekOrders
-          .filter((o) => o.status !== "CANCELLED" && o.status !== "REJECTED")
+          .filter(isOrderPaid)
           .reduce((sum, o) => sum + (o.totalRupees || 0), 0);
         return {
           hour: w.label,
@@ -459,7 +467,7 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
       });
 
       const totalOrdersCount = orders.length;
-      const totalRev = validOrders.reduce((sum, o) => sum + (o.totalRupees || 0), 0);
+      const totalRev = orders.filter(isOrderPaid).reduce((sum, o) => sum + (o.totalRupees || 0), 0);
       const maxRev = Math.max(...buckets.map((b) => b.revenue), 100);
 
       const pts = buckets.map((b, i) => ({
@@ -515,7 +523,7 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
           return dt.getMonth() === mIdx;
         });
         const rev = monthOrders
-          .filter((o) => o.status !== "CANCELLED" && o.status !== "REJECTED")
+          .filter(isOrderPaid)
           .reduce((sum, o) => sum + (o.totalRupees || 0), 0);
         return {
           hour: mName,
@@ -525,7 +533,7 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
       });
 
       const totalOrdersCount = orders.length;
-      const totalRev = validOrders.reduce((sum, o) => sum + (o.totalRupees || 0), 0);
+      const totalRev = orders.filter(isOrderPaid).reduce((sum, o) => sum + (o.totalRupees || 0), 0);
       const maxRev = Math.max(...buckets.map((b) => b.revenue), 100);
 
       const pts = buckets.map((b, i) => ({
@@ -591,7 +599,7 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
         return h === slot.h;
       });
       const rev = slotOrders
-        .filter((o) => o.status !== "CANCELLED" && o.status !== "REJECTED")
+        .filter(isOrderPaid)
         .reduce((sum, o) => sum + (o.totalRupees || 0), 0);
       return {
         hour: slot.label,
@@ -601,7 +609,7 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
     });
 
     const totalOrdersCount = orders.length;
-    const totalRev = validOrders.reduce((sum, o) => sum + (o.totalRupees || 0), 0);
+    const totalRev = orders.filter(isOrderPaid).reduce((sum, o) => sum + (o.totalRupees || 0), 0);
     const maxRev = Math.max(...buckets.map((b) => b.revenue), 100);
 
     const pts = buckets.map((b, i) => ({
@@ -765,7 +773,7 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
     { id: "overview", label: "Overview", icon: BarChart3 },
     { id: "orders", label: "Orders", icon: ShoppingBag, badge: `${orders.length}` },
     { id: "tables", label: "Tables", icon: Armchair, badge: `${overviewData?.kpis?.totalTablesCount || 14}` },
-    { id: "menu", label: "Menu", icon: Coffee, badge: "59" },
+    { id: "menu", label: "Menu", icon: Coffee, badge: `${overviewData?.menuItems?.length || 65}` },
     { id: "inventory", label: "Grocery & Stock", icon: Flame, badge: procurementData?.radarData?.criticalCount ? `${procurementData.radarData.criticalCount} Low` : undefined },
     { id: "customers", label: "Customers", icon: Users },
     { id: "staff", label: "Staff", icon: Shield },
@@ -1076,8 +1084,8 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
                 },
                 {
                   label: "ACTIVE TABLES",
-                  value: `${overviewData?.kpis.activeTablesCount ?? 1} / ${overviewData?.kpis?.totalTablesCount || 14}`,
-                  trend: `${Math.round(((overviewData?.kpis.activeTablesCount ?? 1) / (overviewData?.kpis?.totalTablesCount || 14)) * 100)}% capacity`,
+                  value: `${overviewData?.kpis.activeTablesCount ?? 0} / ${overviewData?.kpis?.totalTablesCount || 1}`,
+                  trend: `${Math.round(((overviewData?.kpis.activeTablesCount ?? 0) / (overviewData?.kpis?.totalTablesCount || 1)) * 100)}% capacity`,
                   color: "#ED8936",
                 },
                 {
@@ -2018,7 +2026,13 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
                     </div>
 
                     <div className="flex items-center gap-1.5 shrink-0">
-                      <span className="rounded-md bg-emerald-100 text-emerald-800 border border-emerald-300 dark:bg-emerald-950 dark:text-emerald-400 dark:border-emerald-800 px-2 py-0.5 text-[10px] font-mono font-bold">
+                      <span className={`rounded-md border px-2 py-0.5 text-[10px] font-mono font-bold ${
+                        t.st === "PENDING" || t.st === "UNPAID"
+                          ? "bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-950 dark:text-amber-400 dark:border-amber-800"
+                          : t.st === "COMPLIMENTARY"
+                          ? "bg-purple-100 text-purple-800 border-purple-300 dark:bg-purple-950 dark:text-purple-400 dark:border-purple-800"
+                          : "bg-emerald-100 text-emerald-800 border-emerald-300 dark:bg-emerald-950 dark:text-emerald-400 dark:border-emerald-800"
+                      }`}>
                         {t.st}
                       </span>
                       {t.time && (
@@ -2058,7 +2072,13 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
                         <td className="p-3.5 font-serif font-bold text-[#241F1C] dark:text-white">{t.amt}</td>
                         <td className="p-3.5 text-[#725039] dark:text-stone-400">{t.ord}</td>
                         <td className="p-3.5">
-                          <span className="rounded-md bg-emerald-100 text-emerald-800 border border-emerald-300 dark:bg-emerald-950 dark:text-emerald-400 dark:border-emerald-800 px-2 py-0.5 text-[10px] font-bold">
+                          <span className={`rounded-md border px-2 py-0.5 text-[10px] font-bold ${
+                            t.st === "PENDING" || t.st === "UNPAID"
+                              ? "bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-950 dark:text-amber-400 dark:border-amber-800"
+                              : t.st === "COMPLIMENTARY"
+                              ? "bg-purple-100 text-purple-800 border-purple-300 dark:bg-purple-950 dark:text-purple-400 dark:border-purple-800"
+                              : "bg-emerald-100 text-emerald-800 border-emerald-300 dark:bg-emerald-950 dark:text-emerald-400 dark:border-emerald-800"
+                          }`}>
                             {t.st}
                           </span>
                         </td>
@@ -2449,26 +2469,48 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
               <div className="rounded-2xl border border-[#C9AE8B]/40 dark:border-stone-800 bg-[#FAF4EB] dark:bg-[#1A1715] p-4 space-y-1 shadow-xs transition-colors">
                 <span className="font-mono text-[9px] uppercase font-bold text-[#725039] dark:text-stone-400">AVG TICKET VALUE</span>
                 <div className="font-serif text-2xl font-bold text-[#B72E35] dark:text-[#F2C84B]">
-                  ₹{overviewData?.kpis.avgOrderRupees ?? 384}
+                  ₹{overviewData?.kpis.avgOrderRupees ?? 0}
                 </div>
-                <span className="font-mono text-[10px] text-emerald-600 dark:text-emerald-400">+8.4% vs last week</span>
+                <span className="font-mono text-[10px] text-stone-500">
+                  {overviewData?.analyticsMetrics?.avgTicketVsPriorWeekPercent != null
+                    ? `${overviewData.analyticsMetrics.avgTicketVsPriorWeekPercent >= 0 ? "+" : ""}${overviewData.analyticsMetrics.avgTicketVsPriorWeekPercent}% vs prior week`
+                    : "— Baseline period"}
+                </span>
               </div>
               <div className="rounded-2xl border border-[#C9AE8B]/40 dark:border-stone-800 bg-[#FAF4EB] dark:bg-[#1A1715] p-4 space-y-1 shadow-xs transition-colors">
                 <span className="font-mono text-[9px] uppercase font-bold text-[#725039] dark:text-stone-400">TABLE TURN DURATION</span>
-                <div className="font-serif text-2xl font-bold text-[#319795] dark:text-[#75AFA7]">38 mins</div>
-                <span className="font-mono text-[10px] text-[#725039] dark:text-stone-400">Optimal cafe rhythm</span>
+                <div className="font-serif text-2xl font-bold text-[#319795] dark:text-[#75AFA7]">
+                  {overviewData?.analyticsMetrics?.tableTurnDurationMinutes != null
+                    ? `${overviewData.analyticsMetrics.tableTurnDurationMinutes} mins`
+                    : "—"}
+                </div>
+                <span className="font-mono text-[10px] text-[#725039] dark:text-stone-400">
+                  {overviewData?.analyticsMetrics?.tableTurnDurationMinutes != null
+                    ? "Derived from closed sessions"
+                    : "No closed sessions yet"}
+                </span>
               </div>
               <div className="rounded-2xl border border-[#C9AE8B]/40 dark:border-stone-800 bg-[#FAF4EB] dark:bg-[#1A1715] p-4 space-y-1 shadow-xs transition-colors">
                 <span className="font-mono text-[9px] uppercase font-bold text-[#725039] dark:text-stone-400">PEAK ORDER RATE</span>
                 <div className="font-serif text-2xl font-bold text-[#B72E35]">
-                  {Math.max(...(overviewData?.hourlyTrend || []).map((b) => b.orders), 1)} tickets/hr
+                  {Math.max(...(overviewData?.hourlyTrend || []).map((b) => b.orders), 0)} tickets/hr
                 </div>
-                <span className="font-mono text-[10px] text-amber-600 dark:text-amber-400">4:00 PM – 6:00 PM</span>
+                <span className="font-mono text-[10px] text-amber-600 dark:text-amber-400">
+                  {overviewData?.analyticsMetrics?.peakHourWindow || "No peak window yet"}
+                </span>
               </div>
               <div className="rounded-2xl border border-[#C9AE8B]/40 dark:border-stone-800 bg-[#FAF4EB] dark:bg-[#1A1715] p-4 space-y-1 shadow-xs transition-colors">
                 <span className="font-mono text-[9px] uppercase font-bold text-[#725039] dark:text-stone-400">RE-ORDER FREQUENCY</span>
-                <div className="font-serif text-2xl font-bold text-[#D97706] dark:text-[#C9AE8B]">34.2%</div>
-                <span className="font-mono text-[10px] text-[#725039] dark:text-stone-400">Dessert &amp; second coffee</span>
+                <div className="font-serif text-2xl font-bold text-[#D97706] dark:text-[#C9AE8B]">
+                  {overviewData?.analyticsMetrics?.reorderRatePercent != null
+                    ? `${overviewData.analyticsMetrics.reorderRatePercent}%`
+                    : "—"}
+                </div>
+                <span className="font-mono text-[10px] text-[#725039] dark:text-stone-400">
+                  {overviewData?.analyticsMetrics?.reorderRatePercent != null
+                    ? "Dessert & second coffee reorders"
+                    : "Single-order sessions"}
+                </span>
               </div>
             </div>
 
@@ -2749,10 +2791,20 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
               {/* Chart 4: Table Utilization & Payment Methods (Live customer state) */}
               <div className="rounded-3xl border border-[#C9AE8B]/40 dark:border-stone-800 bg-[#FAF4EB] dark:bg-[#1A1715] p-5 shadow-xs space-y-4 transition-colors">
                 {(() => {
-                  const activeTableCount = Array.from({ length: 12 }).filter((_, i) => {
-                    const tableNum = (i + 1).toString().padStart(2, "0");
+                  const actualTables =
+                    overviewData?.tables && overviewData.tables.length > 0
+                      ? overviewData.tables
+                      : [{ id: "t-01", label: "01", seats: 2, isActive: true }];
+
+                  const activeTableCount = actualTables.filter((t) => {
                     return orders.some(
-                      (o) => o.tableLabel === tableNum && o.status !== "COMPLETED" && o.status !== "CANCELLED" && o.status !== "REJECTED"
+                      (o) =>
+                        (o.tableLabel === t.label ||
+                          o.tableLabel === t.label.padStart(2, "0") ||
+                          o.tableLabel.toLowerCase() === t.label.toLowerCase()) &&
+                        o.status !== "COMPLETED" &&
+                        o.status !== "CANCELLED" &&
+                        o.status !== "REJECTED"
                     );
                   }).length;
 
@@ -2761,25 +2813,36 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
                       <div className="flex items-center justify-between mb-2">
                         <h3 className="font-serif text-base font-bold text-[#241F1C] dark:text-white">Table Utilization</h3>
                         <span className="font-mono text-xs text-[#B72E35] dark:text-[#F2C84B]">
-                          {activeTableCount} / 12 Active ({Math.round((activeTableCount / 12) * 100)}%)
+                          {activeTableCount} / {actualTables.length} Active ({actualTables.length > 0 ? Math.round((activeTableCount / actualTables.length) * 100) : 0}%)
                         </span>
                       </div>
-                      <div className="grid grid-cols-6 gap-2 pt-1">
-                        {Array.from({ length: 12 }, (_, i) => {
-                          const tableNum = (i + 1).toString().padStart(2, "0");
+                      <div className={`grid gap-2 pt-1 ${actualTables.length <= 4 ? "grid-cols-2 sm:grid-cols-4" : actualTables.length <= 8 ? "grid-cols-4" : "grid-cols-6"}`}>
+                        {actualTables.map((t) => {
                           const isOccupied = orders.some(
-                            (o) => o.tableLabel === tableNum && o.status !== "COMPLETED" && o.status !== "CANCELLED" && o.status !== "REJECTED"
+                            (o) =>
+                              (o.tableLabel === t.label ||
+                                o.tableLabel === t.label.padStart(2, "0") ||
+                                o.tableLabel.toLowerCase() === t.label.toLowerCase()) &&
+                              o.status !== "COMPLETED" &&
+                              o.status !== "CANCELLED" &&
+                              o.status !== "REJECTED"
                           );
+                          const displayLabel = t.label.toUpperCase().startsWith("T")
+                            ? t.label.toUpperCase()
+                            : isNaN(Number(t.label))
+                            ? t.label
+                            : `T${t.label}`;
+
                           return (
                             <div
-                              key={tableNum}
+                              key={t.id}
                               className={`flex flex-col items-center justify-center p-2 rounded-xl border text-center font-mono text-xs ${
                                 isOccupied
                                   ? "border-[#B72E35] bg-[#B72E35]/10 dark:bg-[#B72E35]/20 text-[#B72E35] dark:text-[#F2C84B] font-bold"
                                   : "border-[#C9AE8B]/30 dark:border-stone-800 bg-[#F3E7D3] dark:bg-stone-900 text-[#725039] dark:text-stone-500"
                               }`}
                             >
-                              <span className="font-bold">T{tableNum}</span>
+                              <span className="font-bold truncate max-w-full">{displayLabel}</span>
                               <span className="text-[9px]">{isOccupied ? "Busy" : "Free"}</span>
                             </div>
                           );

@@ -205,6 +205,49 @@ const DEFAULT_VENDORS: Vendor[] = [
 export async function fetchInventoryRadarAction(): Promise<InventoryRadarData> {
   const store = getInventoryStore();
 
+  // Hydrate thresholds & costs from persistent ingredients database if available
+  try {
+    const supabase = createAdminClient();
+    const { data: dbIngredients } = await supabase.from("ingredients").select("*");
+    if (dbIngredients && Array.isArray(dbIngredients) && dbIngredients.length > 0) {
+      for (const row of dbIngredients as Record<string, unknown>[]) {
+        const id = String(row.id || "");
+        const rawMin = row.min_threshold ?? row.reorder_level;
+        const rawCost = row.cost_per_unit_paise ?? row.unit_cost_paise;
+        const name = String(row.name || "").toLowerCase();
+
+        for (const meta of DEFAULT_INGREDIENTS_RADAR) {
+          const isMatch =
+            meta.id === id ||
+            (id && id.toLowerCase() === meta.id.toLowerCase()) ||
+            name === meta.name.toLowerCase() ||
+            (meta.id === "ing-espresso" && (name.includes("espresso") || name.includes("arabica"))) ||
+            (meta.id === "ing-milk" && name.includes("milk")) ||
+            (meta.id === "ing-tea" && name.includes("tea")) ||
+            (meta.id === "ing-butter" && name.includes("butter")) ||
+            (meta.id === "ing-sourdough" && (name.includes("sourdough") || name.includes("bun")));
+
+          if (isMatch) {
+            const current = store.stockBalances[meta.id] || {
+              currentStock: 10,
+              minThreshold: 5,
+              costPerUnitPaise: 50000,
+            };
+            if (rawMin !== undefined && rawMin !== null && !isNaN(Number(rawMin))) {
+              current.minThreshold = Number(rawMin);
+            }
+            if (rawCost !== undefined && rawCost !== null && !isNaN(Number(rawCost))) {
+              current.costPerUnitPaise = Number(rawCost);
+            }
+            store.stockBalances[meta.id] = current;
+          }
+        }
+      }
+    }
+  } catch (err) {
+    // Non-fatal if Supabase query fails; fall back to store values
+  }
+
   let criticalCount = 0;
   let lowStockCount = 0;
   let healthyCount = 0;
@@ -552,7 +595,7 @@ export async function updateIngredientThresholdAction(input: {
   ingredientId: string;
   minThreshold: number;
   costPerUnitPaise?: number;
-}): Promise<{ success: boolean; message?: string }> {
+}): Promise<{ success: boolean; updatedThreshold?: number; message?: string }> {
   const auth = await requireStaffAuth(["admin", "super_admin", "chef"]);
   if (!auth.authorized) {
     return { success: false, message: auth.message || "Unauthorized." };
@@ -565,25 +608,70 @@ export async function updateIngredientThresholdAction(input: {
     costPerUnitPaise: 50000,
   };
 
+  const cleanThreshold = Math.max(0.01, Number(Number(input.minThreshold).toFixed(2)));
+  const cleanCost =
+    input.costPerUnitPaise !== undefined
+      ? Math.max(0, Math.round(input.costPerUnitPaise))
+      : current.costPerUnitPaise;
+
   store.stockBalances[input.ingredientId] = {
     ...current,
-    minThreshold: Math.max(0.1, input.minThreshold),
-    costPerUnitPaise: input.costPerUnitPaise !== undefined ? input.costPerUnitPaise : current.costPerUnitPaise,
+    minThreshold: cleanThreshold,
+    costPerUnitPaise: cleanCost,
   };
+
+  // Persist directly into Supabase ingredients table
+  try {
+    const supabase = createAdminClient();
+    const payload = {
+      min_threshold: cleanThreshold,
+      reorder_level: cleanThreshold,
+      cost_per_unit_paise: cleanCost,
+      unit_cost_paise: cleanCost,
+      updated_at: new Date().toISOString(),
+    };
+
+    // 1. Direct ID match
+    await supabase.from("ingredients").update(payload).eq("id", input.ingredientId);
+
+    // 2. Select matching ingredients by name or keyword and update by id
+    const { data: matchedRows } = await supabase.from("ingredients").select("id, name");
+    if (matchedRows && Array.isArray(matchedRows)) {
+      for (const row of matchedRows as Record<string, unknown>[]) {
+        const id = String(row.id || "");
+        const name = String(row.name || "").toLowerCase();
+        const shouldUpdate =
+          id === input.ingredientId ||
+          (input.ingredientId === "ing-espresso" && (name.includes("espresso") || name.includes("arabica"))) ||
+          (input.ingredientId === "ing-milk" && name.includes("milk")) ||
+          (input.ingredientId === "ing-tea" && name.includes("tea")) ||
+          (input.ingredientId === "ing-butter" && name.includes("butter")) ||
+          (input.ingredientId === "ing-sourdough" && (name.includes("sourdough") || name.includes("bun")));
+
+        if (shouldUpdate && id !== input.ingredientId) {
+          await supabase.from("ingredients").update(payload).eq("id", id);
+        }
+      }
+    }
+  } catch (err) {
+    console.warn("Could not persist threshold to database:", err);
+  }
 
   broadcastSyncEvent({
     type: "INVENTORY_UPDATED",
     metadata: {
       action: "UPDATE_THRESHOLD",
       ingredientId: input.ingredientId,
-      minThreshold: input.minThreshold,
+      minThreshold: cleanThreshold,
+      costPerUnitPaise: cleanCost,
     },
     timestamp: Date.now(),
   });
 
   return {
     success: true,
-    message: `Safety threshold updated to ${input.minThreshold}.`,
+    updatedThreshold: cleanThreshold,
+    message: `Safety threshold updated to ${cleanThreshold}.`,
   };
 }
 

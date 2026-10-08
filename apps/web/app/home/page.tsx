@@ -11,7 +11,7 @@ export default async function HomePage() {
 
   return (
     <CustomerHomeClientView
-      tableLabel={session?.tableLabel || "01"}
+      tableLabel={session?.tableLabel}
       locationName={session?.locationName || "Rishikesh"}
       guestName={session?.guestName}
       guestPhone={session?.guestPhone}

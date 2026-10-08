@@ -301,18 +301,19 @@ export const BaristaBoardView: React.FC<BaristaBoardViewProps> = ({ initialOrder
     const unsubscribe = subscribeToSyncEvents((event) => {
       // Ignore orders awaiting cashier approval in Barista Desk
       if (
-        event.type === "ORDER_PENDING_CASHIER" ||
-        event.type === "ORDER_PLACED" ||
-        event.status === "PENDING_CONFIRMATION" ||
-        event.status === "SUBMITTED" ||
-        event.status === "DRAFT"
+        event.type !== "ORDER_CONFIRMED" &&
+        (event.type === "ORDER_PENDING_CASHIER" ||
+          event.type === "ORDER_PLACED" ||
+          event.status === "PENDING_CONFIRMATION" ||
+          event.status === "SUBMITTED" ||
+          event.status === "DRAFT")
       ) {
         return;
       }
       // If confirmed specifically for Kitchen only or no beverage items, barista ignores
       if (
         event.type === "ORDER_CONFIRMED" &&
-        (event.metadata?.stationTarget === "KITCHEN" || event.metadata?.hasBeverageItems === false)
+        (event.metadata?.stationTarget === "KITCHEN" || event.station === "KITCHEN" || event.metadata?.hasBeverageItems === false)
       ) {
         return;
       }
@@ -339,7 +340,9 @@ export const BaristaBoardView: React.FC<BaristaBoardViewProps> = ({ initialOrder
         }
         const ticketData = event.metadata?.ticket as RawTicket | undefined;
         if (ticketData && Array.isArray(ticketData.items)) {
-          const drinkItems = ticketData.items.filter((it) => isBeverageItem(it.name) || it.isBeverage);
+          const drinkItems = ticketData.items.filter(
+            (it) => (isBeverageItem(it.name) || it.isBeverage) && it.itemStatus !== "PENDING" && it.itemStatus !== "DRAFT"
+          );
           if (drinkItems.length > 0) {
             const newTicket: BaristaTicket = {
               id: ticketData.id || event.orderId!,
@@ -377,7 +380,17 @@ export const BaristaBoardView: React.FC<BaristaBoardViewProps> = ({ initialOrder
       }
 
       if (event.orderId) {
-        handleIncomingTicket(event.orderId, event.status as OrderStatus);
+        // If this event specifically belongs to another station (e.g. KITCHEN), do not overwrite barista ticket status
+        if (event.station === "KITCHEN") {
+          debouncedRefresh();
+          return;
+        }
+
+        if (event.type === "TICKET_STATUS_CHANGED" && event.station === "BARISTA") {
+          handleIncomingTicket(event.orderId, event.status as OrderStatus);
+        } else if (event.type === "ORDER_CONFIRMED") {
+          handleIncomingTicket(event.orderId, event.status as OrderStatus);
+        }
       }
       debouncedRefresh();
     });

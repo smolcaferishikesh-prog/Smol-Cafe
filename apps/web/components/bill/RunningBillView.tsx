@@ -99,8 +99,8 @@ export const RunningBillView: React.FC<RunningBillViewProps> = ({ initialBill, h
 
   // Calculation: Use live session if available, otherwise default to exact reference values
   const itemsTotal = bill && bill.subtotalPaise > 0 ? Math.round(bill.subtotalPaise / 100) : 700;
-  const taxesAndCharges = 0;
-  const grandTotal = itemsTotal;
+  const taxesAndCharges = bill && bill.taxPaise > 0 ? Math.round(bill.taxPaise / 100) : Math.round(itemsTotal * 0.05);
+  const grandTotal = bill && bill.totalPaise > 0 ? Math.round(bill.totalPaise / 100) : itemsTotal + taxesAndCharges;
 
   const [isBypassing, setIsBypassing] = useState(false);
   const [celebrationData, setCelebrationData] = useState<PostPaymentCelebrationModalProps | null>(null);
@@ -287,6 +287,15 @@ export const RunningBillView: React.FC<RunningBillViewProps> = ({ initialBill, h
                 <div className="flex items-center justify-between">
                   <span className="text-[#725039] dark:text-[#C9AE8B]">Items Total</span>
                   <span>₹{itemsTotal}</span>
+                </div>
+                <div className="flex items-center justify-between text-[#725039] dark:text-[#C9AE8B]">
+                  <span className="flex items-center gap-1">
+                    <span>Taxes (GST 5%)</span>
+                    <span className="text-[10px] text-[#725039]/70 dark:text-[#C9AE8B]/70 font-sans">
+                      (CGST 2.5% + SGST 2.5%)
+                    </span>
+                  </span>
+                  <span>₹{taxesAndCharges}</span>
                 </div>
               </div>
 

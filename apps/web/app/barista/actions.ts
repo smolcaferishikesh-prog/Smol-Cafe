@@ -10,7 +10,8 @@ import { captureAppException } from "@/lib/observability/sentry";
 
 const STAFF_SESSION_COOKIE = "smol_staff_session";
 
-import { isBeverageItem } from "@/lib/station-utils";
+import { isBeverageItem, deriveStationStatus, deriveAggregateOrderStatus } from "@/lib/station-utils";
+import { extractOrderInstructions } from "@/lib/order-instructions";
 
 export interface BaristaOrderItem {
   id: string;
@@ -50,8 +51,8 @@ export async function fetchBaristaOrdersAction(): Promise<FetchBaristaOrdersResu
   const supabase = createAdminClient();
 
   try {
-    // 1. Fetch active orders (accepted, preparing, ready, served)
-    const activeStatuses = ["ACCEPTED", "PREPARING", "READY", "SERVED"];
+    // 1. Fetch active orders (submitted, accepted, preparing, ready, served)
+    const activeStatuses = ["SUBMITTED", "ACCEPTED", "PREPARING", "READY", "SERVED"];
     const { data: orders, error: ordersError } = await supabase
       .from("orders")
       .select("*")
@@ -147,32 +148,34 @@ export async function fetchBaristaOrdersAction(): Promise<FetchBaristaOrdersResu
     }
 
     // 4. Assemble barista tickets:
-    // Any order containing beverages is routed to Barista Desk
+    // Only orders with DISPATCHED beverages are routed to Barista Desk
     const tickets: BaristaTicket[] = [];
 
     for (const o of orders) {
       const allItems = itemsByOrder.get(o.id) || [];
-      const beverageItems = allItems.filter((i) => i.isBeverage);
-
-      // If the order has beverages, include it on the barista board
-      if (beverageItems.length > 0) {
-        const tableInfo = o.table_session_id ? tableLabelMap.get(o.table_session_id) : null;
-
-        tickets.push({
-          id: o.id,
-          orderNo: o.order_no,
-          tableLabel: tableInfo?.label || "01",
-          tableId: tableInfo?.tableId || "",
-          guestName: null,
-          guestPhone: null,
-          status: o.status as OrderStatus,
-          submittedAt: o.submitted_at || o.created_at,
-          acceptedAt: o.accepted_at,
-          readyAt: o.ready_at,
-          instructions: (o as { instructions?: string | null }).instructions || null,
-          items: beverageItems, // show beverages for barista
-        });
+      const dispatchedBeverageItems = allItems.filter(
+        (i) => i.isBeverage && i.itemStatus && i.itemStatus !== "PENDING" && i.itemStatus !== "DRAFT"
+      );
+      if (dispatchedBeverageItems.length === 0) {
+        continue;
       }
+
+      const tableInfo = o.table_session_id ? tableLabelMap.get(o.table_session_id) : null;
+
+      tickets.push({
+        id: o.id,
+        orderNo: o.order_no,
+        tableLabel: tableInfo?.label || "01",
+        tableId: tableInfo?.tableId || "",
+        guestName: null,
+        guestPhone: null,
+        status: deriveStationStatus(dispatchedBeverageItems, o.status as OrderStatus),
+        submittedAt: o.submitted_at || o.created_at,
+        acceptedAt: o.accepted_at,
+        readyAt: o.ready_at,
+        instructions: extractOrderInstructions(o),
+        items: dispatchedBeverageItems,
+      });
     }
 
     return { success: true, orders: tickets };
@@ -198,7 +201,7 @@ export async function transitionBaristaOrderStatusAction(
   try {
     const { data: currentOrder, error: checkError } = await supabase
       .from("orders")
-      .select("id, status")
+      .select("id, status, accepted_at")
       .eq("id", orderId)
       .single();
 
@@ -206,17 +209,51 @@ export async function transitionBaristaOrderStatusAction(
       return { success: false, message: "Order not found." };
     }
 
+    const normalizedToStatus: OrderStatus =
+      (toStatus as string) === "COMPLETED" ? "SERVED" : toStatus;
+
+    // Fetch all items belonging to this order
+    const { data: dbItems } = await supabase
+      .from("order_items")
+      .select("id, name_snapshot, item_status")
+      .eq("order_id", orderId);
+
+    // Update Barista drink items in order_items
+    const drinkItemIds = (dbItems || [])
+      .filter((it) => isBeverageItem(it.name_snapshot))
+      .map((it) => it.id);
+
+    if (drinkItemIds.length > 0) {
+      await supabase
+        .from("order_items")
+        .update({ item_status: normalizedToStatus })
+        .in("id", drinkItemIds);
+    }
+
+    // Derive overall aggregate order status
+    const allItemsUpdated = (dbItems || []).map((it) => ({
+      name: it.name_snapshot,
+      itemStatus: drinkItemIds.includes(it.id) ? normalizedToStatus : (it.item_status || "PENDING"),
+    }));
+
+    const newAggregateStatus = deriveAggregateOrderStatus(
+      allItemsUpdated,
+      currentOrder.status as OrderStatus
+    );
+
     const nowIso = new Date().toISOString();
     const updatePayload: Record<string, unknown> = {
-      status: toStatus,
+      status: newAggregateStatus,
       updated_at: nowIso,
     };
 
-    if (toStatus === "PREPARING") {
+    if (newAggregateStatus === "PREPARING" && !currentOrder.accepted_at) {
       updatePayload.accepted_at = nowIso;
-    } else if (toStatus === "READY") {
+    }
+    if (newAggregateStatus === "READY") {
       updatePayload.ready_at = nowIso;
-    } else if (toStatus === "SERVED" || toStatus === "COMPLETED") {
+    }
+    if (newAggregateStatus === "SERVED") {
       updatePayload.served_at = nowIso;
     }
 
@@ -229,10 +266,27 @@ export async function transitionBaristaOrderStatusAction(
       return { success: false, message: "Failed to update order status." };
     }
 
-    // NOTE: Client-side BaristaBoardView handles broadcastSyncEvent after this server action returns.
-    // broadcastSyncEvent is a no-op on the server (typeof window === "undefined").
+    // Broadcast station-specific event + aggregate event
+    broadcastSyncEvent({
+      type: "TICKET_STATUS_CHANGED",
+      orderId,
+      station: "BARISTA",
+      status: normalizedToStatus,
+      timestamp: Date.now(),
+    });
 
-    return { success: true, currentStatus: toStatus, message: `Brew status updated to ${toStatus}` };
+    broadcastSyncEvent({
+      type: "STATUS_CHANGED",
+      orderId,
+      status: newAggregateStatus,
+      timestamp: Date.now(),
+    });
+
+    return {
+      success: true,
+      currentStatus: normalizedToStatus,
+      message: `Brew status updated to ${normalizedToStatus}`,
+    };
   } catch (err: unknown) {
     captureAppException(err, { requestId, orderId });
     const message = err instanceof Error ? err.message : "Internal server error.";
@@ -256,8 +310,8 @@ export async function fetchSingleBaristaTicketAction(
 
     if (error || !o) return { success: false };
 
-    // Do not return unconfirmed / cashier pending orders to barista desk
-    if (o.status === "PENDING_CONFIRMATION" || o.status === "DRAFT" || o.status === "SUBMITTED" || o.status === "CANCELLED" || o.status === "REJECTED") {
+    // Do not return cancelled or rejected orders to barista desk
+    if (o.status === "PENDING_CONFIRMATION" || o.status === "DRAFT" || o.status === "CANCELLED" || o.status === "REJECTED") {
       return { success: false };
     }
 
@@ -311,9 +365,9 @@ export async function fetchSingleBaristaTicketAction(
       };
     });
 
-    const beverageItems = items.filter((item) => item.isBeverage);
+    const beverageItems = items.filter((item) => item.isBeverage && item.itemStatus && item.itemStatus !== "PENDING" && item.itemStatus !== "DRAFT");
     if (beverageItems.length === 0) {
-      return { success: false, reason: "NO_BEVERAGE_ITEMS" };
+      return { success: false, reason: "NO_DISPATCHED_BEVERAGE_ITEMS" };
     }
 
     const ticket: BaristaTicket = {
@@ -323,11 +377,11 @@ export async function fetchSingleBaristaTicketAction(
       tableId,
       guestName: null,
       guestPhone: null,
-      status: o.status as OrderStatus,
+      status: deriveStationStatus(beverageItems, o.status as OrderStatus),
       submittedAt: o.submitted_at || o.created_at,
       acceptedAt: o.accepted_at,
       readyAt: o.ready_at,
-      instructions: o.instructions || o.special_instructions || o.notes || null,
+      instructions: extractOrderInstructions(o),
       items: beverageItems,
     };
 

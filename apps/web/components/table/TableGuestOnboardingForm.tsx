@@ -2,9 +2,16 @@
 
 import React, { useState, useEffect, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { User, Phone, ArrowRight, Sparkles, ChevronDown } from "lucide-react";
-import { onboardGuestAndRedirectAction } from "@/app/t/actions";
+import { User, Phone, ArrowRight, Sparkles, ChevronDown, Loader2 } from "lucide-react";
+import { onboardGuestAndRedirectAction, skipGuestOnboardingAction } from "@/app/t/actions";
 import { COUNTRY_CODES, normalizePhoneNumber } from "@/lib/customer-phone";
+
+function withTimeout<T>(promise: Promise<T>, timeoutMs = 5000, fallbackVal?: T): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((resolve) => setTimeout(() => resolve(fallbackVal as T), timeoutMs)),
+  ]);
+}
 
 interface TableGuestOnboardingFormProps {
   tableToken: string;
@@ -83,7 +90,11 @@ export function TableGuestOnboardingForm({
 
     startTransition(async () => {
       try {
-        const result = await onboardGuestAndRedirectAction(formData);
+        const result = await withTimeout(
+          onboardGuestAndRedirectAction(formData),
+          5000,
+          { success: true }
+        );
         if (result && !result.success) {
           setError(result.error || "Could not set up table session. Please try again.");
         } else {
@@ -91,6 +102,31 @@ export function TableGuestOnboardingForm({
         }
       } catch (err) {
         console.error("Error onboarding guest:", err);
+        router.push("/home");
+      }
+    });
+  };
+
+  const handleSkip = () => {
+    setError(null);
+    startTransition(async () => {
+      try {
+        const result = await withTimeout(
+          skipGuestOnboardingAction(tableToken),
+          4000,
+          { success: true, tableLabel }
+        );
+        if (result && !result.success) {
+          setError(result.error || "Could not set up table session. Please try again.");
+          return;
+        }
+        if (typeof window !== "undefined") {
+          localStorage.setItem("smol_current_table", result?.tableLabel || tableLabel);
+          localStorage.setItem("smol_guest_name", "Guest");
+        }
+        router.push("/home");
+      } catch (err) {
+        console.error("Error establishing guest session:", err);
         router.push("/home");
       }
     });
@@ -184,7 +220,8 @@ export function TableGuestOnboardingForm({
           {/* Ambient Shimmer Sweep on Hover */}
           <span className="absolute inset-0 -translate-x-full group-hover:translate-x-full bg-gradient-to-r from-transparent via-white/20 dark:via-white/30 to-transparent transition-transform duration-1000 ease-in-out pointer-events-none" />
 
-          <span className="relative z-10 drop-shadow-[0_1px_2px_rgba(0,0,0,0.35)]">
+          <span className="relative z-10 flex items-center gap-2 drop-shadow-[0_1px_2px_rgba(0,0,0,0.35)]">
+            {isPending && <Loader2 className="h-4 w-4 animate-spin" />}
             {isPending ? "Entering Café..." : "Continue to Café"}
           </span>
           <ArrowRight className="relative z-10 h-4 w-4 stroke-[2.5] transition-transform duration-300 group-hover:translate-x-1 drop-shadow-[0_1px_2px_rgba(0,0,0,0.35)]" />
@@ -192,15 +229,12 @@ export function TableGuestOnboardingForm({
 
         <button
           type="button"
-          onClick={() => {
-            if (typeof window !== "undefined") {
-              localStorage.setItem("smol_current_table", tableLabel);
-            }
-            router.push("/home");
-          }}
-          className="w-full mt-2 text-center text-xs font-mono text-[#725039] dark:text-[#C9AE8B] hover:text-[#B72E35] dark:hover:text-[#F2C84B] transition-colors cursor-pointer"
+          onClick={handleSkip}
+          disabled={isPending}
+          className="w-full mt-2 flex items-center justify-center gap-1.5 text-center text-xs font-mono text-[#725039] dark:text-[#C9AE8B] hover:text-[#B72E35] dark:hover:text-[#F2C84B] transition-colors cursor-pointer disabled:opacity-60"
         >
-          Skip &amp; order as guest →
+          {isPending && <Loader2 className="h-3 w-3 animate-spin" />}
+          {isPending ? "Setting up Guest Seat..." : "Skip & order as guest →"}
         </button>
       </div>
     </form>

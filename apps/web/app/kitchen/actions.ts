@@ -4,7 +4,8 @@ import { cookies } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { createAdminClient, isMockDatabase } from "@/lib/supabase/admin";
 import { broadcastSyncEvent } from "@/lib/sync-events";
-import { isBeverageItem } from "@/lib/station-utils";
+import { isBeverageItem, deriveStationStatus, deriveAggregateOrderStatus } from "@/lib/station-utils";
+import { extractOrderInstructions } from "@/lib/order-instructions";
 import type { OrderStatus } from "@smol-cafe/db";
 import { generateRequestId, logger } from "@/lib/observability/logger";
 import { recordKdsHeartbeat, evaluateKdsSilence } from "@/lib/observability/alerts";
@@ -56,8 +57,8 @@ export async function fetchSingleKitchenTicketAction(orderId: string): Promise<{
     const { data: order, error: orderErr } = await supabase.from("orders").select("*").eq("id", orderId).maybeSingle();
     if (orderErr || !order) return { success: false };
 
-    // Do not return unconfirmed / cashier pending orders to kitchen KDS
-    if (order.status === "PENDING_CONFIRMATION" || order.status === "DRAFT" || order.status === "SUBMITTED" || order.status === "CANCELLED" || order.status === "REJECTED") {
+    // Do not return cancelled or rejected orders to kitchen KDS
+    if (order.status === "PENDING_CONFIRMATION" || order.status === "DRAFT" || order.status === "CANCELLED" || order.status === "REJECTED") {
       return { success: false };
     }
 
@@ -100,10 +101,10 @@ export async function fetchSingleKitchenTicketAction(orderId: string): Promise<{
       };
     });
 
-    // Filter to ONLY food items (drinks belong exclusively to Barista)
-    const foodItems = allItems.filter((it) => !isBeverageItem(it.name));
+    // Filter to ONLY dispatched food items (drinks belong exclusively to Barista)
+    const foodItems = allItems.filter((it) => !isBeverageItem(it.name) && it.itemStatus && it.itemStatus !== "PENDING" && it.itemStatus !== "DRAFT");
     if (foodItems.length === 0) {
-      return { success: false, reason: "NO_FOOD_ITEMS" };
+      return { success: false, reason: "NO_DISPATCHED_FOOD_ITEMS" };
     }
 
     const ticket: KitchenTicket = {
@@ -111,11 +112,11 @@ export async function fetchSingleKitchenTicketAction(orderId: string): Promise<{
       orderNo: order.order_no,
       tableLabel,
       tableId,
-      status: order.status as OrderStatus,
+      status: deriveStationStatus(foodItems, order.status as OrderStatus),
       submittedAt: order.submitted_at || order.created_at,
       acceptedAt: order.accepted_at,
       readyAt: order.ready_at,
-      instructions: order.instructions || order.notes || null,
+      instructions: extractOrderInstructions(order),
       items: foodItems,
     };
 
@@ -134,8 +135,8 @@ export async function fetchKitchenOrdersAction(): Promise<FetchKitchenOrdersResu
   recordKdsHeartbeat();
 
   try {
-    // 1. Fetch active orders across confirmed KDS phases: Accepted, Preparing, Ready, and Served
-    const activeStatuses = ["ACCEPTED", "PREPARING", "READY", "SERVED"];
+    // 1. Fetch active orders across confirmed KDS phases: Submitted, Accepted, Preparing, Ready, and Served
+    const activeStatuses = ["SUBMITTED", "ACCEPTED", "PREPARING", "READY", "SERVED"];
 
     const { data: orders, error: ordersError } = await supabase
       .from("orders")
@@ -235,32 +236,34 @@ export async function fetchKitchenOrdersAction(): Promise<FetchKitchenOrdersResu
       });
     }
 
-    // 4. Assemble structured kitchen tickets (Food items ONLY)
+    // 4. Assemble structured kitchen tickets (Dispatched food items ONLY)
     const tickets: KitchenTicket[] = [];
 
     for (const o of orders) {
       const allItems = itemsByOrder.get(o.id) || [];
-      const foodItems = allItems.filter((i) => !isBeverageItem(i.name));
-
-      // If the order has food items, include it on the kitchen board
-      if (foodItems.length > 0) {
-        const tableInfo = o.table_session_id ? tableLabelMap.get(o.table_session_id) : null;
-
-        tickets.push({
-          id: o.id,
-          orderNo: o.order_no,
-          tableLabel: tableInfo?.label || "Direct / Takeaway",
-          tableId: tableInfo?.tableId || "",
-          guestName: null,
-          guestPhone: null,
-          status: o.status,
-          submittedAt: o.submitted_at || o.created_at,
-          acceptedAt: o.accepted_at,
-          readyAt: o.ready_at,
-          instructions: (o as { instructions?: string | null }).instructions || null,
-          items: foodItems,
-        });
+      const dispatchedFoodItems = allItems.filter(
+        (i) => !isBeverageItem(i.name) && i.itemStatus && i.itemStatus !== "PENDING" && i.itemStatus !== "DRAFT"
+      );
+      if (dispatchedFoodItems.length === 0) {
+        continue;
       }
+
+      const tableInfo = o.table_session_id ? tableLabelMap.get(o.table_session_id) : null;
+
+      tickets.push({
+        id: o.id,
+        orderNo: o.order_no,
+        tableLabel: tableInfo?.label || "Direct / Takeaway",
+        tableId: tableInfo?.tableId || "",
+        guestName: null,
+        guestPhone: null,
+        status: deriveStationStatus(dispatchedFoodItems, o.status as OrderStatus),
+        submittedAt: o.submitted_at || o.created_at,
+        acceptedAt: o.accepted_at,
+        readyAt: o.ready_at,
+        instructions: extractOrderInstructions(o),
+        items: dispatchedFoodItems,
+      });
     }
 
     return {
@@ -364,17 +367,51 @@ export async function transitionOrderStatusAction(
     const normalizedToStatus: OrderStatus =
       (toStatus as string) === "COMPLETED" ? "SERVED" : toStatus;
 
-    // 2. Prepare timestamp updates
+    // 2. Fetch all items belonging to this order
+    const { data: dbItems } = await supabase
+      .from("order_items")
+      .select("id, name_snapshot, item_status")
+      .eq("order_id", orderId);
+
+    // 3. Update Kitchen food items in order_items
+    const foodItemIds = (dbItems || [])
+      .filter((it) => !isBeverageItem(it.name_snapshot))
+      .map((it) => it.id);
+
+    if (foodItemIds.length > 0) {
+      await supabase
+        .from("order_items")
+        .update({ item_status: normalizedToStatus })
+        .in("id", foodItemIds);
+    }
+
+    // 4. Derive overall aggregate order status
+    const allItemsUpdated = (dbItems || []).map((it) => ({
+      name: it.name_snapshot,
+      itemStatus: foodItemIds.includes(it.id) ? normalizedToStatus : (it.item_status || "PENDING"),
+    }));
+
+    const newAggregateStatus = deriveAggregateOrderStatus(
+      allItemsUpdated,
+      currentOrder.status as OrderStatus
+    );
+
+    // 5. Update orders row with aggregate status
     const updatePayload: Record<string, unknown> = {
-      status: normalizedToStatus,
+      status: newAggregateStatus,
       updated_at: nowIso,
     };
 
-    if (normalizedToStatus === "PREPARING") updatePayload.accepted_at = currentOrder.accepted_at || nowIso;
-    if (normalizedToStatus === "READY") updatePayload.ready_at = nowIso;
-    if (normalizedToStatus === "SERVED") updatePayload.served_at = nowIso;
+    if (newAggregateStatus === "PREPARING" && !currentOrder.accepted_at) {
+      updatePayload.accepted_at = nowIso;
+    }
+    if (newAggregateStatus === "READY") {
+      updatePayload.ready_at = nowIso;
+    }
+    if (newAggregateStatus === "SERVED") {
+      updatePayload.served_at = nowIso;
+    }
 
-    // 3. Update orders row
     const { error: updateErr } = await supabase
       .from("orders")
       .update(updatePayload)
@@ -394,17 +431,17 @@ export async function transitionOrderStatusAction(
       };
     }
 
-    // 4. Log to order_status_history with request_id correlation
+    // 6. Log to order_status_history with request_id correlation
     await supabase.from("order_status_history").insert({
       order_id: orderId,
       from_status: fromStatus,
       to_status: normalizedToStatus,
       actor_type: "STAFF",
-      notes: `Transitioned via KDS [${requestId}]`,
+      notes: `Kitchen food items moved to ${normalizedToStatus} [${requestId}]`,
       created_at: nowIso,
     });
 
-    // 5. Trigger Inventory Lifecycle Transition (RESERVE -> CONSUME on PREPARING or RELEASE on CANCELLED)
+    // 7. Trigger Inventory Lifecycle Transition (RESERVE -> CONSUME on PREPARING or RELEASE on CANCELLED)
     try {
       await supabase.rpc("handle_order_inventory_transition", {
         p_order_id: orderId,
@@ -415,18 +452,27 @@ export async function transitionOrderStatusAction(
     }
 
     const durationMs = Date.now() - startTime;
-    logger.info(`Order ${orderId} moved from ${fromStatus} to ${toStatus}`, {
+    logger.info(`Order ${orderId} Kitchen food moved to ${normalizedToStatus} (aggregate: ${newAggregateStatus})`, {
       requestId,
       orderId,
       action: "transitionOrderStatus",
       durationMs,
-      data: { fromStatus, toStatus },
+      data: { fromStatus, toStatus, newAggregateStatus },
+    });
+
+    // 8. Broadcast station-specific event + aggregate event
+    broadcastSyncEvent({
+      type: "TICKET_STATUS_CHANGED",
+      orderId,
+      station: "KITCHEN",
+      status: normalizedToStatus,
+      timestamp: Date.now(),
     });
 
     broadcastSyncEvent({
       type: "STATUS_CHANGED",
       orderId,
-      status: normalizedToStatus,
+      status: newAggregateStatus,
       timestamp: Date.now(),
     });
 
@@ -438,7 +484,7 @@ export async function transitionOrderStatusAction(
     return {
       success: true,
       currentStatus: normalizedToStatus,
-      message: `Order moved to ${normalizedToStatus}`,
+      message: `Kitchen order moved to ${normalizedToStatus}`,
     };
   } catch (error) {
     const durationMs = Date.now() - startTime;
