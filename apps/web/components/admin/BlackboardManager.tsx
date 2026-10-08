@@ -183,7 +183,7 @@ export const BlackboardManager: React.FC<BlackboardManagerProps> = ({ initialPos
               Rewards
             </Link>
             <Link
-              href="/kitchen"
+              href="/smol-backdoor/kitchen"
               className="rounded-full border border-stone-200 bg-stone-50 px-3 py-1 text-xs font-bold text-stone-600 transition hover:bg-stone-100 dark:border-stone-800 dark:bg-stone-800 dark:text-stone-300"
             >
               Kitchen

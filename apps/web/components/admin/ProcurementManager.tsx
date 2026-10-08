@@ -603,7 +603,7 @@ export const ProcurementManager: React.FC<ProcurementManagerProps> = ({ initialD
           <div className="mx-auto flex max-w-6xl items-center justify-between">
             <div className="flex items-center gap-3">
               <Link
-                href="/admin"
+                href="/smol-backdoor/admin"
                 className="rounded-full border border-[#C9AE8B]/50 bg-[#F3E7D3]/60 px-3 py-1.5 text-xs font-bold text-[#725039] transition hover:bg-[#EAE0CE] hover:text-[#241F1C] dark:border-stone-800 dark:bg-stone-800 dark:text-stone-300 dark:hover:text-white"
               >
                 ← Admin Tower

@@ -170,13 +170,13 @@ export const RewardsManager: React.FC<RewardsManagerProps> = ({ initialRewards }
 
           <div className="flex items-center gap-2">
             <Link
-              href="/kitchen"
+              href="/smol-backdoor/kitchen"
               className="rounded-full border border-stone-200 bg-stone-50 px-3 py-1 text-xs font-bold text-stone-600 transition hover:bg-stone-100 dark:border-stone-800 dark:bg-stone-800 dark:text-stone-300"
             >
               Kitchen KDS
             </Link>
             <Link
-              href="/cashier"
+              href="/smol-backdoor/cashier"
               className="rounded-full border border-stone-200 bg-stone-50 px-3 py-1 text-xs font-bold text-stone-600 transition hover:bg-stone-100 dark:border-stone-800 dark:bg-stone-800 dark:text-stone-300"
             >
               Cashier POS
