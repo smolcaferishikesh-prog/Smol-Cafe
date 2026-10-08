@@ -4,7 +4,8 @@ import React, { useState, useEffect, useCallback, Suspense } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import type { CategoryWithItems, MenuItemWithDetails } from "@/lib/queries/menu";
-import { CartProvider } from "@/context/CartContext";
+import { CartProvider, useCart } from "@/context/CartContext";
+import type { EditableCustomerOrder } from "@/app/menu/actions";
 import { MenuItemCard } from "./MenuItemCard";
 import { ItemDetailModal } from "./ItemDetailModal";
 import { FloatingCartBar } from "@/components/cart/FloatingCartBar";
@@ -23,6 +24,7 @@ interface MenuClientViewProps {
   locationName?: string;
   guestName?: string;
   customTitle?: string;
+  initialEditingOrder?: EditableCustomerOrder | null;
 }
 
 const MenuContentInner: React.FC<MenuClientViewProps> = ({
@@ -31,7 +33,9 @@ const MenuContentInner: React.FC<MenuClientViewProps> = ({
   locationName = "Smol Café",
   guestName = "",
   customTitle,
+  initialEditingOrder,
 }) => {
+  const { loadOrderForEditing, editingOrder, openCart, totalCount } = useCart();
   const searchParams = useSearchParams();
   const categoryParam = searchParams ? searchParams.get("category") : null;
 
@@ -41,6 +45,46 @@ const MenuContentInner: React.FC<MenuClientViewProps> = ({
     return cached && cached.length > 0 ? cached : initialCategories;
   });
   const [currentGuestName, setCurrentGuestName] = useState(guestName);
+
+  // Hydrate cart when customer is editing an existing pending order
+  useEffect(() => {
+    if (initialEditingOrder) {
+      const allCatalogItems = categories.flatMap((cat) => cat.items);
+      const loadedCartItems: Array<{ item: MenuItemWithDetails; qty: number }> = [];
+
+      for (const ordItem of initialEditingOrder.items) {
+        const catalogMatch = allCatalogItems.find(
+          (ci) => ci.id === ordItem.menuItemId || ci.name.toLowerCase() === ordItem.name.toLowerCase()
+        );
+        if (catalogMatch) {
+          loadedCartItems.push({ item: catalogMatch, qty: ordItem.qty });
+        } else {
+          const fallbackItem: MenuItemWithDetails = {
+            id: ordItem.menuItemId || crypto.randomUUID(),
+            name: ordItem.name,
+            description: "Customer ordered item",
+            pricePaise: ordItem.unitPricePaise,
+            imageUrl: "/images/food-placeholder.png",
+            categoryId: "cat_default",
+            status: "ACTIVE",
+            metadata: { dietary: "Vegetarian" },
+          };
+          loadedCartItems.push({ item: fallbackItem, qty: ordItem.qty });
+        }
+      }
+
+      loadOrderForEditing(
+        {
+          orderId: initialEditingOrder.orderId,
+          orderNo: initialEditingOrder.orderNo,
+          status: initialEditingOrder.status,
+          instructions: initialEditingOrder.instructions,
+          tableLabel: initialEditingOrder.tableLabel,
+        },
+        loadedCartItems
+      );
+    }
+  }, [initialEditingOrder, categories, loadOrderForEditing]);
 
   useEffect(() => {
     if (initialCategories && initialCategories.length > 0) {
@@ -321,8 +365,35 @@ const MenuContentInner: React.FC<MenuClientViewProps> = ({
 
   return (
     <div className="min-h-screen bg-[#F3E7D3] dark:bg-[#151110] text-[#241F1C] dark:text-[#FAF4EB] pb-44 font-sans transition-colors duration-200">
+      {/* Pending Order Edit Banner */}
+      {editingOrder && (
+        <div className="sticky top-0 z-50 bg-gradient-to-r from-[#B72E35] to-[#8C1D23] text-white px-4 py-2.5 flex items-center justify-between text-xs font-mono shadow-md">
+          <div className="flex items-center gap-2 truncate">
+            <span className="bg-white/20 border border-white/40 px-2 py-0.5 rounded text-[10px] font-bold">
+              EDITING
+            </span>
+            <span className="font-bold">Order #{editingOrder.orderNo}</span>
+            <span className="opacity-80 hidden sm:inline">• Pending Verification. Add/remove items and update.</span>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              onClick={openCart}
+              className="bg-white text-[#B72E35] px-3 py-1 rounded-lg font-bold hover:bg-stone-100 transition shadow-2xs cursor-pointer"
+            >
+              Update Order ({totalCount})
+            </button>
+            <Link
+              href="/orders"
+              className="text-white/80 hover:text-white underline text-[11px] ml-1"
+            >
+              Exit
+            </Link>
+          </div>
+        </div>
+      )}
+
       {/* Top Header */}
-      <header className="sticky top-0 z-40 border-b border-[#C9AE8B]/40 dark:border-white/10 bg-[#F3E7D3]/90 dark:bg-[#181412]/90 px-4 pt-[calc(0.875rem+env(safe-area-inset-top,0px))] pb-3.5 backdrop-blur-md transition-colors duration-200">
+      <header className={`sticky ${editingOrder ? "top-[41px]" : "top-0"} z-40 border-b border-[#C9AE8B]/40 dark:border-white/10 bg-[#F3E7D3]/90 dark:bg-[#181412]/90 px-4 pt-[calc(0.875rem+env(safe-area-inset-top,0px))] pb-3.5 backdrop-blur-md transition-colors duration-200`}>
         <div className="mx-auto flex max-w-md items-center justify-between">
           {/* Back Button */}
           <Link

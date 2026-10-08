@@ -5,7 +5,12 @@ import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCart } from "@/context/CartContext";
-import { placeOrderAction, placePaidOrderAction, type ChangedItemDiff } from "@/app/menu/actions";
+import {
+  placeOrderAction,
+  placePaidOrderAction,
+  editPendingOrderAction,
+  type ChangedItemDiff,
+} from "@/app/menu/actions";
 import { useNetworkHealth } from "@/hooks/useNetworkHealth";
 import { broadcastSyncEvent, subscribeToSyncEvents } from "@/lib/sync-events";
 import { UpiPaymentDrawer } from "@/components/payment/UpiPaymentDrawer";
@@ -71,13 +76,55 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ tableLabel, guestName = 
     subtotalPaise,
     totalCount,
     addItem,
+    editingOrder,
   } = useCart();
   const { isDegraded } = useNetworkHealth();
 
   const [activeView, setActiveView] = useState<"table_order" | "bill">("table_order");
   const [activeActionItemId, setActiveActionItemId] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isUpdatingOrder, setIsUpdatingOrder] = useState(false);
   const [instructions, setInstructions] = useState("");
+
+  useEffect(() => {
+    if (editingOrder?.instructions && !instructions) {
+      setInstructions(editingOrder.instructions);
+    }
+  }, [editingOrder]);
+
+  const handleUpdatePendingOrder = async () => {
+    if (!editingOrder) return;
+    setIsUpdatingOrder(true);
+    setErrorMessage(null);
+
+    const orderPayload = items.map((cartItem) => ({
+      menu_item_id: cartItem.item.id,
+      name: cartItem.item.name,
+      expected_unit_price_paise: cartItem.item.pricePaise,
+      qty: cartItem.qty,
+    }));
+
+    try {
+      const result = await editPendingOrderAction(
+        editingOrder.orderId,
+        orderPayload,
+        instructions || undefined
+      );
+
+      if (result.success) {
+        clearCart();
+        closeCart();
+        router.push("/orders");
+        router.refresh();
+      } else {
+        setErrorMessage(result.message || "Failed to update order.");
+      }
+    } catch (e: any) {
+      setErrorMessage(e.message || "An error occurred while updating the order.");
+    } finally {
+      setIsUpdatingOrder(false);
+    }
+  };
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [priceConflicts, setPriceConflicts] = useState<ChangedItemDiff[] | null>(null);
   const [isUpiDrawerOpen, setIsUpiDrawerOpen] = useState(false);
@@ -538,6 +585,26 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ tableLabel, guestName = 
           )}
         </div>
 
+        {/* Editing Order Notice Banner */}
+        {editingOrder && (
+          <div className="bg-[#B72E35]/15 dark:bg-[#B72E35]/30 border-b border-[#B72E35]/30 px-4 py-2 flex items-center justify-between text-xs font-mono text-[#B72E35] dark:text-[#FF5B52]">
+            <div className="flex items-center gap-1.5">
+              <span className="font-bold">Editing Order #{editingOrder.orderNo}</span>
+              <span className="text-[10px] opacity-80">(Pending Confirmation)</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                clearCart();
+                closeCart();
+              }}
+              className="text-[11px] underline opacity-90 hover:opacity-100 cursor-pointer"
+            >
+              Cancel Edit
+            </button>
+          </div>
+        )}
+
         {/* Body Content */}
         <div className="flex-1 overflow-y-auto pb-24">
           {orderSuccess ? (
@@ -768,8 +835,8 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ tableLabel, guestName = 
                   {/* Primary CTA Dispatch Button */}
                   <button
                     type="button"
-                    onClick={handleSendOrderToCashier}
-                    disabled={isBypassing}
+                    onClick={editingOrder ? handleUpdatePendingOrder : handleSendOrderToCashier}
+                    disabled={isBypassing || isUpdatingOrder}
                     className="group relative w-full mt-3 overflow-hidden rounded-2xl bg-gradient-to-r from-[#B72E35] via-[#A0242B] to-[#7D1217] dark:from-[#9333EA] dark:via-[#7E22CE] dark:to-[#581C87] border border-transparent dark:border-purple-400/40 p-4 text-left text-white shadow-[0_4px_16px_rgba(183,46,53,0.35)] dark:shadow-[0_4px_24px_rgba(126,34,206,0.45)] hover:shadow-[0_6px_22px_rgba(183,46,53,0.5)] dark:hover:shadow-[0_6px_30px_rgba(168,85,247,0.6)] hover:scale-[1.01] active:scale-[0.99] transition-all duration-200 cursor-pointer disabled:opacity-60"
                   >
                     {/* Ambient shine overlay on hover */}
@@ -778,7 +845,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ tableLabel, guestName = 
                     <div className="relative z-10 flex items-center justify-between gap-3">
                       <div className="flex items-center gap-3.5">
                         <div className="w-11 h-11 rounded-xl bg-white/15 dark:bg-white/20 border border-white/25 dark:border-purple-300/40 flex items-center justify-center shrink-0 shadow-xs backdrop-blur-xs">
-                          {isBypassing ? (
+                          {isBypassing || isUpdatingOrder ? (
                             <Loader2 className="w-5 h-5 text-white animate-spin" />
                           ) : (
                             <Send className="w-5 h-5 text-white transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
@@ -786,10 +853,18 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ tableLabel, guestName = 
                         </div>
                         <div>
                           <h3 className="font-serif font-bold text-[16px] sm:text-[17px] text-white leading-tight">
-                            {isBypassing ? "Sending Order to Cashier..." : "Send Order to Cashier"}
+                            {editingOrder
+                              ? isUpdatingOrder
+                                ? "Updating Order..."
+                                : `Update Order #${editingOrder.orderNo}`
+                              : isBypassing
+                              ? "Sending Order to Cashier..."
+                              : "Send Order to Cashier"}
                           </h3>
                           <p className="font-sans text-[12px] text-[#F3E7D3]/90 dark:text-purple-100/90 mt-0.5 leading-snug">
-                            Instant live dispatch to Cashier Counter &amp; Kitchen
+                            {editingOrder
+                              ? "Saves your revised items directly to this pending order"
+                              : "Instant live dispatch to Cashier Counter & Kitchen"}
                           </p>
                         </div>
                       </div>
@@ -1057,17 +1132,37 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ tableLabel, guestName = 
               {totalCount} {totalCount === 1 ? "item" : "items"} &nbsp;•&nbsp; Total ₹{totalRupees}
             </p>
 
-            <button
-              type="button"
-              onClick={() => setActiveView("bill")}
-              className="group relative overflow-hidden w-full block rounded-full bg-gradient-to-b from-[#E03A43]/70 via-[#B72E35]/80 to-[#7D1217]/90 dark:from-[#A855F7]/70 dark:via-[#7E22CE]/80 dark:to-[#4C1D95]/90 text-white font-serif text-[17.5px] font-medium py-3.5 backdrop-blur-[16px] border border-white/55 dark:border-purple-300/40 shadow-[0_8px_26px_rgba(183,46,53,0.42),inset_0_1.5px_1.5px_rgba(255,255,255,0.85),inset_0_-1.5px_2px_rgba(0,0,0,0.4),inset_0_0_14px_rgba(255,140,140,0.35)] dark:shadow-[0_8px_28px_rgba(126,34,206,0.5),inset_0_1.5px_1.5px_rgba(255,255,255,0.85),inset_0_-1.5px_2px_rgba(0,0,0,0.5),inset_0_0_16px_rgba(192,132,252,0.45)] active:scale-[0.99] transition duration-150 cursor-pointer text-center"
-            >
-              {/* Curved Specular Glass Gloss Reflection */}
-              <span className="absolute inset-x-4 top-1 h-[42%] rounded-full bg-gradient-to-b from-white/50 via-white/15 to-transparent pointer-events-none opacity-90" />
-              <span className="relative z-10 drop-shadow-[0_1.5px_2.5px_rgba(0,0,0,0.35)]">
-                View Bill
-              </span>
-            </button>
+            {editingOrder ? (
+              <button
+                type="button"
+                disabled={isUpdatingOrder}
+                onClick={handleUpdatePendingOrder}
+                className="group relative overflow-hidden w-full block rounded-full bg-gradient-to-b from-[#E03A43]/70 via-[#B72E35]/80 to-[#7D1217]/90 dark:from-[#A855F7]/70 dark:via-[#7E22CE]/80 dark:to-[#4C1D95]/90 text-white font-serif text-[17.5px] font-medium py-3.5 backdrop-blur-[16px] border border-white/55 dark:border-purple-300/40 shadow-[0_8px_26px_rgba(183,46,53,0.42)] active:scale-[0.99] transition duration-150 cursor-pointer text-center"
+              >
+                <span className="relative z-10 flex items-center justify-center gap-2 drop-shadow-[0_1.5px_2.5px_rgba(0,0,0,0.35)]">
+                  {isUpdatingOrder ? (
+                    <>
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                      <span>Updating Order #{editingOrder.orderNo}...</span>
+                    </>
+                  ) : (
+                    <span>Update Order #{editingOrder.orderNo} • ₹{totalRupees}</span>
+                  )}
+                </span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setActiveView("bill")}
+                className="group relative overflow-hidden w-full block rounded-full bg-gradient-to-b from-[#E03A43]/70 via-[#B72E35]/80 to-[#7D1217]/90 dark:from-[#A855F7]/70 dark:via-[#7E22CE]/80 dark:to-[#4C1D95]/90 text-white font-serif text-[17.5px] font-medium py-3.5 backdrop-blur-[16px] border border-white/55 dark:border-purple-300/40 shadow-[0_8px_26px_rgba(183,46,53,0.42),inset_0_1.5px_1.5px_rgba(255,255,255,0.85),inset_0_-1.5px_2px_rgba(0,0,0,0.4),inset_0_0_14px_rgba(255,140,140,0.35)] dark:shadow-[0_8px_28px_rgba(126,34,206,0.5),inset_0_1.5px_1.5px_rgba(255,255,255,0.85),inset_0_-1.5px_2px_rgba(0,0,0,0.5),inset_0_0_16px_rgba(192,132,252,0.45)] active:scale-[0.99] transition duration-150 cursor-pointer text-center"
+              >
+                {/* Curved Specular Glass Gloss Reflection */}
+                <span className="absolute inset-x-4 top-1 h-[42%] rounded-full bg-gradient-to-b from-white/50 via-white/15 to-transparent pointer-events-none opacity-90" />
+                <span className="relative z-10 drop-shadow-[0_1.5px_2.5px_rgba(0,0,0,0.35)]">
+                  View Bill
+                </span>
+              </button>
+            )}
           </div>
         )}
       </div>
