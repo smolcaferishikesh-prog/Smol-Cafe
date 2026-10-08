@@ -15,6 +15,7 @@ export interface PendingOrderItem {
   unitPricePaise: number;
   lineSubtotal: number;
   isBeverage: boolean;
+  itemStatus?: string;
 }
 
 export interface PendingOrderVerification {
@@ -35,6 +36,8 @@ export interface PendingOrderVerification {
   items: PendingOrderItem[];
   hasFoodItems: boolean;
   hasBeverageItems: boolean;
+  hasPendingFood: boolean;
+  hasPendingBeverage: boolean;
 }
 
 export interface FetchPendingOrdersResult {
@@ -46,6 +49,8 @@ export interface FetchPendingOrdersResult {
 export interface ConfirmOrderResult {
   success: boolean;
   orderId?: string;
+  isFullyDispatched?: boolean;
+  stationTarget?: "KITCHEN" | "BARISTA" | "ALL";
   message?: string;
 }
 
@@ -194,6 +199,7 @@ export async function fetchPendingCashierOrdersAction(): Promise<FetchPendingOrd
       unit_price_snapshot: number;
       qty: number;
       line_subtotal: number;
+      item_status?: string;
     }>) || []) {
       if (!itemsByOrder.has(item.order_id)) {
         itemsByOrder.set(item.order_id, []);
@@ -212,35 +218,42 @@ export async function fetchPendingCashierOrdersAction(): Promise<FetchPendingOrd
         unitPricePaise: item.unit_price_snapshot,
         lineSubtotal: item.line_subtotal,
         isBeverage: isBev,
+        itemStatus: item.item_status || "PENDING",
       });
     }
 
-    const verificationQueue: PendingOrderVerification[] = relevantOrders.map((o) => {
-      const tableInfo = o.table_session_id ? tableLabelMap.get(o.table_session_id) : null;
-      const items = itemsByOrder.get(o.id) || [];
-      const hasFoodItems = items.some((i) => !i.isBeverage);
-      const hasBeverageItems = items.some((i) => i.isBeverage);
+    const verificationQueue: PendingOrderVerification[] = relevantOrders
+      .map((o) => {
+        const tableInfo = o.table_session_id ? tableLabelMap.get(o.table_session_id) : null;
+        const items = itemsByOrder.get(o.id) || [];
+        const hasFoodItems = items.some((i) => !i.isBeverage);
+        const hasBeverageItems = items.some((i) => i.isBeverage);
+        const hasPendingFood = items.some((i) => !i.isBeverage && (!i.itemStatus || i.itemStatus === "PENDING" || i.itemStatus === "DRAFT"));
+        const hasPendingBeverage = items.some((i) => i.isBeverage && (!i.itemStatus || i.itemStatus === "PENDING" || i.itemStatus === "DRAFT"));
 
-      return {
-        id: o.id,
-        orderNo: o.order_no,
-        tableLabel: tableInfo?.label || "01",
-        tableId: tableInfo?.tableId || "",
-        tableSessionId: o.table_session_id || "",
-        verificationCode: o.verification_code || "4821",
-        status: o.status,
-        paymentStatus: (o as unknown as { payment_status?: string }).payment_status || "PENDING",
-        paymentMethod: (o as unknown as { payment_method?: string }).payment_method || "CASHIER",
-        submittedAt: o.submitted_at || o.created_at,
-        totalPaise: o.total_snapshot || 0,
-        subtotalPaise: (o as unknown as { subtotal_snapshot?: number }).subtotal_snapshot || 0,
-        taxPaise: (o as unknown as { tax_snapshot?: number }).tax_snapshot || 0,
-        instructions: extractOrderInstructions(o),
-        items,
-        hasFoodItems,
-        hasBeverageItems,
-      };
-    });
+        return {
+          id: o.id,
+          orderNo: o.order_no,
+          tableLabel: tableInfo?.label || "01",
+          tableId: tableInfo?.tableId || "",
+          tableSessionId: o.table_session_id || "",
+          verificationCode: o.verification_code || "4821",
+          status: o.status,
+          paymentStatus: (o as unknown as { payment_status?: string }).payment_status || "PENDING",
+          paymentMethod: (o as unknown as { payment_method?: string }).payment_method || "CASHIER",
+          submittedAt: o.submitted_at || o.created_at,
+          totalPaise: o.total_snapshot || 0,
+          subtotalPaise: (o as unknown as { subtotal_snapshot?: number }).subtotal_snapshot || 0,
+          taxPaise: (o as unknown as { tax_snapshot?: number }).tax_snapshot || 0,
+          instructions: extractOrderInstructions(o),
+          items,
+          hasFoodItems,
+          hasBeverageItems,
+          hasPendingFood,
+          hasPendingBeverage,
+        };
+      })
+      .filter((o) => o.items.length === 0 || o.hasPendingFood || o.hasPendingBeverage);
 
     return {
       success: true,
@@ -486,28 +499,7 @@ export async function confirmCashierOrderAction(
     const orderTotalPaise = currentOrder?.total_snapshot || 0;
     const sessionId = currentOrder?.table_session_id;
 
-    // 2. Mark order as ACCEPTED and PAID in PostgreSQL
-    const orderUpdatePayload: Record<string, unknown> = {
-      status: "ACCEPTED",
-      payment_status: "PAID",
-      accepted_at: nowIso,
-      updated_at: nowIso,
-    };
-    if (isMockDatabase()) {
-      orderUpdatePayload.payment_method = cleanMethod;
-    }
-
-    const { error: updateErr } = await supabase
-      .from("orders")
-      .update(orderUpdatePayload)
-      .eq("id", orderId);
-
-    if (updateErr) {
-      console.error("Failed to confirm order directly:", updateErr);
-      return { success: false, message: `Failed to confirm order: ${updateErr.message || "database error"}` };
-    }
-
-    // 2b. Update item statuses according to stationTarget
+    // 2. Update item statuses according to stationTarget first
     try {
       const { data: dbItems } = await supabase
         .from("order_items")
@@ -531,6 +523,45 @@ export async function confirmCashierOrderAction(
       }
     } catch (itemStatusErr) {
       console.warn("Notice updating item statuses on dispatch:", itemStatusErr);
+    }
+
+    // 2b. Check if any items still remain pending in this order
+    let isFullyDispatched = true;
+    try {
+      const { data: allItems } = await supabase
+        .from("order_items")
+        .select("id, item_status")
+        .eq("order_id", orderId);
+
+      const hasPending = (allItems || []).some(
+        (i) => !i.item_status || i.item_status === "PENDING" || i.item_status === "DRAFT"
+      );
+      isFullyDispatched = !hasPending;
+    } catch (checkErr) {
+      console.warn("Notice checking remaining items:", checkErr);
+    }
+
+    // 2c. Update order status and payment status in PostgreSQL
+    const orderUpdatePayload: Record<string, unknown> = {
+      status: isFullyDispatched ? "ACCEPTED" : "SUBMITTED",
+      payment_status: "PAID",
+      updated_at: nowIso,
+    };
+    if (isFullyDispatched) {
+      orderUpdatePayload.accepted_at = nowIso;
+    }
+    if (isMockDatabase()) {
+      orderUpdatePayload.payment_method = cleanMethod;
+    }
+
+    const { error: updateErr } = await supabase
+      .from("orders")
+      .update(orderUpdatePayload)
+      .eq("id", orderId);
+
+    if (updateErr) {
+      console.error("Failed to update order status on dispatch:", updateErr);
+      return { success: false, message: `Failed to confirm order: ${updateErr.message || "database error"}` };
     }
 
     // 3. Settle bill and payment attempt for Cashier Audit
@@ -601,18 +632,18 @@ export async function confirmCashierOrderAction(
       orderId,
       orderNo: currentOrder?.order_no,
       station: stationTarget,
-      status: "ACCEPTED",
+      status: isFullyDispatched ? "ACCEPTED" : "SUBMITTED",
       timestamp: Date.now(),
-      metadata: { stationTarget },
+      metadata: { stationTarget, isFullyDispatched },
     });
 
     broadcastSyncEvent({
       type: "STATUS_CHANGED",
       orderId,
       station: stationTarget,
-      status: "ACCEPTED",
+      status: isFullyDispatched ? "ACCEPTED" : "SUBMITTED",
       timestamp: Date.now(),
-      metadata: { stationTarget },
+      metadata: { stationTarget, isFullyDispatched },
     });
 
     const destinationLabel =
@@ -625,6 +656,8 @@ export async function confirmCashierOrderAction(
     return {
       success: true,
       orderId,
+      isFullyDispatched,
+      stationTarget,
       message: `Order #${currentOrder?.order_no || ""} confirmed as ${cleanMethod} & dispatched to ${destinationLabel}!`,
     };
   } catch (err) {

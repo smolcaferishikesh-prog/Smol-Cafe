@@ -57,8 +57,8 @@ export async function fetchSingleKitchenTicketAction(orderId: string): Promise<{
     const { data: order, error: orderErr } = await supabase.from("orders").select("*").eq("id", orderId).maybeSingle();
     if (orderErr || !order) return { success: false };
 
-    // Do not return unconfirmed / cashier pending orders to kitchen KDS
-    if (order.status === "PENDING_CONFIRMATION" || order.status === "DRAFT" || order.status === "SUBMITTED" || order.status === "CANCELLED" || order.status === "REJECTED") {
+    // Do not return cancelled or rejected orders to kitchen KDS
+    if (order.status === "PENDING_CONFIRMATION" || order.status === "DRAFT" || order.status === "CANCELLED" || order.status === "REJECTED") {
       return { success: false };
     }
 
@@ -101,10 +101,10 @@ export async function fetchSingleKitchenTicketAction(orderId: string): Promise<{
       };
     });
 
-    // Filter to ONLY food items (drinks belong exclusively to Barista)
-    const foodItems = allItems.filter((it) => !isBeverageItem(it.name));
+    // Filter to ONLY dispatched food items (drinks belong exclusively to Barista)
+    const foodItems = allItems.filter((it) => !isBeverageItem(it.name) && it.itemStatus && it.itemStatus !== "PENDING" && it.itemStatus !== "DRAFT");
     if (foodItems.length === 0) {
-      return { success: false, reason: "NO_FOOD_ITEMS" };
+      return { success: false, reason: "NO_DISPATCHED_FOOD_ITEMS" };
     }
 
     const ticket: KitchenTicket = {
@@ -135,8 +135,8 @@ export async function fetchKitchenOrdersAction(): Promise<FetchKitchenOrdersResu
   recordKdsHeartbeat();
 
   try {
-    // 1. Fetch active orders across confirmed KDS phases: Accepted, Preparing, Ready, and Served
-    const activeStatuses = ["ACCEPTED", "PREPARING", "READY", "SERVED"];
+    // 1. Fetch active orders across confirmed KDS phases: Submitted, Accepted, Preparing, Ready, and Served
+    const activeStatuses = ["SUBMITTED", "ACCEPTED", "PREPARING", "READY", "SERVED"];
 
     const { data: orders, error: ordersError } = await supabase
       .from("orders")
@@ -236,38 +236,34 @@ export async function fetchKitchenOrdersAction(): Promise<FetchKitchenOrdersResu
       });
     }
 
-    // 4. Assemble structured kitchen tickets (Food items ONLY)
+    // 4. Assemble structured kitchen tickets (Dispatched food items ONLY)
     const tickets: KitchenTicket[] = [];
 
     for (const o of orders) {
       const allItems = itemsByOrder.get(o.id) || [];
-      const foodItems = allItems.filter((i) => !isBeverageItem(i.name));
-      // If the order has food items, verify they are dispatched to kitchen
-      if (foodItems.length > 0) {
-        const isDispatched = foodItems.some(
-          (i) => i.itemStatus && i.itemStatus !== "PENDING" && i.itemStatus !== "DRAFT"
-        );
-        if (!isDispatched && (o.status === "DRAFT" || o.status === "PENDING_CONFIRMATION" || o.status === "SUBMITTED")) {
-          continue;
-        }
-
-        const tableInfo = o.table_session_id ? tableLabelMap.get(o.table_session_id) : null;
-
-        tickets.push({
-          id: o.id,
-          orderNo: o.order_no,
-          tableLabel: tableInfo?.label || "Direct / Takeaway",
-          tableId: tableInfo?.tableId || "",
-          guestName: null,
-          guestPhone: null,
-          status: deriveStationStatus(foodItems, o.status as OrderStatus),
-          submittedAt: o.submitted_at || o.created_at,
-          acceptedAt: o.accepted_at,
-          readyAt: o.ready_at,
-          instructions: extractOrderInstructions(o),
-          items: foodItems,
-        });
+      const dispatchedFoodItems = allItems.filter(
+        (i) => !isBeverageItem(i.name) && i.itemStatus && i.itemStatus !== "PENDING" && i.itemStatus !== "DRAFT"
+      );
+      if (dispatchedFoodItems.length === 0) {
+        continue;
       }
+
+      const tableInfo = o.table_session_id ? tableLabelMap.get(o.table_session_id) : null;
+
+      tickets.push({
+        id: o.id,
+        orderNo: o.order_no,
+        tableLabel: tableInfo?.label || "Direct / Takeaway",
+        tableId: tableInfo?.tableId || "",
+        guestName: null,
+        guestPhone: null,
+        status: deriveStationStatus(dispatchedFoodItems, o.status as OrderStatus),
+        submittedAt: o.submitted_at || o.created_at,
+        acceptedAt: o.accepted_at,
+        readyAt: o.ready_at,
+        instructions: extractOrderInstructions(o),
+        items: dispatchedFoodItems,
+      });
     }
 
     return {

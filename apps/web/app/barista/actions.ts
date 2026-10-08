@@ -51,8 +51,8 @@ export async function fetchBaristaOrdersAction(): Promise<FetchBaristaOrdersResu
   const supabase = createAdminClient();
 
   try {
-    // 1. Fetch active orders (accepted, preparing, ready, served)
-    const activeStatuses = ["ACCEPTED", "PREPARING", "READY", "SERVED"];
+    // 1. Fetch active orders (submitted, accepted, preparing, ready, served)
+    const activeStatuses = ["SUBMITTED", "ACCEPTED", "PREPARING", "READY", "SERVED"];
     const { data: orders, error: ordersError } = await supabase
       .from("orders")
       .select("*")
@@ -148,38 +148,34 @@ export async function fetchBaristaOrdersAction(): Promise<FetchBaristaOrdersResu
     }
 
     // 4. Assemble barista tickets:
-    // Any order containing beverages is routed to Barista Desk
+    // Only orders with DISPATCHED beverages are routed to Barista Desk
     const tickets: BaristaTicket[] = [];
 
     for (const o of orders) {
       const allItems = itemsByOrder.get(o.id) || [];
-      const beverageItems = allItems.filter((i) => i.isBeverage);
-      // If the order has beverages, verify they are dispatched to barista
-      if (beverageItems.length > 0) {
-        const isDispatched = beverageItems.some(
-          (i) => i.itemStatus && i.itemStatus !== "PENDING" && i.itemStatus !== "DRAFT"
-        );
-        if (!isDispatched && (o.status === "DRAFT" || o.status === "PENDING_CONFIRMATION" || o.status === "SUBMITTED")) {
-          continue;
-        }
-
-        const tableInfo = o.table_session_id ? tableLabelMap.get(o.table_session_id) : null;
-
-        tickets.push({
-          id: o.id,
-          orderNo: o.order_no,
-          tableLabel: tableInfo?.label || "01",
-          tableId: tableInfo?.tableId || "",
-          guestName: null,
-          guestPhone: null,
-          status: deriveStationStatus(beverageItems, o.status as OrderStatus),
-          submittedAt: o.submitted_at || o.created_at,
-          acceptedAt: o.accepted_at,
-          readyAt: o.ready_at,
-          instructions: extractOrderInstructions(o),
-          items: beverageItems, // show beverages for barista
-        });
+      const dispatchedBeverageItems = allItems.filter(
+        (i) => i.isBeverage && i.itemStatus && i.itemStatus !== "PENDING" && i.itemStatus !== "DRAFT"
+      );
+      if (dispatchedBeverageItems.length === 0) {
+        continue;
       }
+
+      const tableInfo = o.table_session_id ? tableLabelMap.get(o.table_session_id) : null;
+
+      tickets.push({
+        id: o.id,
+        orderNo: o.order_no,
+        tableLabel: tableInfo?.label || "01",
+        tableId: tableInfo?.tableId || "",
+        guestName: null,
+        guestPhone: null,
+        status: deriveStationStatus(dispatchedBeverageItems, o.status as OrderStatus),
+        submittedAt: o.submitted_at || o.created_at,
+        acceptedAt: o.accepted_at,
+        readyAt: o.ready_at,
+        instructions: extractOrderInstructions(o),
+        items: dispatchedBeverageItems,
+      });
     }
 
     return { success: true, orders: tickets };
@@ -314,8 +310,8 @@ export async function fetchSingleBaristaTicketAction(
 
     if (error || !o) return { success: false };
 
-    // Do not return unconfirmed / cashier pending orders to barista desk
-    if (o.status === "PENDING_CONFIRMATION" || o.status === "DRAFT" || o.status === "SUBMITTED" || o.status === "CANCELLED" || o.status === "REJECTED") {
+    // Do not return cancelled or rejected orders to barista desk
+    if (o.status === "PENDING_CONFIRMATION" || o.status === "DRAFT" || o.status === "CANCELLED" || o.status === "REJECTED") {
       return { success: false };
     }
 
@@ -369,9 +365,9 @@ export async function fetchSingleBaristaTicketAction(
       };
     });
 
-    const beverageItems = items.filter((item) => item.isBeverage);
+    const beverageItems = items.filter((item) => item.isBeverage && item.itemStatus && item.itemStatus !== "PENDING" && item.itemStatus !== "DRAFT");
     if (beverageItems.length === 0) {
-      return { success: false, reason: "NO_BEVERAGE_ITEMS" };
+      return { success: false, reason: "NO_DISPATCHED_BEVERAGE_ITEMS" };
     }
 
     const ticket: BaristaTicket = {

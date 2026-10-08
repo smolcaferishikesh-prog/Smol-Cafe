@@ -268,13 +268,33 @@ export const CashierDashboard: React.FC<CashierDashboardProps> = ({
   ) => {
     if (submittingOrderIdsRef.current.has(orderId)) return;
 
-    // 1. Instant Optimistic UI Update (0ms instant feedback)
+    // 1. Check whether this dispatch is partial or full
     const targetOrder = (paymentPromptOrder && paymentPromptOrder.order.id === orderId ? paymentPromptOrder.order : null) || pendingOrders.find((o) => o.id === orderId);
-    submittingOrderIdsRef.current.add(orderId);
-    confirmedOrderIdsRef.current.add(orderId);
-    setSubmittingOrderIds((prev) => new Set(prev).add(orderId));
-    setPendingOrders((prev) => prev.filter((o) => o.id !== orderId));
     setPaymentPromptOrder(null);
+    submittingOrderIdsRef.current.add(orderId);
+    setSubmittingOrderIds((prev) => new Set(prev).add(orderId));
+
+    const willHavePendingFood = stationTarget === "KITCHEN" || stationTarget === "ALL" ? false : Boolean(targetOrder?.hasPendingFood);
+    const willHavePendingBeverage = stationTarget === "BARISTA" || stationTarget === "ALL" ? false : Boolean(targetOrder?.hasPendingBeverage);
+    const willRemainPending = willHavePendingFood || willHavePendingBeverage;
+
+    if (!willRemainPending) {
+      confirmedOrderIdsRef.current.add(orderId);
+      setPendingOrders((prev) => prev.filter((o) => o.id !== orderId));
+    } else {
+      // Retain in pending list with updated station flags
+      setPendingOrders((prev) =>
+        prev.map((o) =>
+          o.id === orderId
+            ? {
+                ...o,
+                hasPendingFood: willHavePendingFood,
+                hasPendingBeverage: willHavePendingBeverage,
+              }
+            : o
+        )
+      );
+    }
 
     if (targetOrder) {
       const optimisticPaidRecord: PaidHistoryRecord = {
@@ -309,6 +329,13 @@ export const CashierDashboard: React.FC<CashierDashboardProps> = ({
     try {
       const res = await confirmCashierOrderAction(orderId, stationTarget, staffName, paymentMethod);
       if (res.success) {
+        if (res.isFullyDispatched) {
+          confirmedOrderIdsRef.current.add(orderId);
+          setPendingOrders((prev) => prev.filter((o) => o.id !== orderId));
+        } else {
+          refreshData();
+        }
+
         const ticketPayload = targetOrder
           ? {
               id: targetOrder.id,
@@ -324,7 +351,14 @@ export const CashierDashboard: React.FC<CashierDashboardProps> = ({
                 id: it.id,
                 name: it.name,
                 qty: it.qty,
-                itemStatus: "PENDING",
+                itemStatus:
+                  stationTarget === "ALL"
+                    ? "ACCEPTED"
+                    : stationTarget === "KITCHEN" && !it.isBeverage
+                    ? "ACCEPTED"
+                    : stationTarget === "BARISTA" && it.isBeverage
+                    ? "ACCEPTED"
+                    : it.itemStatus || "PENDING",
                 isBeverage: it.isBeverage,
               })),
             }
@@ -336,10 +370,12 @@ export const CashierDashboard: React.FC<CashierDashboardProps> = ({
           orderNo: targetOrder?.orderNo,
           tableLabel: targetOrder?.tableLabel,
           tableId: targetOrder?.tableId,
-          status: "ACCEPTED",
+          status: res.isFullyDispatched ? "ACCEPTED" : "SUBMITTED",
+          station: stationTarget,
           timestamp: Date.now(),
           metadata: {
             stationTarget,
+            isFullyDispatched: res.isFullyDispatched,
             staffName,
             paymentMethod,
             hasFoodItems: targetOrder ? targetOrder.hasFoodItems : true,
@@ -819,24 +855,44 @@ export const CashierDashboard: React.FC<CashierDashboardProps> = ({
                             <div className="grid grid-cols-2 gap-2">
                               <button
                                 type="button"
-                                disabled={isSubmitting}
+                                disabled={isSubmitting || !order.hasPendingFood}
                                 onClick={() => handleInitiateConfirm(order, "KITCHEN")}
-                                className="flex items-center justify-center gap-1.5 rounded-xl bg-orange-600 hover:bg-orange-500 text-white px-2.5 py-2.5 text-xs font-bold shadow-xs active:scale-[0.98] transition cursor-pointer disabled:opacity-50"
-                                title="Send only Food items to Kitchen KDS"
+                                className={`flex items-center justify-center gap-1.5 rounded-xl px-2.5 py-2.5 text-xs font-bold shadow-xs active:scale-[0.98] transition cursor-pointer disabled:opacity-60 ${
+                                  !order.hasPendingFood
+                                    ? "bg-stone-300 dark:bg-stone-800 text-stone-500 cursor-not-allowed"
+                                    : "bg-orange-600 hover:bg-orange-500 text-white"
+                                }`}
+                                title={!order.hasPendingFood ? "Food already dispatched to Kitchen" : "Send only Food items to Kitchen KDS"}
                               >
-                                {isSubmitting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <UtensilsCrossed className="h-3.5 w-3.5" />}
-                                <span>Kitchen (Food)</span>
+                                {isSubmitting ? (
+                                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                ) : !order.hasPendingFood ? (
+                                  <Check className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
+                                ) : (
+                                  <UtensilsCrossed className="h-3.5 w-3.5" />
+                                )}
+                                <span>{!order.hasPendingFood ? "Kitchen Dispatched ✓" : "Kitchen (Food)"}</span>
                               </button>
 
                               <button
                                 type="button"
-                                disabled={isSubmitting}
+                                disabled={isSubmitting || !order.hasPendingBeverage}
                                 onClick={() => handleInitiateConfirm(order, "BARISTA")}
-                                className="flex items-center justify-center gap-1.5 rounded-xl bg-amber-600 hover:bg-amber-500 text-white px-2.5 py-2.5 text-xs font-bold shadow-xs active:scale-[0.98] transition cursor-pointer disabled:opacity-50"
-                                title="Send only Beverage items to Barista Desk"
+                                className={`flex items-center justify-center gap-1.5 rounded-xl px-2.5 py-2.5 text-xs font-bold shadow-xs active:scale-[0.98] transition cursor-pointer disabled:opacity-60 ${
+                                  !order.hasPendingBeverage
+                                    ? "bg-stone-300 dark:bg-stone-800 text-stone-500 cursor-not-allowed"
+                                    : "bg-amber-600 hover:bg-amber-500 text-white"
+                                }`}
+                                title={!order.hasPendingBeverage ? "Drinks already dispatched to Barista" : "Send only Beverage items to Barista Desk"}
                               >
-                                {isSubmitting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Coffee className="h-3.5 w-3.5" />}
-                                <span>Barista (Drinks)</span>
+                                {isSubmitting ? (
+                                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                ) : !order.hasPendingBeverage ? (
+                                  <Check className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
+                                ) : (
+                                  <Coffee className="h-3.5 w-3.5" />
+                                )}
+                                <span>{!order.hasPendingBeverage ? "Barista Dispatched ✓" : "Barista (Drinks)"}</span>
                               </button>
 
                               <button
@@ -846,7 +902,13 @@ export const CashierDashboard: React.FC<CashierDashboardProps> = ({
                                 className="col-span-2 flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-emerald-600 via-emerald-500 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white py-3 text-xs sm:text-sm font-extrabold shadow-md active:scale-[0.98] transition cursor-pointer disabled:opacity-50"
                               >
                                 {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
-                                <span>Confirm All (Kitchen &amp; Barista)</span>
+                                <span>
+                                  {!order.hasPendingFood
+                                    ? "Dispatch Remaining (Barista)"
+                                    : !order.hasPendingBeverage
+                                    ? "Dispatch Remaining (Kitchen)"
+                                    : "Confirm All (Kitchen & Barista)"}
+                                </span>
                               </button>
                             </div>
                           ) : order.hasFoodItems ? (

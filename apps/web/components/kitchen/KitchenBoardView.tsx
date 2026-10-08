@@ -316,18 +316,19 @@ export const KitchenBoardView: React.FC<KitchenBoardViewProps> = ({ initialOrder
     const unsubscribe = subscribeToSyncEvents((event) => {
       // Ignore orders awaiting cashier approval in Kitchen KDS
       if (
-        event.type === "ORDER_PENDING_CASHIER" ||
-        event.type === "ORDER_PLACED" ||
-        event.status === "PENDING_CONFIRMATION" ||
-        event.status === "SUBMITTED" ||
-        event.status === "DRAFT"
+        event.type !== "ORDER_CONFIRMED" &&
+        (event.type === "ORDER_PENDING_CASHIER" ||
+          event.type === "ORDER_PLACED" ||
+          event.status === "PENDING_CONFIRMATION" ||
+          event.status === "SUBMITTED" ||
+          event.status === "DRAFT")
       ) {
         return;
       }
       // If confirmed specifically for Barista only or no food items, kitchen ignores
       if (
         event.type === "ORDER_CONFIRMED" &&
-        (event.metadata?.stationTarget === "BARISTA" || event.metadata?.hasFoodItems === false)
+        (event.metadata?.stationTarget === "BARISTA" || event.station === "BARISTA" || event.metadata?.hasFoodItems === false)
       ) {
         return;
       }
@@ -354,7 +355,9 @@ export const KitchenBoardView: React.FC<KitchenBoardViewProps> = ({ initialOrder
         }
         const ticketData = event.metadata?.ticket as RawTicket | undefined;
         if (ticketData && Array.isArray(ticketData.items)) {
-          const foodItems = ticketData.items.filter((it) => !isBeverageItem(it.name) && !it.isBeverage);
+          const foodItems = ticketData.items.filter(
+            (it) => !isBeverageItem(it.name) && !it.isBeverage && it.itemStatus !== "PENDING" && it.itemStatus !== "DRAFT"
+          );
           if (foodItems.length > 0) {
             const newTicket: KitchenTicket = {
               id: ticketData.id || event.orderId!,
