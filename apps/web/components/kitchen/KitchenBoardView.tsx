@@ -316,18 +316,19 @@ export const KitchenBoardView: React.FC<KitchenBoardViewProps> = ({ initialOrder
     const unsubscribe = subscribeToSyncEvents((event) => {
       // Ignore orders awaiting cashier approval in Kitchen KDS
       if (
-        event.type === "ORDER_PENDING_CASHIER" ||
-        event.type === "ORDER_PLACED" ||
-        event.status === "PENDING_CONFIRMATION" ||
-        event.status === "SUBMITTED" ||
-        event.status === "DRAFT"
+        event.type !== "ORDER_CONFIRMED" &&
+        (event.type === "ORDER_PENDING_CASHIER" ||
+          event.type === "ORDER_PLACED" ||
+          event.status === "PENDING_CONFIRMATION" ||
+          event.status === "SUBMITTED" ||
+          event.status === "DRAFT")
       ) {
         return;
       }
       // If confirmed specifically for Barista only or no food items, kitchen ignores
       if (
         event.type === "ORDER_CONFIRMED" &&
-        (event.metadata?.stationTarget === "BARISTA" || event.metadata?.hasFoodItems === false)
+        (event.metadata?.stationTarget === "BARISTA" || event.station === "BARISTA" || event.metadata?.hasFoodItems === false)
       ) {
         return;
       }
@@ -354,7 +355,9 @@ export const KitchenBoardView: React.FC<KitchenBoardViewProps> = ({ initialOrder
         }
         const ticketData = event.metadata?.ticket as RawTicket | undefined;
         if (ticketData && Array.isArray(ticketData.items)) {
-          const foodItems = ticketData.items.filter((it) => !isBeverageItem(it.name) && !it.isBeverage);
+          const foodItems = ticketData.items.filter(
+            (it) => !isBeverageItem(it.name) && !it.isBeverage && it.itemStatus !== "PENDING" && it.itemStatus !== "DRAFT"
+          );
           if (foodItems.length > 0) {
             const newTicket: KitchenTicket = {
               id: ticketData.id || event.orderId!,
@@ -391,7 +394,17 @@ export const KitchenBoardView: React.FC<KitchenBoardViewProps> = ({ initialOrder
       }
 
       if (event.orderId) {
-        handleIncomingTicket(event.orderId, event.status as OrderStatus);
+        // If this event specifically belongs to another station (e.g. BARISTA), do not overwrite kitchen ticket status
+        if (event.station === "BARISTA") {
+          debouncedRefresh();
+          return;
+        }
+
+        if (event.type === "TICKET_STATUS_CHANGED" && event.station === "KITCHEN") {
+          handleIncomingTicket(event.orderId, event.status as OrderStatus);
+        } else if (event.type === "ORDER_CONFIRMED") {
+          handleIncomingTicket(event.orderId, event.status as OrderStatus);
+        }
       }
       debouncedRefresh();
     });
@@ -523,20 +536,22 @@ export const KitchenBoardView: React.FC<KitchenBoardViewProps> = ({ initialOrder
         <div className="flex items-center justify-between gap-2 sm:gap-4 flex-nowrap">
           {/* Brand */}
           <div className="flex items-center gap-1.5 sm:gap-3 shrink-0 min-w-0">
-            <div className="relative h-7 w-5.5 sm:h-10 sm:w-7.5 shrink-0 select-none">
+            <div className="relative h-8 w-8 sm:h-10 sm:w-10 shrink-0 select-none flex items-center justify-center">
               <Image
                 src="/kitchen-logo.png"
                 alt="smol café kitchen logo"
-                fill
+                width={40}
+                height={40}
                 priority
-                className="object-contain drop-shadow-xs dark:hidden block"
+                className="h-8 w-auto sm:h-10 object-contain drop-shadow-xs dark:hidden block"
               />
               <Image
                 src="/kitchen-logo-dark.png"
                 alt="smol café kitchen logo night mode"
-                fill
+                width={40}
+                height={40}
                 priority
-                className="object-contain drop-shadow-[0_0_8px_rgba(168,85,247,0.4)] hidden dark:block"
+                className="h-8 w-auto sm:h-10 object-contain drop-shadow-[0_0_8px_rgba(168,85,247,0.4)] hidden dark:block"
               />
             </div>
             <div className="min-w-0">

@@ -17,7 +17,16 @@ export interface MerchantConfig {
   name: string;
   phone: string;
   gstin: string;
+  fssai?: string;
+  address?: string;
   taxRatePercent: number; // e.g. 5%
+  serviceChargePercent?: number;
+  openingHours?: string;
+  wifiSsid?: string;
+  wifiPassword?: string;
+  receiptHeader?: string;
+  receiptFooter?: string;
+  contactEmail?: string;
 }
 
 const DEFAULT_MERCHANT_CONFIG: MerchantConfig = {
@@ -25,7 +34,16 @@ const DEFAULT_MERCHANT_CONFIG: MerchantConfig = {
   name: process.env.NEXT_PUBLIC_UPI_NAME || "smol café Tapovan",
   phone: process.env.NEXT_PUBLIC_UPI_NUMBER || "+91 9305084332",
   gstin: "05AAECS1482M1ZB",
+  fssai: "22624039000124",
+  address: "Tapovan, Rishikesh, Uttarakhand 249192",
   taxRatePercent: 5,
+  serviceChargePercent: 0,
+  openingHours: "08:00 AM – 10:00 PM (Daily)",
+  wifiSsid: "smol_cafe_guest",
+  wifiPassword: "slowcoffeewarmvibes",
+  receiptHeader: "artisanal coffee & slow bakes",
+  receiptFooter: "small place • slow coffee • warm conversations",
+  contactEmail: "hello@smolcafe.in",
 };
 
 const MERCHANT_CONFIG_KEY = "smol_merchant_config";

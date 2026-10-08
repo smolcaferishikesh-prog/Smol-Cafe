@@ -2,36 +2,24 @@ import { NextRequest, NextResponse } from "next/server";
 
 const STAFF_SESSION_COOKIE = "smol_staff_session";
 
-// Role → allowed routes mapping
+// Role → allowed routes mapping (only valid backdoor routes)
 const ROLE_ROUTES: Record<string, string[]> = {
-  kitchen: ["/kitchen", "/smol-backdoor/kitchen"],
-  barista: ["/barista", "/smol-backdoor/barista"],
-  cashier: ["/cashier", "/smol-backdoor/cashier"],
+  kitchen: ["/smol-backdoor/kitchen"],
+  barista: ["/smol-backdoor/barista"],
+  cashier: ["/smol-backdoor/cashier"],
   admin: [
-    "/admin",
-    "/kitchen",
-    "/cashier",
-    "/barista",
     "/smol-backdoor/admin",
     "/smol-backdoor/kitchen",
     "/smol-backdoor/cashier",
     "/smol-backdoor/barista",
   ],
   super_admin: [
-    "/admin",
-    "/kitchen",
-    "/cashier",
-    "/barista",
     "/smol-backdoor/admin",
     "/smol-backdoor/kitchen",
     "/smol-backdoor/cashier",
     "/smol-backdoor/barista",
   ],
   authenticated: [
-    "/admin",
-    "/kitchen",
-    "/cashier",
-    "/barista",
     "/smol-backdoor/admin",
     "/smol-backdoor/kitchen",
     "/smol-backdoor/cashier",
@@ -39,16 +27,20 @@ const ROLE_ROUTES: Record<string, string[]> = {
   ],
 };
 
-// Protected staff routes that require authentication
+// Protected backdoor routes that require authentication
 const PROTECTED_PREFIXES = [
-  "/kitchen",
-  "/cashier",
-  "/admin",
-  "/barista",
   "/smol-backdoor/kitchen",
   "/smol-backdoor/cashier",
   "/smol-backdoor/admin",
   "/smol-backdoor/barista",
+];
+
+// Direct naked staff paths that must redirect to /smol-backdoor
+const DIRECT_STAFF_ROUTES = [
+  "/admin",
+  "/barista",
+  "/kitchen",
+  "/cashier",
 ];
 
 export function middleware(request: NextRequest) {
@@ -63,7 +55,17 @@ export function middleware(request: NextRequest) {
 
   const { pathname } = request.nextUrl;
 
-  // 2. Check if this is a protected staff route
+  // 2. Direct hit on /admin, /barista, /kitchen, /cashier -> Redirect to /smol-backdoor
+  const isDirectStaffRoute = DIRECT_STAFF_ROUTES.some(
+    (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`)
+  );
+
+  if (isDirectStaffRoute) {
+    const backdoorUrl = new URL("/smol-backdoor", request.url);
+    return NextResponse.redirect(backdoorUrl);
+  }
+
+  // 3. Check if this is a protected backdoor staff route
   const isProtected = PROTECTED_PREFIXES.some((prefix) =>
     pathname.startsWith(prefix)
   );
@@ -72,7 +74,7 @@ export function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // 3. Read the staff session cookie
+  // 4. Read the staff session cookie
   const staffRole = request.cookies.get(STAFF_SESSION_COOKIE)?.value?.toLowerCase();
 
   // No session → redirect to /smol-backdoor login
@@ -81,7 +83,7 @@ export function middleware(request: NextRequest) {
     return NextResponse.redirect(backdoorUrl);
   }
 
-  // 4. Check role has permission for this route
+  // 5. Check role has permission for this route
   const allowedRoutes = ROLE_ROUTES[staffRole] ?? [];
   const hasAccess = allowedRoutes.some((route) => pathname.startsWith(route));
 

@@ -12,7 +12,11 @@ export const MenuItemCard: React.FC<MenuItemCardProps> = ({ item, onOpenDetail }
   const [imageError, setImageError] = useState(false);
   const priceRupees = Math.round(item.pricePaise / 100);
   const dietary = (item.metadata?.dietary || "").toLowerCase();
-  const isEgg = dietary.includes("egg");
+  const isEgg =
+    dietary.includes("egg") ||
+    item.name.toLowerCase().includes("egg") ||
+    item.name.toLowerCase().includes("omelette") ||
+    (item.metadata?.core_ingredients || "").toLowerCase().includes("egg");
   const spiceLevel = item.metadata?.spice || "";
   const pairing = item.metadata?.best_pairing || "";
   const foodImageUrl = getFoodImage(item.name, item.imageUrl);
@@ -25,7 +29,7 @@ export const MenuItemCard: React.FC<MenuItemCardProps> = ({ item, onOpenDetail }
     item.status === "LOW_STOCK" || (item.metadata as any)?.availability === "LOW_STOCK";
   const lowStockCount = (item.metadata as any)?.low_stock_portions;
   const isChefSpecial = (item.metadata as any)?.chef_special;
-  const chefNotes = (item.metadata as any)?.notes;
+  const chefNotes = (item.metadata as any)?.customer_note || (item.metadata as any)?.chef_note;
 
   return (
     <div

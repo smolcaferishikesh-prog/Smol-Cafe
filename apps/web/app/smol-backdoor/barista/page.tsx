@@ -3,6 +3,9 @@ import { requireStaffAuth } from "@/lib/auth/rbac";
 import { fetchBaristaOrdersAction } from "@/app/barista/actions";
 import { BaristaBoardView } from "@/components/barista/BaristaBoardView";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 export const metadata = {
   title: "Barista Desk & Brew Bar — smol café",
   description: "Live specialty coffee and beverage queue for smol café baristas.",

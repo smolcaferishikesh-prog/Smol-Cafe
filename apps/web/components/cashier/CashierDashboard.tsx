@@ -15,8 +15,11 @@ import {
   rejectCashierOrderAction,
   clearAllPendingCashierOrdersAction,
   fetchPaidCashierHistoryAction,
+  fetchReadyForDeliveryOrdersAction,
+  markOrderDeliveredAction,
   type PendingOrderVerification,
   type PaidHistoryRecord,
+  type DeliveryOrder,
 } from "@/app/cashier/actions";
 import {
   Bell,
@@ -40,6 +43,10 @@ import {
   LogOut,
   Clock,
   Loader2,
+  Truck,
+  Phone,
+  UserCheck,
+  CheckCircle2,
 } from "lucide-react";
 import { staffBackdoorLogoutAction } from "@/app/smol-backdoor/actions";
 import { useSupabaseRealtime } from "@/hooks/useSupabaseRealtime";
@@ -55,17 +62,21 @@ import { CashierOrderEditorModal } from "./CashierOrderEditorModal";
 interface CashierDashboardProps {
   initialTables: ActiveCashierTable[];
   initialPendingOrders?: PendingOrderVerification[];
+  initialDeliveryOrders?: DeliveryOrder[];
   initialPaidHistory?: PaidHistoryRecord[];
 }
 
 export const CashierDashboard: React.FC<CashierDashboardProps> = ({
   initialTables,
   initialPendingOrders = [],
+  initialDeliveryOrders = [],
   initialPaidHistory = [],
 }) => {
-  const [activeTab, setActiveTab] = useState<"queue" | "paid">("queue");
+  const [activeTab, setActiveTab] = useState<"queue" | "delivery" | "paid">("queue");
   const [tables, setTables] = useState<ActiveCashierTable[]>(initialTables);
   const [pendingOrders, setPendingOrders] = useState<PendingOrderVerification[]>(initialPendingOrders);
+  const [deliveryOrders, setDeliveryOrders] = useState<DeliveryOrder[]>(initialDeliveryOrders);
+  const [deliveringOrderIds, setDeliveringOrderIds] = useState<Set<string>>(new Set());
   const [paidHistory, setPaidHistory] = useState<PaidHistoryRecord[]>(initialPaidHistory);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isMounted, setIsMounted] = useState(false);
@@ -111,9 +122,10 @@ export const CashierDashboard: React.FC<CashierDashboardProps> = ({
       setIsRefreshing(true);
     }
     try {
-      const [tableData, pendingData, paidData] = await Promise.all([
+      const [tableData, pendingData, deliveryData, paidData] = await Promise.all([
         fetchActiveCashierTablesAction(),
         fetchPendingCashierOrdersAction(),
+        fetchReadyForDeliveryOrdersAction(),
         fetchPaidCashierHistoryAction(),
       ]);
       setTables(tableData);
@@ -134,6 +146,9 @@ export const CashierDashboard: React.FC<CashierDashboardProps> = ({
         filteredPending.forEach((o) => playedChimeOrderIdsRef.current.add(o.id));
 
         setPendingOrders(filteredPending);
+      }
+      if (deliveryData.success) {
+        setDeliveryOrders(deliveryData.orders);
       }
       if (paidData.success) {
         setPaidHistory(paidData.records);
@@ -268,13 +283,33 @@ export const CashierDashboard: React.FC<CashierDashboardProps> = ({
   ) => {
     if (submittingOrderIdsRef.current.has(orderId)) return;
 
-    // 1. Instant Optimistic UI Update (0ms instant feedback)
+    // 1. Check whether this dispatch is partial or full
     const targetOrder = (paymentPromptOrder && paymentPromptOrder.order.id === orderId ? paymentPromptOrder.order : null) || pendingOrders.find((o) => o.id === orderId);
-    submittingOrderIdsRef.current.add(orderId);
-    confirmedOrderIdsRef.current.add(orderId);
-    setSubmittingOrderIds((prev) => new Set(prev).add(orderId));
-    setPendingOrders((prev) => prev.filter((o) => o.id !== orderId));
     setPaymentPromptOrder(null);
+    submittingOrderIdsRef.current.add(orderId);
+    setSubmittingOrderIds((prev) => new Set(prev).add(orderId));
+
+    const willHavePendingFood = stationTarget === "KITCHEN" || stationTarget === "ALL" ? false : Boolean(targetOrder?.hasPendingFood);
+    const willHavePendingBeverage = stationTarget === "BARISTA" || stationTarget === "ALL" ? false : Boolean(targetOrder?.hasPendingBeverage);
+    const willRemainPending = willHavePendingFood || willHavePendingBeverage;
+
+    if (!willRemainPending) {
+      confirmedOrderIdsRef.current.add(orderId);
+      setPendingOrders((prev) => prev.filter((o) => o.id !== orderId));
+    } else {
+      // Retain in pending list with updated station flags
+      setPendingOrders((prev) =>
+        prev.map((o) =>
+          o.id === orderId
+            ? {
+                ...o,
+                hasPendingFood: willHavePendingFood,
+                hasPendingBeverage: willHavePendingBeverage,
+              }
+            : o
+        )
+      );
+    }
 
     if (targetOrder) {
       const optimisticPaidRecord: PaidHistoryRecord = {
@@ -309,6 +344,13 @@ export const CashierDashboard: React.FC<CashierDashboardProps> = ({
     try {
       const res = await confirmCashierOrderAction(orderId, stationTarget, staffName, paymentMethod);
       if (res.success) {
+        if (res.isFullyDispatched) {
+          confirmedOrderIdsRef.current.add(orderId);
+          setPendingOrders((prev) => prev.filter((o) => o.id !== orderId));
+        } else {
+          refreshData();
+        }
+
         const ticketPayload = targetOrder
           ? {
               id: targetOrder.id,
@@ -324,7 +366,14 @@ export const CashierDashboard: React.FC<CashierDashboardProps> = ({
                 id: it.id,
                 name: it.name,
                 qty: it.qty,
-                itemStatus: "PENDING",
+                itemStatus:
+                  stationTarget === "ALL"
+                    ? "ACCEPTED"
+                    : stationTarget === "KITCHEN" && !it.isBeverage
+                    ? "ACCEPTED"
+                    : stationTarget === "BARISTA" && it.isBeverage
+                    ? "ACCEPTED"
+                    : it.itemStatus || "PENDING",
                 isBeverage: it.isBeverage,
               })),
             }
@@ -336,10 +385,12 @@ export const CashierDashboard: React.FC<CashierDashboardProps> = ({
           orderNo: targetOrder?.orderNo,
           tableLabel: targetOrder?.tableLabel,
           tableId: targetOrder?.tableId,
-          status: "ACCEPTED",
+          status: res.isFullyDispatched ? "ACCEPTED" : "SUBMITTED",
+          station: stationTarget,
           timestamp: Date.now(),
           metadata: {
             stationTarget,
+            isFullyDispatched: res.isFullyDispatched,
             staffName,
             paymentMethod,
             hasFoodItems: targetOrder ? targetOrder.hasFoodItems : true,
@@ -508,6 +559,28 @@ export const CashierDashboard: React.FC<CashierDashboardProps> = ({
     }
   };
 
+  const handleMarkDelivered = async (orderId: string) => {
+    setDeliveringOrderIds((prev) => new Set(prev).add(orderId));
+    try {
+      const res = await markOrderDeliveredAction(orderId);
+      if (res.success) {
+        setActionFeedback({ type: "success", text: "Order marked as Delivered & Served to Customer!" });
+        setDeliveryOrders((prev) => prev.filter((o) => o.id !== orderId));
+        void refreshData(true);
+      } else {
+        setActionFeedback({ type: "error", text: res.message || "Failed to mark order as delivered." });
+      }
+    } catch {
+      setActionFeedback({ type: "error", text: "An error occurred while marking order delivered." });
+    } finally {
+      setDeliveringOrderIds((prev) => {
+        const next = new Set(prev);
+        next.delete(orderId);
+        return next;
+      });
+    }
+  };
+
   const selectedTotalRupees = selectedTable ? Math.round(selectedTable.totalPaise / 100) : 0;
   const tenderedRupees = parseFloat(amountTendered) || 0;
   const changeDueRupees = Math.max(0, tenderedRupees - selectedTotalRupees);
@@ -526,20 +599,22 @@ export const CashierDashboard: React.FC<CashierDashboardProps> = ({
             >
               ←
             </Link>
-            <div className="relative h-7 w-5.5 sm:h-11 sm:w-8 shrink-0 select-none">
+            <div className="relative h-8 w-8 sm:h-10 sm:w-10 shrink-0 select-none flex items-center justify-center">
               <Image
                 src="/cashier-logo.png"
                 alt="smol café cashier logo"
-                fill
+                width={40}
+                height={40}
                 priority
-                className="object-contain drop-shadow-xs dark:hidden block"
+                className="h-8 w-auto sm:h-10 object-contain drop-shadow-xs dark:hidden block"
               />
               <Image
                 src="/cashier-logo-dark.png"
                 alt="smol café cashier logo night mode"
-                fill
+                width={40}
+                height={40}
                 priority
-                className="object-contain drop-shadow-[0_0_8px_rgba(168,85,247,0.4)] hidden dark:block"
+                className="h-8 w-auto sm:h-10 object-contain drop-shadow-[0_0_8px_rgba(168,85,247,0.4)] hidden dark:block"
               />
             </div>
             <div className="min-w-0">
@@ -623,8 +698,8 @@ export const CashierDashboard: React.FC<CashierDashboardProps> = ({
             }`}
           >
             <Bell className="h-4 w-4 shrink-0 text-[#8C6207] dark:text-[#F6AD55]" />
-            <span className="hidden sm:inline">Order Confirmation Queue</span>
-            <span className="sm:hidden">Order Queue</span>
+            <span className="hidden sm:inline">Order Queue</span>
+            <span className="sm:hidden">Queue</span>
             {pendingOrders.length > 0 && (
               <span className="rounded-full bg-white px-1.5 sm:px-2 py-0.2 text-[10px] font-black text-[#B72E35] animate-bounce">
                 {pendingOrders.length}
@@ -632,6 +707,25 @@ export const CashierDashboard: React.FC<CashierDashboardProps> = ({
             )}
           </button>
 
+          {/* TAB 2: ORDER DELIVERY (Kitchen Ready) */}
+          <button
+            type="button"
+            onClick={() => setActiveTab("delivery")}
+            className={`flex shrink-0 items-center gap-1.5 sm:gap-2 rounded-xl sm:rounded-2xl px-3.5 sm:px-5 py-2 sm:py-2.5 text-xs font-bold transition-all cursor-pointer ${
+              activeTab === "delivery"
+                ? "bg-[#1E7250] text-white shadow-md font-extrabold"
+                : "bg-[#FAF4EB] dark:bg-stone-900 border border-[#C9AE8B]/40 dark:border-stone-800 text-[#725039] dark:text-stone-400 hover:bg-[#F3E7D3] dark:hover:bg-stone-800"
+            }`}
+          >
+            <Truck className="h-4 w-4 shrink-0 text-emerald-500 dark:text-emerald-400" />
+            <span className="hidden sm:inline">Order Delivery</span>
+            <span className="sm:hidden">Delivery</span>
+            {deliveryOrders.length > 0 && (
+              <span className="rounded-full bg-emerald-500 text-white px-1.5 sm:px-2 py-0.2 text-[10px] font-black animate-pulse">
+                {deliveryOrders.length} Ready
+              </span>
+            )}
+          </button>
 
           {/* TAB 3: PAID ORDERS */}
           <button
@@ -819,24 +913,44 @@ export const CashierDashboard: React.FC<CashierDashboardProps> = ({
                             <div className="grid grid-cols-2 gap-2">
                               <button
                                 type="button"
-                                disabled={isSubmitting}
+                                disabled={isSubmitting || !order.hasPendingFood}
                                 onClick={() => handleInitiateConfirm(order, "KITCHEN")}
-                                className="flex items-center justify-center gap-1.5 rounded-xl bg-orange-600 hover:bg-orange-500 text-white px-2.5 py-2.5 text-xs font-bold shadow-xs active:scale-[0.98] transition cursor-pointer disabled:opacity-50"
-                                title="Send only Food items to Kitchen KDS"
+                                className={`flex items-center justify-center gap-1.5 rounded-xl px-2.5 py-2.5 text-xs font-bold shadow-xs active:scale-[0.98] transition cursor-pointer disabled:opacity-60 ${
+                                  !order.hasPendingFood
+                                    ? "bg-stone-300 dark:bg-stone-800 text-stone-500 cursor-not-allowed"
+                                    : "bg-orange-600 hover:bg-orange-500 text-white"
+                                }`}
+                                title={!order.hasPendingFood ? "Food already dispatched to Kitchen" : "Send only Food items to Kitchen KDS"}
                               >
-                                {isSubmitting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <UtensilsCrossed className="h-3.5 w-3.5" />}
-                                <span>Kitchen (Food)</span>
+                                {isSubmitting ? (
+                                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                ) : !order.hasPendingFood ? (
+                                  <Check className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
+                                ) : (
+                                  <UtensilsCrossed className="h-3.5 w-3.5" />
+                                )}
+                                <span>{!order.hasPendingFood ? "Kitchen Dispatched ✓" : "Kitchen (Food)"}</span>
                               </button>
 
                               <button
                                 type="button"
-                                disabled={isSubmitting}
+                                disabled={isSubmitting || !order.hasPendingBeverage}
                                 onClick={() => handleInitiateConfirm(order, "BARISTA")}
-                                className="flex items-center justify-center gap-1.5 rounded-xl bg-amber-600 hover:bg-amber-500 text-white px-2.5 py-2.5 text-xs font-bold shadow-xs active:scale-[0.98] transition cursor-pointer disabled:opacity-50"
-                                title="Send only Beverage items to Barista Desk"
+                                className={`flex items-center justify-center gap-1.5 rounded-xl px-2.5 py-2.5 text-xs font-bold shadow-xs active:scale-[0.98] transition cursor-pointer disabled:opacity-60 ${
+                                  !order.hasPendingBeverage
+                                    ? "bg-stone-300 dark:bg-stone-800 text-stone-500 cursor-not-allowed"
+                                    : "bg-amber-600 hover:bg-amber-500 text-white"
+                                }`}
+                                title={!order.hasPendingBeverage ? "Drinks already dispatched to Barista" : "Send only Beverage items to Barista Desk"}
                               >
-                                {isSubmitting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Coffee className="h-3.5 w-3.5" />}
-                                <span>Barista (Drinks)</span>
+                                {isSubmitting ? (
+                                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                ) : !order.hasPendingBeverage ? (
+                                  <Check className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
+                                ) : (
+                                  <Coffee className="h-3.5 w-3.5" />
+                                )}
+                                <span>{!order.hasPendingBeverage ? "Barista Dispatched ✓" : "Barista (Drinks)"}</span>
                               </button>
 
                               <button
@@ -846,7 +960,13 @@ export const CashierDashboard: React.FC<CashierDashboardProps> = ({
                                 className="col-span-2 flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-emerald-600 via-emerald-500 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white py-3 text-xs sm:text-sm font-extrabold shadow-md active:scale-[0.98] transition cursor-pointer disabled:opacity-50"
                               >
                                 {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
-                                <span>Confirm All (Kitchen &amp; Barista)</span>
+                                <span>
+                                  {!order.hasPendingFood
+                                    ? "Dispatch Remaining (Barista)"
+                                    : !order.hasPendingBeverage
+                                    ? "Dispatch Remaining (Kitchen)"
+                                    : "Confirm All (Kitchen & Barista)"}
+                                </span>
                               </button>
                             </div>
                           ) : order.hasFoodItems ? (
@@ -900,7 +1020,156 @@ export const CashierDashboard: React.FC<CashierDashboardProps> = ({
           </div>
         )}
 
-        {/* TAB 2: PAID ORDERS & SETTLEMENT AUDIT */}
+        {/* TAB 2: ORDER DELIVERY (READY FOR SERVING) */}
+        {activeTab === "delivery" && (
+          <div className="space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+              <div>
+                <h1 className="text-xl font-extrabold tracking-tight text-[#241F1C] dark:text-white">
+                  Order Delivery Board (Ready from Kitchen &amp; Bar)
+                </h1>
+                <p className="text-xs text-[#725039] dark:text-stone-400">
+                  Kitchen and Barista have prepared these orders. Verify customer details and mark delivered to table.
+                </p>
+              </div>
+              <div className="self-start sm:self-auto">
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-100 dark:bg-emerald-950/80 border border-emerald-300 dark:border-emerald-800/60 px-3 py-1 font-mono text-xs font-bold text-emerald-800 dark:text-emerald-300 shadow-xs">
+                  <Truck className="h-3.5 w-3.5" />
+                  <span>{deliveryOrders.length} Ready for Delivery</span>
+                </span>
+              </div>
+            </div>
+
+            {deliveryOrders.length === 0 ? (
+              <div className="rounded-3xl border border-[#C9AE8B]/40 dark:border-stone-800 bg-[#FAF4EB] dark:bg-[#1A1715] p-10 text-center text-[#725039] dark:text-stone-400 space-y-3 shadow-xs transition-colors">
+                <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-900/50">
+                  <CheckCircle2 className="h-7 w-7 text-emerald-600 dark:text-emerald-400" />
+                </div>
+                <h2 className="text-base font-bold text-[#241F1C] dark:text-stone-200">No Orders Waiting for Delivery</h2>
+                <p className="text-xs max-w-sm mx-auto text-[#725039] dark:text-stone-400">
+                  When Kitchen or Barista marks items as READY, they will appear here with customer contact details for instant table service.
+                </p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {deliveryOrders.map((order) => {
+                  const isDelivering = deliveringOrderIds.has(order.id);
+                  const readyTimeStr = order.readyAt
+                    ? new Date(order.readyAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+                    : "Just now";
+
+                  return (
+                    <div
+                      key={order.id}
+                      className="rounded-3xl border-2 border-emerald-600/40 dark:border-emerald-500/30 bg-[#FAF4EB] dark:bg-[#1A1715] p-5 shadow-sm space-y-4 hover:border-emerald-600 dark:hover:border-emerald-500 transition-all flex flex-col justify-between"
+                    >
+                      {/* Card Header: Table + Order # + Total */}
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between border-b border-[#C9AE8B]/30 dark:border-stone-800 pb-3">
+                          <div className="flex items-center gap-2">
+                            <span className="rounded-xl bg-[#B72E35] text-white px-3 py-1 font-serif text-sm font-black shadow-xs">
+                              Table {order.tableLabel}
+                            </span>
+                            <span className="font-mono text-xs font-bold text-[#725039] dark:text-stone-300">
+                              #{order.orderNo ? order.orderNo.toString().padStart(4, "0") : order.id.slice(0, 6)}
+                            </span>
+                          </div>
+                          <span className="font-serif text-base font-extrabold text-[#241F1C] dark:text-stone-100">
+                            ₹{order.totalRupees}
+                          </span>
+                        </div>
+
+                        {/* Customer Identification Block */}
+                        <div className="rounded-2xl border border-[#C9AE8B]/30 dark:border-stone-800 bg-[#F3E7D3]/60 dark:bg-stone-900/60 p-3.5 space-y-2">
+                          <div className="flex items-center justify-between text-xs">
+                            <div className="flex items-center gap-1.5 font-bold text-[#241F1C] dark:text-stone-200">
+                              <UserCheck className="h-4 w-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                              <span className="truncate">{order.guestName}</span>
+                            </div>
+                            <div className="flex items-center gap-1 font-mono text-[11px] text-[#725039] dark:text-stone-400">
+                              <Clock className="h-3.5 w-3.5 shrink-0" />
+                              <span>Ready {readyTimeStr}</span>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-2 pt-1 border-t border-[#C9AE8B]/20 dark:border-stone-800/80">
+                            <Phone className="h-3.5 w-3.5 text-[#8C6207] dark:text-[#F6AD55] shrink-0" />
+                            {order.guestPhone && order.guestPhone !== "—" ? (
+                              <a
+                                href={`tel:${order.guestPhone}`}
+                                className="font-mono text-xs font-bold text-[#8C6207] dark:text-[#F6AD55] hover:underline"
+                                title="Call customer"
+                              >
+                                {order.guestPhone}
+                              </a>
+                            ) : (
+                              <span className="font-mono text-xs text-stone-500 dark:text-stone-400">
+                                Direct / Walk-in Guest
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Line Items List */}
+                        <div className="space-y-1.5">
+                          <div className="text-[10px] font-mono uppercase tracking-wider text-[#725039] dark:text-stone-400">
+                            Items Ready to Serve ({order.items.reduce((acc, it) => acc + it.qty, 0)})
+                          </div>
+                          <div className="space-y-1 max-h-40 overflow-y-auto pr-1">
+                            {order.items.map((item, idx) => (
+                              <div
+                                key={idx}
+                                className="flex items-center justify-between rounded-xl bg-white/70 dark:bg-stone-900/80 px-2.5 py-1.5 text-xs border border-[#C9AE8B]/20 dark:border-stone-800"
+                              >
+                                <div className="flex items-center gap-2 min-w-0">
+                                  {item.isBeverage ? (
+                                    <Coffee className="h-3.5 w-3.5 text-[#B72E35] dark:text-[#F6AD55] shrink-0" />
+                                  ) : (
+                                    <UtensilsCrossed className="h-3.5 w-3.5 text-amber-700 dark:text-amber-400 shrink-0" />
+                                  )}
+                                  <span className="font-medium text-[#241F1C] dark:text-stone-200 truncate">
+                                    {item.name}
+                                  </span>
+                                </div>
+                                <span className="font-mono font-bold text-[#B72E35] dark:text-[#F6AD55] shrink-0">
+                                  {item.qty}×
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* Special Instructions */}
+                        {order.instructions && (
+                          <div className="rounded-xl border border-amber-300 dark:border-amber-900/50 bg-amber-50 dark:bg-amber-950/30 p-2 text-[11px] text-amber-900 dark:text-amber-300">
+                            <strong>Note:</strong> {order.instructions}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Card Action: Mark Delivered */}
+                      <button
+                        type="button"
+                        disabled={isDelivering}
+                        onClick={() => handleMarkDelivered(order.id)}
+                        className="w-full flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-700 hover:from-emerald-500 hover:to-teal-600 text-white py-3 text-xs sm:text-sm font-extrabold shadow-md active:scale-[0.98] transition cursor-pointer disabled:opacity-50"
+                      >
+                        {isDelivering ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <CheckCircle2 className="h-4 w-4" />
+                        )}
+                        <span>Mark Order as Delivered &amp; Served</span>
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* TAB 3: PAID ORDERS & SETTLEMENT AUDIT */}
         {activeTab === "paid" && (
           <div className="space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">

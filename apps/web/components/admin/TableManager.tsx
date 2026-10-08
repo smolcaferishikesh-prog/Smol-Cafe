@@ -26,6 +26,7 @@ import {
   Copy,
   Check,
   ChevronDown,
+  Loader2,
 } from "lucide-react";
 import {
   type DiningTableRecord,
@@ -266,7 +267,31 @@ export const TableManager: React.FC<TableManagerProps> = ({
   }, []);
 
   React.useEffect(() => {
-    if (initialTables.length === 0) {
+    if (initialTables && initialTables.length > 0) {
+      setTables((prev) => {
+        if (prev.length === 0) return initialTables;
+        const seen = new Set<string>();
+        const merged: DiningTableRecord[] = [];
+        const idMap = new Map<string, DiningTableRecord>();
+        initialTables.forEach((t) => idMap.set(t.label.trim().toLowerCase(), t));
+        prev.forEach((t) => {
+          const norm = t.label.trim().toLowerCase();
+          const serverVersion = idMap.get(norm);
+          if (!seen.has(norm)) {
+            seen.add(norm);
+            merged.push(serverVersion ? { ...t, ...serverVersion } : t);
+          }
+        });
+        initialTables.forEach((t) => {
+          const norm = t.label.trim().toLowerCase();
+          if (!seen.has(norm)) {
+            seen.add(norm);
+            merged.push(t);
+          }
+        });
+        return merged;
+      });
+    } else {
       refreshTables();
     }
   }, [initialTables, refreshTables]);
@@ -283,13 +308,19 @@ export const TableManager: React.FC<TableManagerProps> = ({
         const active = meta.active !== undefined ? Boolean(meta.active) : true;
 
         setTables((prev) => {
-          if (prev.some((t) => t.id === id || (label && t.label.toLowerCase() === label.toLowerCase()))) {
-            return prev.map((t) =>
-              t.id === id || (label && t.label.toLowerCase() === label.toLowerCase())
+          const normLabel = label.trim().toLowerCase();
+          const matchIdx = prev.findIndex(
+            (t) => t.id === id || (normLabel && t.label.trim().toLowerCase() === normLabel)
+          );
+
+          if (matchIdx >= 0) {
+            return prev.map((t, idx) =>
+              idx === matchIdx
                 ? { ...t, id: id || t.id, label: label || t.label, section, seats, active }
                 : t
             );
           }
+
           return [
             ...prev,
             {
@@ -311,22 +342,35 @@ export const TableManager: React.FC<TableManagerProps> = ({
         const meta = event.metadata || {};
         const id = event.tableId || (meta.id as string);
         const label = event.tableLabel || (meta.label as string);
+        const normLabel = (label || "").trim().toLowerCase();
 
-        setTables((prev) =>
-          prev.map((t) => {
-            if ((id && t.id === id) || (label && t.label.toLowerCase() === label.toLowerCase())) {
-              return {
-                ...t,
-                label: label || t.label,
-                seats: meta.seats !== undefined ? Number(meta.seats) : t.seats,
-                active: meta.active !== undefined ? Boolean(meta.active) : t.active,
-                section: (meta.section as string) || t.section,
-                isOccupied: meta.isOccupied !== undefined ? Boolean(meta.isOccupied) : t.isOccupied,
-              };
-            }
-            return t;
-          })
-        );
+        setTables((prev) => {
+          const seen = new Set<string>();
+          return prev
+            .map((t) => {
+              const isMatch =
+                (id && t.id === id) ||
+                (normLabel && t.label.trim().toLowerCase() === normLabel);
+              if (isMatch) {
+                return {
+                  ...t,
+                  id: id || t.id,
+                  label: label || t.label,
+                  seats: meta.seats !== undefined ? Number(meta.seats) : t.seats,
+                  active: meta.active !== undefined ? Boolean(meta.active) : t.active,
+                  section: (meta.section as string) || t.section,
+                  isOccupied: meta.isOccupied !== undefined ? Boolean(meta.isOccupied) : t.isOccupied,
+                };
+              }
+              return t;
+            })
+            .filter((t) => {
+              const norm = t.label.trim().toLowerCase();
+              if (seen.has(norm)) return false;
+              seen.add(norm);
+              return true;
+            });
+        });
 
         if (meta.section && typeof meta.section === "string") {
           const sec = meta.section;
@@ -608,9 +652,23 @@ export const TableManager: React.FC<TableManagerProps> = ({
     return map;
   }, [tables]);
 
-  // Filtered tables
+  // Filtered tables with strict client-side deduplication
   const filteredTables = useMemo(() => {
-    return tables.filter((t) => {
+    const seenLabels = new Set<string>();
+    const seenIds = new Set<string>();
+    const deduped: DiningTableRecord[] = [];
+
+    for (const t of tables) {
+      const normLabel = (t.label || "").trim().toLowerCase();
+      if (seenIds.has(t.id) || (normLabel && seenLabels.has(normLabel))) {
+        continue;
+      }
+      seenIds.add(t.id);
+      if (normLabel) seenLabels.add(normLabel);
+      deduped.push(t);
+    }
+
+    return deduped.filter((t) => {
       const matchSection = selectedSection === "ALL" || t.section === selectedSection;
       const matchSearch =
         !searchQuery.trim() ||
@@ -682,22 +740,21 @@ export const TableManager: React.FC<TableManagerProps> = ({
       });
 
       if (res.success && res.table) {
-        setTables((prev) => [...prev, res.table!]);
+        const newTable = res.table;
+        setTables((prev) => {
+          const normLabel = newTable.label.trim().toLowerCase();
+          const matchIdx = prev.findIndex(
+            (t) => t.id === newTable.id || t.label.trim().toLowerCase() === normLabel
+          );
+          if (matchIdx >= 0) {
+            return prev.map((t, idx) => (idx === matchIdx ? { ...t, ...newTable } : t));
+          }
+          return [...prev, newTable];
+        });
+
         if (!sections.includes(tableSection)) {
           setSections((prev) => [...prev, tableSection]);
         }
-        broadcastSyncEvent({
-          type: "TABLE_CREATED",
-          tableLabel: res.table.label,
-          tableId: res.table.id,
-          metadata: {
-            id: res.table.id,
-            label: res.table.label,
-            section: res.table.section,
-            seats: res.table.seats,
-            active: res.table.active,
-          },
-        });
         setIsAddModalOpen(false);
         setIsAddSectionDropdownOpen(false);
         setFeedback({ type: "success", text: `Table T-${res.table.label} added! Scannable QR stand & tags generated.` });
@@ -731,24 +788,25 @@ export const TableManager: React.FC<TableManagerProps> = ({
       });
 
       if (res.success && res.table) {
-        setTables((prev) =>
-          prev.map((t) => (t.id === editingTable.id ? { ...t, ...res.table } : t))
-        );
+        const updatedTable = res.table;
+        setTables((prev) => {
+          const seen = new Set<string>();
+          return prev
+            .map((t) =>
+              t.id === editingTable.id || t.label.trim().toLowerCase() === editingTable.label.trim().toLowerCase()
+                ? { ...t, ...updatedTable }
+                : t
+            )
+            .filter((t) => {
+              const norm = t.label.trim().toLowerCase();
+              if (seen.has(norm)) return false;
+              seen.add(norm);
+              return true;
+            });
+        });
         if (!sections.includes(tableSection)) {
           setSections((prev) => [...prev, tableSection]);
         }
-        broadcastSyncEvent({
-          type: "TABLE_RENAMED",
-          tableLabel: res.table.label,
-          tableId: res.table.id,
-          metadata: {
-            id: res.table.id,
-            label: res.table.label,
-            section: res.table.section,
-            seats: res.table.seats,
-            active: res.table.active,
-          },
-        });
         setEditingTable(null);
         setFeedback({ type: "success", text: "Table updated successfully!" });
       } else {
@@ -1391,9 +1449,10 @@ export const TableManager: React.FC<TableManagerProps> = ({
                 <button
                   type="submit"
                   disabled={isLoading}
-                  className="flex items-center gap-1.5 rounded-xl bg-[#B72E35] hover:bg-[#9B252B] px-5 py-2 text-xs font-mono font-bold text-white shadow-md transition disabled:opacity-50"
+                  className="flex items-center gap-1.5 rounded-xl bg-[#B72E35] hover:bg-[#9B252B] px-5 py-2 text-xs font-mono font-bold text-white shadow-md transition disabled:opacity-50 cursor-pointer"
                 >
-                  {isLoading ? "Adding..." : "Add Table"}
+                  {isLoading && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                  {isLoading ? "Adding Table..." : "Add Table"}
                 </button>
               </div>
             </form>
@@ -1591,9 +1650,10 @@ export const TableManager: React.FC<TableManagerProps> = ({
                 <button
                   type="submit"
                   disabled={isLoading}
-                  className="flex items-center gap-1.5 rounded-xl bg-[#B72E35] hover:bg-[#9B252B] px-5 py-2 text-xs font-mono font-bold text-white shadow-md transition disabled:opacity-50"
+                  className="flex items-center gap-1.5 rounded-xl bg-[#B72E35] hover:bg-[#9B252B] px-5 py-2 text-xs font-mono font-bold text-white shadow-md transition disabled:opacity-50 cursor-pointer"
                 >
-                  {isLoading ? "Saving..." : "Save Changes"}
+                  {isLoading && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                  {isLoading ? "Saving Changes..." : "Save Changes"}
                 </button>
               </div>
             </form>

@@ -15,13 +15,14 @@ interface CustomerHomeClientProps {
 }
 
 export const CustomerHomeClientView: React.FC<CustomerHomeClientProps> = ({
-  tableLabel = "01",
+  tableLabel,
   locationName = "Rishikesh",
   guestName = "",
   guestPhone = "",
 }) => {
   const [isSideMenuOpen, setIsSideMenuOpen] = useState(false);
   const [currentGuestName, setCurrentGuestName] = useState(guestName);
+  const [currentTableLabel, setCurrentTableLabel] = useState(tableLabel || "");
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -29,8 +30,14 @@ export const CustomerHomeClientView: React.FC<CustomerHomeClientProps> = ({
       if (saved && !currentGuestName) {
         setCurrentGuestName(saved);
       }
+      const savedTable = localStorage.getItem("smol_current_table");
+      if (savedTable && !currentTableLabel) {
+        setCurrentTableLabel(savedTable);
+      }
     }
-  }, [currentGuestName]);
+  }, [currentGuestName, currentTableLabel]);
+
+  const activeTable = tableLabel || currentTableLabel;
 
   // Time-aware greeting
   const getGreeting = () => {
@@ -135,7 +142,7 @@ export const CustomerHomeClientView: React.FC<CustomerHomeClientProps> = ({
         {/* Editorial Greeting */}
         <div className="text-center space-y-0.5 pt-1">
           <div className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full bg-[#B72E35]/10 dark:bg-[#FF5B52]/15 text-[#B72E35] dark:text-[#FF5B52] text-[11px] font-mono font-bold tracking-wider mb-0.5">
-            <span>🪑 Table {tableLabel}</span>
+            <span>🪑 {activeTable ? `Table ${activeTable}` : "Dine-in"}</span>
             <span className="opacity-40">•</span>
             <span>{locationName}</span>
           </div>
@@ -210,7 +217,7 @@ export const CustomerHomeClientView: React.FC<CustomerHomeClientProps> = ({
                   </span>
                 )}
                 <span className="block font-serif italic text-xs text-[#725039] dark:text-[#C9AE8B]">
-                  Table {tableLabel} • {locationName.toLowerCase()}
+                  {activeTable ? `Table ${activeTable} • ` : ""}{locationName.toLowerCase()}
                 </span>
               </div>
               <button
@@ -239,12 +246,12 @@ export const CustomerHomeClientView: React.FC<CustomerHomeClientProps> = ({
                 <span>☕</span> View Full Menu
               </Link>
               <Link
-                href={`/t/table-${tableLabel}`}
+                href={activeTable ? `/t/table-${activeTable}` : "/home"}
                 prefetch={true}
                 onClick={() => setIsSideMenuOpen(false)}
                 className="flex items-center gap-3 text-[#241F1C] dark:text-[#FAF4EB] hover:text-[#B72E35] dark:hover:text-[#FF5B52]"
               >
-                <span>🪑</span> Table {tableLabel} Card
+                <span>🪑</span> {activeTable ? `Table ${activeTable} Card` : "Select Table"}
               </Link>
               <Link
                 href="/orders"
@@ -271,7 +278,7 @@ export const CustomerHomeClientView: React.FC<CustomerHomeClientProps> = ({
                 <span>👤</span> Loyalty &amp; Rewards (Coming Soon)
               </Link>
               <Link
-                href="/"
+                href="/home"
                 prefetch={true}
                 onClick={() => setIsSideMenuOpen(false)}
                 className="flex items-center gap-3 text-[#241F1C] dark:text-[#FAF4EB] hover:text-[#B72E35] dark:hover:text-[#FF5B52]"

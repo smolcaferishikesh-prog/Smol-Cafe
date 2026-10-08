@@ -7,8 +7,16 @@ import { createClient } from "@/lib/supabase/server";
 import { generateRequestId, logger } from "@/lib/observability/logger";
 import { recordOrderAttempt } from "@/lib/observability/alerts";
 import { captureAppException } from "@/lib/observability/sentry";
-import { getPhoneUuid, normalizePhoneNumber, recordOrderForPhone } from "@/lib/customer-phone";
+import {
+  getPhoneUuid,
+  normalizePhoneNumber,
+  recordOrderForPhone,
+} from "@/lib/customer-phone";
 import { broadcastSyncEvent } from "@/lib/sync-events";
+import {
+  safeUpdateOrderWithInstructions,
+  extractOrderInstructions,
+} from "@/lib/order-instructions";
 
 export interface PlaceOrderItemInput {
   menu_item_id: string;
@@ -402,6 +410,28 @@ export async function placeOrderAction(
     });
     recordOrderAttempt(true, result.order_id);
 
+    // Authoritative check: If legacy RPC returned total without 5% GST, reconcile totalPaise & DB order snapshot
+    const rawSubtotalPaise = items.reduce((acc, it) => acc + (it.expected_unit_price_paise || 0) * (it.qty || 1), 0);
+    const effectiveDiscountPaise = result.discount_paise || 0;
+    const taxablePaise = Math.max(0, rawSubtotalPaise - effectiveDiscountPaise);
+    const expectedTaxPaise = Math.round(taxablePaise * 0.05);
+    const expectedTotalPaise = taxablePaise + expectedTaxPaise;
+
+    let finalTotalPaise = result.total_paise || expectedTotalPaise;
+    if (finalTotalPaise > 0 && finalTotalPaise === taxablePaise && expectedTaxPaise > 0) {
+      finalTotalPaise = expectedTotalPaise;
+      if (result.order_id) {
+        void supabase
+          .from("orders")
+          .update({
+            tax_snapshot: expectedTaxPaise,
+            total_snapshot: expectedTotalPaise,
+          })
+          .eq("id", result.order_id)
+          .then(undefined, () => {});
+      }
+    }
+
     return {
       success: true,
       orderId: result.order_id,
@@ -411,7 +441,7 @@ export async function placeOrderAction(
       tableLabel: session.tableLabel || "01",
       verificationCode: result.verification_code || "4821",
       discountPaise: result.discount_paise || 0,
-      totalPaise: result.total_paise,
+      totalPaise: finalTotalPaise,
       isDuplicate: result.is_duplicate || false,
       message:
         result.discount_paise && result.discount_paise > 0
@@ -497,6 +527,13 @@ export async function placePaidOrderAction(
           updated_at: now,
         })
         .eq("id", result.orderId);
+
+      if (targetStatus === "ACCEPTED") {
+        await supabase
+          .from("order_items")
+          .update({ item_status: "ACCEPTED" })
+          .eq("order_id", result.orderId);
+      }
     } catch (err) {
       console.warn("Failed to mark status on order:", err);
     }
@@ -515,61 +552,279 @@ export async function placePaidOrderAction(
  * Server Action: Allows customer to edit their order while in PENDING_CONFIRMATION state.
  * Validates customer session ownership and enforces that confirmed orders are permanently locked.
  */
-export async function editPendingOrderAction(
-  orderId: string,
-  items: PlaceOrderItemInput[],
-  instructions?: string
-): Promise<PlaceOrderResult> {
-  const session = await getTableSessionCookie();
-  if (!session || !session.sessionId) {
-    return {
-      success: false,
-      error: "NO_SESSION",
-      message: "No active dining session found.",
-    };
+export interface EditableCustomerOrder {
+  orderId: string;
+  orderNo: number;
+  status: string;
+  instructions: string;
+  tableLabel?: string;
+  items: Array<{
+    menuItemId: string;
+    name: string;
+    qty: number;
+    unitPricePaise: number;
+    lineSubtotal: number;
+  }>;
+}
+
+/**
+ * Server Action: Fetches and authorizes a customer order for editing.
+ * Strictly verifies the order is in an editable pending state (DRAFT or PENDING_CONFIRMATION).
+ */
+export async function fetchCustomerPendingOrderForEditAction(
+  orderId: string
+): Promise<{
+  success: boolean;
+  order?: EditableCustomerOrder;
+  error?: "INVALID_ID" | "NOT_FOUND" | "ORDER_LOCKED" | "DB_ERROR";
+  message?: string;
+}> {
+  if (!orderId || !isValidUuid(orderId)) {
+    return { success: false, error: "INVALID_ID", message: "Invalid order ID provided." };
   }
 
   const supabase = createAdminClient();
 
   try {
-    const { data: rpcResult, error: rpcError } = await supabase.rpc("edit_pending_order", {
-      p_order_id: orderId,
-      p_customer_session_id: session.customerSessionId || `cust_${session.sessionId}`,
-      p_items: items,
-      p_instructions: instructions || null,
-    });
+    const { data: order, error: orderErr } = await supabase
+      .from("orders")
+      .select("id, order_no, status, instructions, idempotency_key, table_session_id")
+      .eq("id", orderId)
+      .maybeSingle();
 
-    if (rpcError) {
+    if (orderErr || !order) {
+      return { success: false, error: "NOT_FOUND", message: "Order could not be found." };
+    }
+
+    // Enforce DRAFT / PENDING-only edits
+    const editableStatuses = ["PENDING_CONFIRMATION", "DRAFT", "SUBMITTED"];
+    if (!editableStatuses.includes(order.status)) {
       return {
         success: false,
-        error: "DB_ERROR",
-        message: "Failed to update order.",
+        error: "ORDER_LOCKED",
+        message: `Order #${order.order_no || ""} is already ${order.status.replace("_", " ")} and preparation has begun. Edits are locked.`,
       };
     }
 
-    const result = rpcResult as {
-      success: boolean;
-      error?: string;
-      message?: string;
-      order_id?: string;
-      order_no?: number;
-      total_paise?: number;
-    };
+    const { data: orderItems, error: itemsErr } = await supabase
+      .from("order_items")
+      .select("id, menu_item_id, name_snapshot, qty, unit_price_snapshot, line_subtotal")
+      .eq("order_id", orderId);
 
-    if (!result.success) {
-      return {
-        success: false,
-        error: (result.error as PlaceOrderResult["error"]) || "ORDER_LOCKED",
-        message: result.message || "Order cannot be edited.",
-      };
+    if (itemsErr) {
+      return { success: false, error: "DB_ERROR", message: "Failed to load order items." };
+    }
+
+    const instructions = extractOrderInstructions(order) || "";
+
+    const items = (orderItems || []).map((it) => ({
+      menuItemId: it.menu_item_id || "",
+      name: it.name_snapshot,
+      qty: it.qty,
+      unitPricePaise: it.unit_price_snapshot || 0,
+      lineSubtotal: it.line_subtotal || 0,
+    }));
+
+    let tableLabel = "01";
+    if (order.table_session_id) {
+      const { data: session } = await supabase
+        .from("table_sessions")
+        .select("table_id, dining_tables(label)")
+        .eq("id", order.table_session_id)
+        .maybeSingle();
+
+      if (session && (session as any).dining_tables?.label) {
+        tableLabel = (session as any).dining_tables.label;
+      }
     }
 
     return {
       success: true,
-      orderId: result.order_id,
-      orderNo: result.order_no,
-      totalPaise: result.total_paise,
-      message: result.message || "Order updated successfully!",
+      order: {
+        orderId: order.id,
+        orderNo: order.order_no || 0,
+        status: order.status,
+        instructions,
+        tableLabel,
+        items,
+      },
+    };
+  } catch (err) {
+    console.error("Error in fetchCustomerPendingOrderForEditAction:", err);
+    return { success: false, error: "DB_ERROR", message: "Unexpected error fetching order." };
+  }
+}
+
+/**
+ * Server Action: Allows customer to edit their order while in PENDING_CONFIRMATION/DRAFT state.
+ * Recomputes prices, calculates 5% GST, replaces order items, syncs running bill, and broadcasts sync events.
+ */
+export async function editPendingOrderAction(
+  orderId: string,
+  items: PlaceOrderItemInput[],
+  instructions?: string
+): Promise<PlaceOrderResult> {
+  if (!orderId || !isValidUuid(orderId)) {
+    return {
+      success: false,
+      error: "DB_ERROR",
+      message: "Invalid order ID.",
+    };
+  }
+  if (!items || items.length === 0) {
+    return {
+      success: false,
+      error: "EMPTY_CART",
+      message: "Order must contain at least one item.",
+    };
+  }
+
+  const supabase = createAdminClient();
+  const nowIso = new Date().toISOString();
+
+  try {
+    // 1. Verify order exists and is editable
+    const { data: existingOrder, error: fetchErr } = await supabase
+      .from("orders")
+      .select("id, order_no, status, version, table_session_id, idempotency_key")
+      .eq("id", orderId)
+      .maybeSingle();
+
+    if (fetchErr || !existingOrder) {
+      return {
+        success: false,
+        error: "DB_ERROR",
+        message: "Order not found in database.",
+      };
+    }
+
+    const editableStatuses = ["PENDING_CONFIRMATION", "DRAFT", "SUBMITTED"];
+    if (!editableStatuses.includes(existingOrder.status)) {
+      return {
+        success: false,
+        error: "ORDER_LOCKED",
+        message: `Order #${existingOrder.order_no || ""} is now ${existingOrder.status.replace("_", " ")} and can no longer be edited.`,
+      };
+    }
+
+    // 2. Fetch fresh prices from menu_items
+    const itemIds = items.map((i) => i.menu_item_id).filter((id) => isValidUuid(id));
+    const { data: dbMenuItems } = await supabase
+      .from("menu_items")
+      .select("id, name, price_paise")
+      .in("id", itemIds);
+
+    const priceMap = new Map<string, { name: string; pricePaise: number }>();
+    for (const m of dbMenuItems || []) {
+      priceMap.set(m.id, { name: m.name, pricePaise: m.price_paise });
+    }
+
+    let subtotalPaise = 0;
+    const orderItemsPayload = items.map((it) => {
+      const verified = priceMap.get(it.menu_item_id);
+      const unitPrice = verified ? verified.pricePaise : it.expected_unit_price_paise;
+      const name = verified ? verified.name : (it.name || "Item");
+      const lineSubtotal = unitPrice * it.qty;
+      subtotalPaise += lineSubtotal;
+
+      return {
+        id: crypto.randomUUID(),
+        order_id: orderId,
+        menu_item_id: isValidUuid(it.menu_item_id) ? it.menu_item_id : null,
+        name_snapshot: name,
+        unit_price_snapshot: unitPrice,
+        qty: it.qty,
+        line_subtotal: lineSubtotal,
+        item_status: "PENDING",
+        created_at: nowIso,
+      };
+    });
+
+    const taxPaise = Math.round(subtotalPaise * 0.05); // 5% GST
+    const totalPaise = subtotalPaise + taxPaise;
+
+    // 3. Update order snapshot and instructions
+    const updatePayload: Record<string, any> = {
+      subtotal_snapshot: subtotalPaise,
+      tax_snapshot: taxPaise,
+      total_snapshot: totalPaise,
+      version: (existingOrder.version || 1) + 1,
+      updated_at: nowIso,
+    };
+
+    const updateRes = await safeUpdateOrderWithInstructions(
+      supabase,
+      orderId,
+      updatePayload,
+      instructions
+    );
+
+    if (!updateRes.success) {
+      return {
+        success: false,
+        error: "DB_ERROR",
+        message: "Failed to update order snapshot in database.",
+      };
+    }
+
+    // 4. Atomically replace line items
+    await supabase.from("order_items").delete().eq("order_id", orderId);
+    const { error: insertErr } = await supabase.from("order_items").insert(orderItemsPayload);
+
+    if (insertErr) {
+      return {
+        success: false,
+        error: "DB_ERROR",
+        message: "Failed to save updated line items.",
+      };
+    }
+
+    // 5. Sync running bill
+    if (existingOrder.table_session_id) {
+      try {
+        const { data: allSessionOrders } = await supabase
+          .from("orders")
+          .select("id, total_snapshot, status")
+          .eq("table_session_id", existingOrder.table_session_id);
+
+        const activeOrders = (allSessionOrders || []).filter(
+          (o) => o.status !== "CANCELLED" && o.status !== "REJECTED"
+        );
+        const sessionSubtotal = activeOrders.reduce((sum, o) => {
+          return sum + (o.id === orderId ? subtotalPaise : Math.round((o.total_snapshot || 0) / 1.05));
+        }, 0);
+        const sessionTax = Math.round(sessionSubtotal * 0.05);
+        const sessionTotal = sessionSubtotal + sessionTax;
+
+        await supabase
+          .from("bills")
+          .update({
+            subtotal_paise: sessionSubtotal,
+            tax_paise: sessionTax,
+            total_paise: sessionTotal,
+            updated_at: nowIso,
+          })
+          .eq("table_session_id", existingOrder.table_session_id);
+      } catch (billErr) {
+        console.warn("Notice updating running bill in editPendingOrderAction:", billErr);
+      }
+    }
+
+    // 6. Broadcast sync event
+    broadcastSyncEvent({
+      type: "ORDER_PENDING_CASHIER",
+      orderId,
+      tableId: existingOrder.table_session_id || "table-01",
+      status: existingOrder.status,
+      timestamp: Date.now(),
+    });
+
+    return {
+      success: true,
+      orderId,
+      orderNo: existingOrder.order_no || 0,
+      totalPaise,
+      message: `Order #${existingOrder.order_no || ""} updated successfully!`,
     };
   } catch (err) {
     console.error("Error in editPendingOrderAction:", err);

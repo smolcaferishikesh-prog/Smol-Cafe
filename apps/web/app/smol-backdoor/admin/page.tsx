@@ -1,6 +1,10 @@
 import { redirect } from "next/navigation";
 import { requireStaffAuth } from "@/lib/auth/rbac";
-import AdminDashboardPage from "@/app/admin/page";
+import { AdminClientWrapper } from "@/components/admin/AdminClientWrapper";
+import { fetchAdminOverviewAction } from "@/app/admin/actions";
+
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 export const metadata = {
   title: "Admin Command Tower — smol café",
@@ -14,5 +18,11 @@ export default async function SmolBackdoorAdminPage() {
     redirect("/smol-backdoor");
   }
 
-  return <AdminDashboardPage />;
+  const result = await fetchAdminOverviewAction();
+
+  return (
+    <AdminClientWrapper
+      initialOverviewData={result.data || undefined}
+    />
+  );
 }

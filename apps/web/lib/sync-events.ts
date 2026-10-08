@@ -38,6 +38,7 @@ export interface SyncPayload {
   portionsLeft?: number;
   stockStatus?: string;
   status?: string;
+  station?: "KITCHEN" | "BARISTA" | "CASHIER" | "ALL";
   priceRupees?: number;
   pricePaise?: number;
   timestamp?: number;

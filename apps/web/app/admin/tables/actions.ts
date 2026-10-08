@@ -196,18 +196,24 @@ export async function createTableAction(input: CreateTableInput): Promise<{
     const seats = Number(input.seats) || 2;
     const active = input.active !== undefined ? input.active : true;
 
-    // 1. Fetch valid location UUID
-    let locationId: string | null = null;
-    const { data: loc } = await supabase.from("locations").select("id").limit(1).maybeSingle();
-    if (loc) {
-      locationId = loc.id;
-    } else {
-      const { data: newLoc } = await supabase
-        .from("locations")
-        .insert({ name: "smol café · rishikesh", timezone: "Asia/Kolkata" })
-        .select("id")
-        .single();
-      locationId = newLoc?.id || null;
+    // 1. Fetch valid location UUID (cached to eliminate serial DB lookup latency)
+    let locationId: string | null = (globalThis as unknown as { __SMOL_DEFAULT_LOCATION_ID__?: string }).__SMOL_DEFAULT_LOCATION_ID__ || null;
+    if (!locationId) {
+      const { data: loc } = await supabase.from("locations").select("id").limit(1).maybeSingle();
+      if (loc) {
+        locationId = loc.id;
+        (globalThis as unknown as { __SMOL_DEFAULT_LOCATION_ID__?: string }).__SMOL_DEFAULT_LOCATION_ID__ = loc.id;
+      } else {
+        const { data: newLoc } = await supabase
+          .from("locations")
+          .insert({ name: "smol café · rishikesh", timezone: "Asia/Kolkata" })
+          .select("id")
+          .single();
+        locationId = newLoc?.id || null;
+        if (locationId) {
+          (globalThis as unknown as { __SMOL_DEFAULT_LOCATION_ID__?: string }).__SMOL_DEFAULT_LOCATION_ID__ = locationId;
+        }
+      }
     }
 
     if (!locationId) {
@@ -258,10 +264,14 @@ export async function createTableAction(input: CreateTableInput): Promise<{
       }
     }
 
-    revalidatePath("/admin");
-    revalidatePath("/admin/tables");
-    revalidatePath("/");
-    revalidatePath("/home");
+    try {
+      revalidatePath("/admin");
+      revalidatePath("/admin/tables");
+      revalidatePath("/");
+      revalidatePath("/home");
+    } catch {
+      // Non-fatal if revalidation context is absent
+    }
 
     const newTable: DiningTableRecord = {
       id: tableId,
@@ -369,10 +379,14 @@ export async function updateTableAction(
       globalThis.__SMOL_TABLE_SECTIONS_MAP__?.[cleanNum] ||
       "Café";
 
-    revalidatePath("/admin");
-    revalidatePath("/admin/tables");
-    revalidatePath("/");
-    revalidatePath("/home");
+    try {
+      revalidatePath("/admin");
+      revalidatePath("/admin/tables");
+      revalidatePath("/");
+      revalidatePath("/home");
+    } catch {
+      // Non-fatal if revalidation context is absent
+    }
 
     const updatedTable: DiningTableRecord = {
       id: (updated?.id as string) || tableId,

@@ -301,18 +301,19 @@ export const BaristaBoardView: React.FC<BaristaBoardViewProps> = ({ initialOrder
     const unsubscribe = subscribeToSyncEvents((event) => {
       // Ignore orders awaiting cashier approval in Barista Desk
       if (
-        event.type === "ORDER_PENDING_CASHIER" ||
-        event.type === "ORDER_PLACED" ||
-        event.status === "PENDING_CONFIRMATION" ||
-        event.status === "SUBMITTED" ||
-        event.status === "DRAFT"
+        event.type !== "ORDER_CONFIRMED" &&
+        (event.type === "ORDER_PENDING_CASHIER" ||
+          event.type === "ORDER_PLACED" ||
+          event.status === "PENDING_CONFIRMATION" ||
+          event.status === "SUBMITTED" ||
+          event.status === "DRAFT")
       ) {
         return;
       }
       // If confirmed specifically for Kitchen only or no beverage items, barista ignores
       if (
         event.type === "ORDER_CONFIRMED" &&
-        (event.metadata?.stationTarget === "KITCHEN" || event.metadata?.hasBeverageItems === false)
+        (event.metadata?.stationTarget === "KITCHEN" || event.station === "KITCHEN" || event.metadata?.hasBeverageItems === false)
       ) {
         return;
       }
@@ -339,7 +340,9 @@ export const BaristaBoardView: React.FC<BaristaBoardViewProps> = ({ initialOrder
         }
         const ticketData = event.metadata?.ticket as RawTicket | undefined;
         if (ticketData && Array.isArray(ticketData.items)) {
-          const drinkItems = ticketData.items.filter((it) => isBeverageItem(it.name) || it.isBeverage);
+          const drinkItems = ticketData.items.filter(
+            (it) => (isBeverageItem(it.name) || it.isBeverage) && it.itemStatus !== "PENDING" && it.itemStatus !== "DRAFT"
+          );
           if (drinkItems.length > 0) {
             const newTicket: BaristaTicket = {
               id: ticketData.id || event.orderId!,
@@ -377,7 +380,17 @@ export const BaristaBoardView: React.FC<BaristaBoardViewProps> = ({ initialOrder
       }
 
       if (event.orderId) {
-        handleIncomingTicket(event.orderId, event.status as OrderStatus);
+        // If this event specifically belongs to another station (e.g. KITCHEN), do not overwrite barista ticket status
+        if (event.station === "KITCHEN") {
+          debouncedRefresh();
+          return;
+        }
+
+        if (event.type === "TICKET_STATUS_CHANGED" && event.station === "BARISTA") {
+          handleIncomingTicket(event.orderId, event.status as OrderStatus);
+        } else if (event.type === "ORDER_CONFIRMED") {
+          handleIncomingTicket(event.orderId, event.status as OrderStatus);
+        }
       }
       debouncedRefresh();
     });
@@ -494,20 +507,22 @@ export const BaristaBoardView: React.FC<BaristaBoardViewProps> = ({ initialOrder
         <div className="flex items-center justify-between gap-2 sm:gap-4 flex-nowrap">
           {/* Brand & Station Indicator with Custom Barista Logos */}
           <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0 min-w-0">
-            <div className="relative h-7 w-5.5 sm:h-10 sm:w-7.5 shrink-0 select-none">
+            <div className="relative h-8 w-8 sm:h-10 sm:w-10 shrink-0 select-none flex items-center justify-center">
               <Image
                 src="/barista-logo.png"
                 alt="smol café barista logo"
-                fill
+                width={40}
+                height={40}
                 priority
-                className="object-contain drop-shadow-xs dark:hidden block"
+                className="h-8 w-auto sm:h-10 object-contain drop-shadow-xs dark:hidden block"
               />
               <Image
                 src="/barista-logo-dark.png"
                 alt="smol café barista logo dark"
-                fill
+                width={40}
+                height={40}
                 priority
-                className="object-contain drop-shadow-[0_0_10px_rgba(168,85,247,0.5)] hidden dark:block"
+                className="h-8 w-auto sm:h-10 object-contain drop-shadow-[0_0_10px_rgba(168,85,247,0.5)] hidden dark:block"
               />
             </div>
             <div className="min-w-0">

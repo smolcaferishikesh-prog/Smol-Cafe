@@ -61,21 +61,27 @@ export function printHtmlContent(htmlContent: string, title: string = "smol caf√
         <link href="https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400..800;1,400..800&family=Inter:wght@400;500;600;700;900&family=Noto+Sans+Mono:wght@400;600;700&display=swap" rel="stylesheet">
         <style>
           @page {
-            size: auto;
-            margin: 6mm;
+            size: 80mm auto;
+            margin: 0;
           }
-          * {
+          *, *::before, *::after {
             box-sizing: border-box;
             margin: 0;
             padding: 0;
             -webkit-print-color-adjust: exact !important;
             print-color-adjust: exact !important;
           }
-          body {
-            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+          html, body {
+            width: 80mm;
+            max-width: 80mm;
             background: #ffffff !important;
             color: #241F1C;
-            padding: 10px;
+            padding: 4mm;
+            margin: 0 auto;
+            overflow: visible;
+          }
+          body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
           }
           .font-serif {
             font-family: 'EB Garamond', Georgia, serif;

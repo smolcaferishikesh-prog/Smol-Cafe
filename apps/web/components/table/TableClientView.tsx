@@ -43,7 +43,7 @@ export const TableClientView: React.FC<TableClientViewProps> = ({
   const [activeItemModal, setActiveItemModal] = useState<TableItemView | null>(null);
   const [switchingTable, setSwitchingTable] = useState<string | null>(null);
   const [availableTables, setAvailableTables] = useState<string[]>(() =>
-    Array.from({ length: 12 }, (_, i) => (i + 1).toString().padStart(2, "0"))
+    Array.from({ length: 14 }, (_, i) => (i + 1).toString().padStart(2, "0"))
   );
 
   React.useEffect(() => {
@@ -64,9 +64,9 @@ export const TableClientView: React.FC<TableClientViewProps> = ({
         name: "Conversation Board",
         category: "FOOD",
         quantity: 1,
-        priceRupees: 260,
-        subtotalRupees: 260,
-        modifier: "• Cheese, fruits & nuts",
+        priceRupees: 329,
+        subtotalRupees: 329,
+        modifier: "• Smashed chickpea dip, crispy chana, toast & seasonal dips",
       };
       setItemsList((prev) => [...prev, boardItem]);
       setHasAddedBoard(true);
@@ -257,8 +257,8 @@ export const TableClientView: React.FC<TableClientViewProps> = ({
                     <h4 className="font-serif font-bold text-[13.5px] text-[#241F1C] leading-snug truncate">
                       Conversation Board
                     </h4>
-                    <p className="font-mono text-[10.5px] text-[#374438] leading-tight mt-0.5">
-                      Cheese, fruits, nuts &amp; a little something sweet.
+                    <p className="font-mono text-[10.5px] text-[#374438] leading-tight mt-0.5 line-clamp-2">
+                      A changing sharing board with smashed chickpea dip, crispy chana, toast, potatoes, pickle &amp; seasonal dips.
                     </p>
                   </div>
 
@@ -266,10 +266,10 @@ export const TableClientView: React.FC<TableClientViewProps> = ({
                   <div className="flex flex-col items-end gap-1.5 shrink-0 pl-1">
                     <div className="flex items-center gap-1 font-serif text-right">
                       <span className="line-through font-mono text-[11px] text-[#725039]/70">
-                        ₹350
+                        ₹349
                       </span>
                       <span className="font-serif font-bold text-[13.5px] text-[#241F1C]">
-                        ₹260
+                        ₹329
                       </span>
                     </div>
 

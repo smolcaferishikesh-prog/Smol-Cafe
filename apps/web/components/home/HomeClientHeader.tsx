@@ -30,7 +30,7 @@ export const HomeClientHeader: React.FC<HomeClientHeaderProps> = ({ tableLabel }
           </button>
 
           {/* Logo - smol café (always lowercase) */}
-          <Link href="/" className="font-serif text-2xl font-bold tracking-tight text-[#B72E35] transition hover:opacity-90">
+          <Link href="/home" className="font-serif text-2xl font-bold tracking-tight text-[#B72E35] transition hover:opacity-90">
             smol café
           </Link>
 

@@ -2,7 +2,8 @@
 
 import React, { useRef } from "react";
 import Image from "next/image";
-import { X, Printer, CheckCircle } from "lucide-react";
+import { X, Printer, CheckCircle, Clock } from "lucide-react";
+import { printHtmlContent, generateThermalReceiptHtml } from "@/lib/print";
 
 export interface ReceiptItem {
   name: string;
@@ -17,11 +18,13 @@ export interface ReceiptData {
   tableLabel: string;
   zone?: string;
   guestCount?: number;
+  guestName?: string;
   items: ReceiptItem[];
   subtotalRupees: number;
   taxRupees: number;
   totalRupees: number;
-  paymentMethod: "UPI" | "CASH" | "CARD" | "COMPLIMENTARY" | string;
+  paymentMethod: "UPI" | "CASH" | "CARD" | "COMPLIMENTARY" | "CASHIER" | string;
+  paymentStatus?: "PAID" | "PENDING";
   transactionId?: string;
   paidAt: string;
   merchantName?: string;
@@ -33,11 +36,56 @@ interface DigitalReceiptModalProps {
   onClose: () => void;
 }
 
+export function formatReceiptOrderId(receipt: { orderNo?: number | string; orderId?: string }): string {
+  if (receipt.orderNo) {
+    return `ORD-${receipt.orderNo}`;
+  }
+  const id = (receipt.orderId || "").trim();
+  if (!id) return "ORD-001";
+
+  const match = id.match(/^ord[-_]?(.+)$/i);
+  if (match) {
+    return `ORD-${match[1].toUpperCase()}`;
+  }
+
+  if (/^\d+$/.test(id)) {
+    return `ORD-${id}`;
+  }
+
+  if (id.length <= 8) {
+    return id.toUpperCase();
+  }
+
+  return `ORD-${id.slice(-6).toUpperCase()}`;
+}
+
 export const DigitalReceiptModal: React.FC<DigitalReceiptModalProps> = ({ receipt, onClose }) => {
   const receiptRef = useRef<HTMLDivElement>(null);
+  const isPending = receipt.paymentStatus === "PENDING" || receipt.paymentMethod === "CASHIER";
 
   const handlePrint = () => {
-    window.print();
+    const html = generateThermalReceiptHtml({
+      orderId: receipt.orderId,
+      orderNo: receipt.orderNo,
+      tableLabel: receipt.tableLabel,
+      guestName: receipt.guestName,
+      items: receipt.items.map((it) => ({
+        name: it.name,
+        qty: it.qty,
+        priceRupees: it.priceRupees,
+        subtotalRupees: it.subtotalRupees,
+      })),
+      subtotalRupees: receipt.subtotalRupees,
+      taxRupees: receipt.taxRupees,
+      totalRupees: receipt.totalRupees,
+      paymentMethod: (["UPI", "CASH", "CARD"].includes(receipt.paymentMethod)
+        ? receipt.paymentMethod
+        : "CASH") as "UPI" | "CASH" | "CARD",
+      transactionId: receipt.transactionId,
+      paidAt: receipt.paidAt,
+      gstin: receipt.gstin,
+    });
+    printHtmlContent(html, `Receipt_${receipt.orderNo || receipt.orderId.slice(0, 8)}`);
   };
 
   return (
@@ -52,10 +100,17 @@ export const DigitalReceiptModal: React.FC<DigitalReceiptModalProps> = ({ receip
       >
         {/* Top Control Bar (hidden in print) */}
         <div className="flex items-center justify-between border-b border-[#E2D7C7] dark:border-stone-800 pb-3 print:hidden">
-          <span className="font-mono text-xs font-bold text-emerald-800 dark:text-emerald-400 flex items-center gap-1">
-            <CheckCircle className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
-            Payment Settled
-          </span>
+          {isPending ? (
+            <span className="font-mono text-xs font-bold text-amber-800 dark:text-amber-400 flex items-center gap-1">
+              <Clock className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+              Order Estimate • Pay at Counter
+            </span>
+          ) : (
+            <span className="font-mono text-xs font-bold text-emerald-800 dark:text-emerald-400 flex items-center gap-1">
+              <CheckCircle className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+              Payment Settled
+            </span>
+          )}
           <div className="flex items-center gap-1.5">
             <button
               onClick={handlePrint}
@@ -108,8 +163,8 @@ export const DigitalReceiptModal: React.FC<DigitalReceiptModalProps> = ({ receip
           <div className="border-t border-b border-dashed border-stone-400 dark:border-stone-700 py-2.5 space-y-1 text-[11px]">
             <div className="flex justify-between">
               <span className="text-stone-500 dark:text-stone-400">Order ID:</span>
-              <span className="font-bold text-[#241F1C] dark:text-white">
-                #{receipt.orderNo || receipt.orderId.slice(-6).toUpperCase()}
+              <span className="font-bold text-[#241F1C] dark:text-white font-mono">
+                {formatReceiptOrderId(receipt)}
               </span>
             </div>
             <div className="flex justify-between">
@@ -124,12 +179,17 @@ export const DigitalReceiptModal: React.FC<DigitalReceiptModalProps> = ({ receip
                 {new Date(receipt.paidAt).toLocaleString("en-IN", { hour12: true })}
               </span>
             </div>
-            {receipt.transactionId && (
+            {receipt.transactionId ? (
               <div className="flex justify-between text-[10px] text-stone-500 dark:text-stone-400 truncate">
                 <span>Txn Ref:</span>
                 <span className="font-mono">{receipt.transactionId}</span>
               </div>
-            )}
+            ) : isPending ? (
+              <div className="flex justify-between text-[10px] text-amber-700 dark:text-amber-400">
+                <span>Payment Status:</span>
+                <span className="font-semibold">Pay at Cashier Counter</span>
+              </div>
+            ) : null}
           </div>
 
           {/* Line Items Table */}
@@ -165,13 +225,17 @@ export const DigitalReceiptModal: React.FC<DigitalReceiptModalProps> = ({ receip
               <span>₹{receipt.taxRupees}</span>
             </div>
             <div className="flex justify-between border-t border-stone-800 dark:border-stone-600 pt-1.5 font-bold text-sm text-[#241F1C] dark:text-white">
-              <span>TOTAL PAID</span>
+              <span>{isPending ? "TOTAL PAYABLE" : "TOTAL PAID"}</span>
               <span className="text-[#B72E35] dark:text-[#A78BFA] font-serif text-base">₹{receipt.totalRupees}</span>
             </div>
-            <div className="flex justify-between items-center text-[10px] text-emerald-800 dark:text-emerald-400 pt-0.5">
+            <div className="flex justify-between items-center text-[10px] text-stone-600 dark:text-stone-400 pt-0.5">
               <div className="flex items-center gap-1.5">
                 <span>Method:</span>
-                {receipt.paymentMethod === "UPI" ? (
+                {isPending ? (
+                  <span className="font-semibold text-amber-800 dark:text-amber-300">
+                    Pay at Cashier Desk (Cash / UPI / Card)
+                  </span>
+                ) : receipt.paymentMethod === "UPI" ? (
                   <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-white dark:bg-stone-800 border border-stone-300 dark:border-stone-700 shadow-2xs">
                     <Image
                       src="/upi-logo-trimmed.png"
@@ -203,7 +267,9 @@ export const DigitalReceiptModal: React.FC<DigitalReceiptModalProps> = ({ receip
                   <span className="font-bold">{receipt.paymentMethod}</span>
                 )}
               </div>
-              <span className="font-bold">PAID IN FULL</span>
+              <span className={`font-bold ${isPending ? "text-amber-700 dark:text-amber-400" : "text-emerald-800 dark:text-emerald-400"}`}>
+                {isPending ? "PAYMENT PENDING" : "PAID IN FULL"}
+              </span>
             </div>
           </div>
 

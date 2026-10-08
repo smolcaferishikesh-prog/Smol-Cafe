@@ -29,6 +29,8 @@ export interface MenuItemWithDetails {
     primary_equipment?: string;
     serving_ware?: string;
     notes?: string;
+    internal_notes?: string;
+    customer_note?: string;
   };
 }
 
@@ -170,7 +172,7 @@ function getFallbackCatalog(): CategoryWithItems[] {
 
 import { unstable_cache } from "next/cache";
 
-async function fetchMenuCatalogDirectly(): Promise<CategoryWithItems[]> {
+export async function fetchMenuCatalogDirectly(): Promise<CategoryWithItems[]> {
   try {
     const supabase = createAdminClient();
     const nowIso = new Date().toISOString();
@@ -184,6 +186,7 @@ async function fetchMenuCatalogDirectly(): Promise<CategoryWithItems[]> {
       supabase
         .from("menu_items")
         .select("*")
+        .neq("status", "ARCHIVED")
         .order("created_at", { ascending: true }),
       supabase
         .from("menu_prices")
@@ -238,7 +241,7 @@ async function fetchMenuCatalogDirectly(): Promise<CategoryWithItems[]> {
     }
 
     for (const item of items as MenuItem[]) {
-      if (deletedIds.has(item.id)) continue;
+      if (deletedIds.has(item.id) || item.status === "ARCHIVED") continue;
       const cat = categoryMap.get(item.category_id);
       if (!cat) continue;
 
@@ -251,6 +254,8 @@ async function fetchMenuCatalogDirectly(): Promise<CategoryWithItems[]> {
       const effectiveStatus = override?.status || (liveStock
         ? (liveStock.stockStatus === "SOLD_OUT" ? "SOLD_OUT" : item.status)
         : item.status);
+
+      if (effectiveStatus === "ARCHIVED") continue;
 
       const metadata: MenuItemWithDetails["metadata"] = {
         ...baseMeta,
@@ -274,8 +279,10 @@ async function fetchMenuCatalogDirectly(): Promise<CategoryWithItems[]> {
     // Include dynamic custom items
     const customItems = getCustomItemsStore();
     for (const custom of customItems) {
-      if (deletedIds.has(custom.id)) continue;
+      if (deletedIds.has(custom.id) || custom.status === "ARCHIVED") continue;
       const override = overrides[custom.id];
+      if (override?.status === "ARCHIVED") continue;
+
       const catId = override?.categoryId || custom.categoryId;
       let cat = categoryMap.get(catId);
       if (!cat) {
@@ -299,7 +306,7 @@ async function fetchMenuCatalogDirectly(): Promise<CategoryWithItems[]> {
       .filter((cat) => cat.items.length > 0)
       .sort((a, b) => a.sortOrder - b.sortOrder);
 
-    return result.length > 0 ? result : getFallbackCatalog();
+    return result;
   } catch (error) {
     console.warn("Using fallback menu catalog due to error:", error);
     return getFallbackCatalog();
@@ -307,18 +314,10 @@ async function fetchMenuCatalogDirectly(): Promise<CategoryWithItems[]> {
 }
 
 /**
- * Cached getter for menu catalog.
- * Caches for 60 seconds and supports on-demand tag revalidation ("menu-catalog").
+ * Direct getter for real-time menu catalog without stale ISR caching.
  */
-export const getMenuCatalog = unstable_cache(
-  async (): Promise<CategoryWithItems[]> => {
-    return fetchMenuCatalogDirectly();
-  },
-  ["smol_menu_catalog_v3"],
-  {
-    revalidate: 1,
-    tags: ["menu-catalog"],
-  }
-);
+export async function getMenuCatalog(): Promise<CategoryWithItems[]> {
+  return fetchMenuCatalogDirectly();
+}
 
 
