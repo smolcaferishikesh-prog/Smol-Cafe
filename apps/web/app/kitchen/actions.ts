@@ -135,8 +135,8 @@ export async function fetchKitchenOrdersAction(): Promise<FetchKitchenOrdersResu
   recordKdsHeartbeat();
 
   try {
-    // 1. Fetch active orders across confirmed KDS phases: Submitted, Accepted, Preparing, Ready, and Served
-    const activeStatuses = ["SUBMITTED", "ACCEPTED", "PREPARING", "READY", "SERVED"];
+    // 1. Fetch active orders across confirmed KDS phases: Accepted, Preparing, Ready, and Served
+    const activeStatuses = ["ACCEPTED", "PREPARING", "READY", "SERVED"];
 
     const { data: orders, error: ordersError } = await supabase
       .from("orders")
@@ -242,7 +242,7 @@ export async function fetchKitchenOrdersAction(): Promise<FetchKitchenOrdersResu
     for (const o of orders) {
       const allItems = itemsByOrder.get(o.id) || [];
       const dispatchedFoodItems = allItems.filter(
-        (i) => !isBeverageItem(i.name) && i.itemStatus && i.itemStatus !== "PENDING" && i.itemStatus !== "DRAFT"
+        (i) => !isBeverageItem(i.name) && i.itemStatus && i.itemStatus !== "PENDING" && i.itemStatus !== "DRAFT" && i.itemStatus !== "SUBMITTED"
       );
       if (dispatchedFoodItems.length === 0) {
         continue;

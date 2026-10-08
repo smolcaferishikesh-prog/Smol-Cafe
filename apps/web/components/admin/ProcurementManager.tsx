@@ -408,15 +408,54 @@ export const ProcurementManager: React.FC<ProcurementManagerProps> = ({ initialD
 
   // Add Line to new PO
   const handleAddPoLine = () => {
-    const defaultIng = (data.radarData?.ingredients && data.radarData.ingredients[0]) || { id: "ing-espresso", costPerUnitPaise: 180000 };
+    const vendor = data.vendors.find((v) => v.id === selectedVendorId);
+    const vendorItems = (data.radarData?.ingredients || []).filter(
+      (i) => i.preferredVendorId === selectedVendorId || i.preferredVendorName === vendor?.name
+    );
+    const defaultIng = (vendorItems.length > 0 ? vendorItems[0] : (data.radarData?.ingredients && data.radarData.ingredients[0])) || { id: "ing-espresso", costPerUnitPaise: 180000, suggestedRestockQty: 10 };
     setPoLines((prev) => [
       ...prev,
       {
         ingredientId: defaultIng.id,
-        orderedQty: 10,
+        orderedQty: (defaultIng as { suggestedRestockQty?: number }).suggestedRestockQty || 10,
         unitCostPaise: defaultIng.costPerUnitPaise || 5000,
       },
     ]);
+  };
+
+  const handleAddAllVendorItems = () => {
+    const vendor = data.vendors.find((v) => v.id === selectedVendorId);
+    const vendorItems = (data.radarData?.ingredients || []).filter(
+      (i) => i.preferredVendorId === selectedVendorId || i.preferredVendorName === vendor?.name
+    );
+    if (vendorItems.length === 0) return;
+    setPoLines(
+      vendorItems.map((ing) => ({
+        ingredientId: ing.id,
+        orderedQty: Math.max(1, ing.suggestedRestockQty || 10),
+        unitCostPaise: ing.costPerUnitPaise || 5000,
+      }))
+    );
+  };
+
+  const handleCreatePoForVendor = (vendorId: string) => {
+    setSelectedVendorId(vendorId);
+    const vendor = data.vendors.find((v) => v.id === vendorId);
+    const vendorItems = (data.radarData?.ingredients || []).filter(
+      (i) => i.preferredVendorId === vendorId || i.preferredVendorName === vendor?.name
+    );
+    if (vendorItems.length > 0) {
+      setPoLines(
+        vendorItems.map((ing) => ({
+          ingredientId: ing.id,
+          orderedQty: Math.max(1, ing.suggestedRestockQty || 10),
+          unitCostPaise: ing.costPerUnitPaise || 5000,
+        }))
+      );
+    } else {
+      setPoLines([]);
+    }
+    setIsPoModalOpen(true);
   };
 
   const handleCreatePO = async (e: React.FormEvent) => {
@@ -1185,48 +1224,89 @@ export const ProcurementManager: React.FC<ProcurementManagerProps> = ({ initialD
             </div>
 
             <div className="md:col-span-2 space-y-3">
-              {data.vendors.map((v) => (
-                <div
-                  key={v.id}
-                  className="rounded-3xl border border-[#C9AE8B]/40 bg-[#FAF4EB] p-5 shadow-sm dark:border-stone-800 dark:bg-[#1A1715] space-y-2"
-                >
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <h4 className="text-base font-serif font-bold text-[#241F1C] dark:text-[#FDFBF7]">
-                        {v.name}
-                      </h4>
-                      <p className="text-xs text-[#725039] dark:text-[#C9AE8B]">
-                        {v.contact_person ? `${v.contact_person} • ` : ""}
-                        {v.phone || "No phone"}
-                      </p>
+              {data.vendors.map((v) => {
+                const suppliedItems = (data.radarData?.ingredients || []).filter(
+                  (i) => i.preferredVendorId === v.id || i.preferredVendorName === v.name
+                );
+                return (
+                  <div
+                    key={v.id}
+                    className="rounded-3xl border border-[#C9AE8B]/40 bg-[#FAF4EB] p-5 shadow-sm dark:border-stone-800 dark:bg-[#1A1715] space-y-3"
+                  >
+                    <div className="flex items-start justify-between">
+                      <div>
+                        <h4 className="text-base font-serif font-bold text-[#241F1C] dark:text-[#FDFBF7]">
+                          {v.name}
+                        </h4>
+                        <p className="text-xs text-[#725039] dark:text-[#C9AE8B]">
+                          {v.contact_person ? `${v.contact_person} • ` : ""}
+                          {v.phone || "No phone"}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {v.tax_id && (
+                          <span className="font-mono text-[10px] text-[#725039] bg-[#EAE0CE] px-2 py-0.5 rounded-lg dark:bg-stone-800 dark:text-stone-300">
+                            GSTIN: {v.tax_id}
+                          </span>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => handleCreatePoForVendor(v.id)}
+                          className="rounded-xl bg-[#B72E35] hover:bg-[#9E242A] text-white px-3 py-1 text-xs font-serif font-bold transition shadow-2xs cursor-pointer flex items-center gap-1"
+                        >
+                          <Plus className="w-3 h-3" />
+                          Create PO
+                        </button>
+                      </div>
                     </div>
-                    {v.tax_id && (
-                      <span className="font-mono text-[10px] text-[#725039] bg-[#EAE0CE] px-2 py-0.5 rounded-lg dark:bg-stone-800 dark:text-stone-300">
-                        GSTIN: {v.tax_id}
-                      </span>
+
+                    <div className="flex items-center gap-4 text-xs text-[#725039] dark:text-[#C9AE8B] pt-0.5">
+                      {v.phone && (
+                        <a href={`tel:${v.phone}`} className="flex items-center gap-1 hover:text-[#B72E35]">
+                          <Phone className="h-3 w-3" /> {v.phone}
+                        </a>
+                      )}
+                      {v.email && (
+                        <a href={`mailto:${v.email}`} className="flex items-center gap-1 hover:text-[#B72E35]">
+                          <Mail className="h-3 w-3" /> {v.email}
+                        </a>
+                      )}
+                    </div>
+
+                    {/* Supplied Items Section */}
+                    <div className="pt-2 border-t border-[#C9AE8B]/20 dark:border-stone-800 space-y-1.5">
+                      <div className="flex items-center justify-between text-[11px] font-mono font-bold text-[#725039] dark:text-stone-400">
+                        <span>Supplied Items &amp; Ingredients ({suppliedItems.length})</span>
+                      </div>
+                      {suppliedItems.length > 0 ? (
+                        <div className="flex flex-wrap gap-1.5">
+                          {suppliedItems.map((item) => (
+                            <span
+                              key={item.id}
+                              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl text-[11px] font-mono bg-[#EFE7DC] dark:bg-stone-800 text-[#241F1C] dark:text-stone-200 border border-[#C9AE8B]/30 dark:border-stone-700"
+                            >
+                              <span className="font-medium font-sans">{item.name}</span>
+                              <span className="text-[#725039] dark:text-stone-400 text-[10px]">
+                                ({item.currentStock} {item.unitSymbol} in stock)
+                              </span>
+                            </span>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-[11px] italic text-[#725039]/70 dark:text-stone-500 font-sans">
+                          No ingredients linked to this vendor yet.
+                        </p>
+                      )}
+                    </div>
+
+                    {v.notes && (
+                      <p className="text-xs text-[#725039] dark:text-stone-400 bg-[#EFE7DC] p-2.5 rounded-xl dark:bg-stone-800/40 font-mono">
+                        {v.notes}
+                      </p>
                     )}
                   </div>
-
-                  <div className="flex items-center gap-4 text-xs text-[#725039] dark:text-[#C9AE8B] pt-1">
-                    {v.phone && (
-                      <a href={`tel:${v.phone}`} className="flex items-center gap-1 hover:text-[#B72E35]">
-                        <Phone className="h-3 w-3" /> {v.phone}
-                      </a>
-                    )}
-                    {v.email && (
-                      <a href={`mailto:${v.email}`} className="flex items-center gap-1 hover:text-[#B72E35]">
-                        <Mail className="h-3 w-3" /> {v.email}
-                      </a>
-                    )}
-                  </div>
-
-                  {v.notes && (
-                    <p className="text-xs text-[#725039] dark:text-stone-400 bg-[#EFE7DC] p-2.5 rounded-xl dark:bg-stone-800/40 font-mono">
-                      {v.notes}
-                    </p>
-                  )}
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         )}
@@ -1545,22 +1625,71 @@ export const ProcurementManager: React.FC<ProcurementManagerProps> = ({ initialD
             <form onSubmit={handleCreatePO} className="space-y-4">
               <div>
                 <label className="block text-[11px] font-mono font-bold uppercase tracking-wider text-[#725039] dark:text-stone-400 mb-1">
-                  Vendor
+                  Vendor / Supplier
                 </label>
                 <select
                   value={selectedVendorId}
-                  onChange={(e) => setSelectedVendorId(e.target.value)}
+                  onChange={(e) => {
+                    const newId = e.target.value;
+                    setSelectedVendorId(newId);
+                    const vendor = data.vendors.find((v) => v.id === newId);
+                    const vendorItems = (data.radarData?.ingredients || []).filter(
+                      (i) => i.preferredVendorId === newId || i.preferredVendorName === vendor?.name
+                    );
+                    if (vendorItems.length > 0 && poLines.length === 0) {
+                      setPoLines(
+                        vendorItems.map((ing) => ({
+                          ingredientId: ing.id,
+                          orderedQty: Math.max(1, ing.suggestedRestockQty || 10),
+                          unitCostPaise: ing.costPerUnitPaise || 5000,
+                        }))
+                      );
+                    }
+                  }}
                   required
                   className="w-full rounded-xl border border-[#C9AE8B]/60 bg-[#F3E7D3]/50 px-3 py-2 text-xs text-[#241F1C] focus:outline-none dark:border-stone-700 dark:bg-stone-800 dark:text-stone-100 font-medium"
                 >
                   <option value="">Select a vendor...</option>
-                  {data.vendors.map((v) => (
-                    <option key={v.id} value={v.id}>
-                      {v.name}
-                    </option>
-                  ))}
+                  {data.vendors.map((v) => {
+                    const count = (data.radarData?.ingredients || []).filter(
+                      (i) => i.preferredVendorId === v.id || i.preferredVendorName === v.name
+                    ).length;
+                    return (
+                      <option key={v.id} value={v.id}>
+                        {v.name} {count > 0 ? `(${count} supplied items)` : ""}
+                      </option>
+                    );
+                  })}
                 </select>
               </div>
+
+              {/* Vendor Supplied Shortcut */}
+              {selectedVendorId && (
+                <div className="flex items-center justify-between p-2.5 rounded-xl bg-[#EFE7DC] dark:bg-stone-800/80 border border-[#C9AE8B]/30 text-xs font-mono">
+                  {(() => {
+                    const v = data.vendors.find((item) => item.id === selectedVendorId);
+                    const count = (data.radarData?.ingredients || []).filter(
+                      (i) => i.preferredVendorId === selectedVendorId || i.preferredVendorName === v?.name
+                    ).length;
+                    return (
+                      <>
+                        <span className="text-[#725039] dark:text-stone-300">
+                          {v?.name}: <strong>{count}</strong> supplied items
+                        </span>
+                        {count > 0 && (
+                          <button
+                            type="button"
+                            onClick={handleAddAllVendorItems}
+                            className="text-[#B72E35] dark:text-[#F2C84B] font-bold hover:underline cursor-pointer"
+                          >
+                            + Populate All {count} Items
+                          </button>
+                        )}
+                      </>
+                    );
+                  })()}
+                </div>
+              )}
 
               <div>
                 <label className="block text-[11px] font-mono font-bold uppercase tracking-wider text-[#725039] dark:text-stone-400 mb-1">
@@ -1578,7 +1707,7 @@ export const ProcurementManager: React.FC<ProcurementManagerProps> = ({ initialD
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <label className="text-[11px] font-mono font-bold uppercase tracking-wider text-[#725039] dark:text-stone-400">
-                    Order Line Items
+                    Order Line Items ({poLines.length})
                   </label>
                   <button
                     type="button"
@@ -1589,71 +1718,101 @@ export const ProcurementManager: React.FC<ProcurementManagerProps> = ({ initialD
                   </button>
                 </div>
 
-                {poLines.map((line, idx) => (
-                  <div
-                    key={idx}
-                    className="grid grid-cols-12 gap-2 items-center bg-[#EFE7DC] p-2.5 rounded-2xl dark:bg-stone-800/60 border border-[#C9AE8B]/20"
-                  >
-                    <div className="col-span-5">
-                      <select
-                        value={line.ingredientId}
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          setPoLines((prev) =>
-                            prev.map((l, i) => (i === idx ? { ...l, ingredientId: val } : l))
-                          );
-                        }}
-                        className="w-full rounded-lg border border-[#C9AE8B]/50 bg-[#FAF4EB] px-2 py-1.5 text-xs text-[#241F1C] dark:border-stone-600 dark:bg-stone-900 dark:text-stone-100 font-medium"
-                      >
-                        {(radar?.ingredients || []).map((ing) => (
-                          <option key={ing.id} value={ing.id}>
-                            {ing.name}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
+                {poLines.map((line, idx) => {
+                  const currentVendor = data.vendors.find((v) => v.id === selectedVendorId);
+                  const supplied = (data.radarData?.ingredients || []).filter(
+                    (i) => i.preferredVendorId === selectedVendorId || i.preferredVendorName === currentVendor?.name
+                  );
+                  const others = (data.radarData?.ingredients || []).filter(
+                    (i) => !(i.preferredVendorId === selectedVendorId || i.preferredVendorName === currentVendor?.name)
+                  );
 
-                    <div className="col-span-3">
-                      <input
-                        type="number"
-                        placeholder="Qty"
-                        value={line.orderedQty}
-                        onChange={(e) => {
-                          const val = parseFloat(e.target.value) || 0;
-                          setPoLines((prev) =>
-                            prev.map((l, i) => (i === idx ? { ...l, orderedQty: val } : l))
-                          );
-                        }}
-                        className="w-full rounded-lg border border-[#C9AE8B]/50 bg-[#FAF4EB] px-2 py-1.5 text-xs text-[#241F1C] dark:border-stone-600 dark:bg-stone-900 dark:text-stone-100 font-mono"
-                      />
-                    </div>
+                  return (
+                    <div
+                      key={idx}
+                      className="grid grid-cols-12 gap-2 items-center bg-[#EFE7DC] p-2.5 rounded-2xl dark:bg-stone-800/60 border border-[#C9AE8B]/20"
+                    >
+                      <div className="col-span-5">
+                        <select
+                          value={line.ingredientId}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            const ing = (data.radarData?.ingredients || []).find((i) => i.id === val);
+                            setPoLines((prev) =>
+                              prev.map((l, i) =>
+                                i === idx
+                                  ? {
+                                      ...l,
+                                      ingredientId: val,
+                                      unitCostPaise: ing?.costPerUnitPaise || l.unitCostPaise,
+                                    }
+                                  : l
+                              )
+                            );
+                          }}
+                          className="w-full rounded-lg border border-[#C9AE8B]/50 bg-[#FAF4EB] px-2 py-1.5 text-xs text-[#241F1C] dark:border-stone-600 dark:bg-stone-900 dark:text-stone-100 font-medium"
+                        >
+                          {supplied.length > 0 && (
+                            <optgroup label={`Supplied by ${currentVendor?.name || "Vendor"}`}>
+                              {supplied.map((ing) => (
+                                <option key={ing.id} value={ing.id}>
+                                  ★ {ing.name} ({ing.unitSymbol})
+                                </option>
+                              ))}
+                            </optgroup>
+                          )}
+                          <optgroup label={supplied.length > 0 ? "Other Ingredients" : "All Ingredients"}>
+                            {others.map((ing) => (
+                              <option key={ing.id} value={ing.id}>
+                                {ing.name} ({ing.unitSymbol})
+                              </option>
+                            ))}
+                          </optgroup>
+                        </select>
+                      </div>
 
-                    <div className="col-span-3">
-                      <input
-                        type="number"
-                        placeholder="₹ Unit"
-                        value={line.unitCostPaise / 100}
-                        onChange={(e) => {
-                          const val = Math.round((parseFloat(e.target.value) || 0) * 100);
-                          setPoLines((prev) =>
-                            prev.map((l, i) => (i === idx ? { ...l, unitCostPaise: val } : l))
-                          );
-                        }}
-                        className="w-full rounded-lg border border-[#C9AE8B]/50 bg-[#FAF4EB] px-2 py-1.5 text-xs text-[#241F1C] dark:border-stone-600 dark:bg-stone-900 dark:text-stone-100 font-mono"
-                      />
-                    </div>
+                      <div className="col-span-3">
+                        <input
+                          type="number"
+                          placeholder="Qty"
+                          value={line.orderedQty}
+                          onChange={(e) => {
+                            const val = parseFloat(e.target.value) || 0;
+                            setPoLines((prev) =>
+                              prev.map((l, i) => (i === idx ? { ...l, orderedQty: val } : l))
+                            );
+                          }}
+                          className="w-full rounded-lg border border-[#C9AE8B]/50 bg-[#FAF4EB] px-2 py-1.5 text-xs text-[#241F1C] dark:border-stone-600 dark:bg-stone-900 dark:text-stone-100 font-mono"
+                        />
+                      </div>
 
-                    <div className="col-span-1 text-right">
-                      <button
-                        type="button"
-                        onClick={() => setPoLines((prev) => prev.filter((_, i) => i !== idx))}
-                        className="text-[#725039] hover:text-red-600 text-xs cursor-pointer"
-                      >
-                        ✕
-                      </button>
+                      <div className="col-span-3">
+                        <input
+                          type="number"
+                          placeholder="₹ Unit"
+                          value={line.unitCostPaise / 100}
+                          onChange={(e) => {
+                            const val = Math.round((parseFloat(e.target.value) || 0) * 100);
+                            setPoLines((prev) =>
+                              prev.map((l, i) => (i === idx ? { ...l, unitCostPaise: val } : l))
+                            );
+                          }}
+                          className="w-full rounded-lg border border-[#C9AE8B]/50 bg-[#FAF4EB] px-2 py-1.5 text-xs text-[#241F1C] dark:border-stone-600 dark:bg-stone-900 dark:text-stone-100 font-mono"
+                        />
+                      </div>
+
+                      <div className="col-span-1 text-right">
+                        <button
+                          type="button"
+                          onClick={() => setPoLines((prev) => prev.filter((_, i) => i !== idx))}
+                          className="text-[#725039] hover:text-red-600 text-xs cursor-pointer"
+                        >
+                          ✕
+                        </button>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
 
               <div className="flex gap-2 pt-2">

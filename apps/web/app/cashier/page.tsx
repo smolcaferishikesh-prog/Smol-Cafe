@@ -4,6 +4,7 @@ import { fetchActiveCashierTablesAction } from "@/app/bill/actions";
 import {
   fetchPendingCashierOrdersAction,
   fetchPaidCashierHistoryAction,
+  fetchReadyForDeliveryOrdersAction,
 } from "@/app/cashier/actions";
 import { CashierDashboard } from "@/components/cashier/CashierDashboard";
 
@@ -21,9 +22,10 @@ export default async function CashierPage() {
     redirect("/smol-backdoor");
   }
 
-  const [tables, pendingOrdersRes, paidHistoryRes] = await Promise.all([
+  const [tables, pendingOrdersRes, deliveryOrdersRes, paidHistoryRes] = await Promise.all([
     fetchActiveCashierTablesAction(),
     fetchPendingCashierOrdersAction(),
+    fetchReadyForDeliveryOrdersAction(),
     fetchPaidCashierHistoryAction(),
   ]);
 
@@ -31,6 +33,7 @@ export default async function CashierPage() {
     <CashierDashboard
       initialTables={tables}
       initialPendingOrders={pendingOrdersRes.success ? pendingOrdersRes.orders : []}
+      initialDeliveryOrders={deliveryOrdersRes.success ? deliveryOrdersRes.orders : []}
       initialPaidHistory={paidHistoryRes.success ? paidHistoryRes.records : []}
     />
   );

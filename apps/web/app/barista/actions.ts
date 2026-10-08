@@ -51,8 +51,8 @@ export async function fetchBaristaOrdersAction(): Promise<FetchBaristaOrdersResu
   const supabase = createAdminClient();
 
   try {
-    // 1. Fetch active orders (submitted, accepted, preparing, ready, served)
-    const activeStatuses = ["SUBMITTED", "ACCEPTED", "PREPARING", "READY", "SERVED"];
+    // 1. Fetch active orders (accepted, preparing, ready, served)
+    const activeStatuses = ["ACCEPTED", "PREPARING", "READY", "SERVED"];
     const { data: orders, error: ordersError } = await supabase
       .from("orders")
       .select("*")
@@ -154,7 +154,7 @@ export async function fetchBaristaOrdersAction(): Promise<FetchBaristaOrdersResu
     for (const o of orders) {
       const allItems = itemsByOrder.get(o.id) || [];
       const dispatchedBeverageItems = allItems.filter(
-        (i) => i.isBeverage && i.itemStatus && i.itemStatus !== "PENDING" && i.itemStatus !== "DRAFT"
+        (i) => i.isBeverage && i.itemStatus && i.itemStatus !== "PENDING" && i.itemStatus !== "DRAFT" && i.itemStatus !== "SUBMITTED"
       );
       if (dispatchedBeverageItems.length === 0) {
         continue;

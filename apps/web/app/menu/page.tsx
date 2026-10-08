@@ -2,6 +2,9 @@ import { getTableSessionCookie } from "@/lib/session";
 import { getMenuCatalog } from "@/lib/queries/menu";
 import { MenuClientView } from "@/components/menu/MenuClientView";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 export const metadata = {
   title: "Menu — smol café",
   description:

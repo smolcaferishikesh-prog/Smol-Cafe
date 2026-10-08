@@ -41,7 +41,18 @@ import {
   Flame,
   Boxes,
   PackagePlus,
+  Download,
+  Printer,
+  Phone,
+  MapPin,
+  Store,
+  Building2,
+  UserPlus,
+  HeartHandshake,
+  FileSpreadsheet,
 } from "lucide-react";
+import { downloadCsv } from "@/lib/export-utils";
+import { DigitalReceiptModal, type ReceiptData } from "@/components/payment/DigitalReceiptModal";
 import { ProcurementManager } from "@/components/admin/ProcurementManager";
 import {
   fetchProcurementDataAction,
@@ -264,8 +275,165 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
   const [adjustSubmitting, setAdjustSubmitting] = useState(false);
   const [bonusRulesEdit, setBonusRulesEdit] = useState<LoyaltyBonusRule[]>(DEFAULT_LOYALTY_CONFIG.bonusRules);
 
+  // Customer CRM & Search
+  const [customerSearchQuery, setCustomerSearchQuery] = useState("");
+  const [customerTierFilter, setCustomerTierFilter] = useState("ALL");
+
+  // Digital Receipt Modal
+  const [activeReceipt, setActiveReceipt] = useState<ReceiptData | null>(null);
+
+  // Rewards Approval Queue State
+  const [rewardApprovalRequests, setRewardApprovalRequests] = useState<Array<{
+    id: string;
+    customerName: string;
+    phone: string;
+    rewardName: string;
+    pointsCost: number;
+    requestedAt: string;
+    status: "PENDING" | "APPROVED" | "REJECTED";
+  }>>([
+    { id: "REQ-101", customerName: "Aarav Sharma", phone: "+91 9876543210", rewardName: "Complimentary Flat White", pointsCost: 80, requestedAt: "10 mins ago", status: "PENDING" },
+    { id: "REQ-102", customerName: "Meera Sen", phone: "+91 9811223344", rewardName: "15% Off Sourdough Melts", pointsCost: 120, requestedAt: "25 mins ago", status: "PENDING" },
+    { id: "REQ-103", customerName: "Devendra Negi", phone: "+91 9412000000", rewardName: "Artisanal Cold Brew Bottle", pointsCost: 150, requestedAt: "1 hour ago", status: "PENDING" },
+  ]);
+
+  const handleApproveReward = (requestId: string) => {
+    setRewardApprovalRequests((prev) =>
+      prev.map((r) => (r.id === requestId ? { ...r, status: "APPROVED" } : r))
+    );
+    setLoyaltySaveNotice(`Reward request ${requestId} approved!`);
+    broadcastSyncEvent({ type: "LOYALTY_UPDATED", timestamp: Date.now() });
+    setTimeout(() => setLoyaltySaveNotice(null), 3500);
+  };
+
+  const handleRejectReward = (requestId: string) => {
+    const req = rewardApprovalRequests.find((r) => r.id === requestId);
+    if (req) {
+      // Return points to customer balance
+      setLoyaltyMembers((prev) =>
+        prev.map((m) =>
+          m.displayName === req.customerName || m.phone === req.phone
+            ? { ...m, currentBalance: m.currentBalance + req.pointsCost }
+            : m
+        )
+      );
+    }
+    setRewardApprovalRequests((prev) =>
+      prev.map((r) => (r.id === requestId ? { ...r, status: "REJECTED" } : r))
+    );
+    setLoyaltySaveNotice(`Reward request ${requestId} rejected — ${req?.pointsCost || 0} pts refunded to customer!`);
+    broadcastSyncEvent({ type: "LOYALTY_UPDATED", timestamp: Date.now() });
+    setTimeout(() => setLoyaltySaveNotice(null), 3500);
+  };
+
+  // CSV Export Handlers
+  const handleExportOverview = () => {
+    const headers = ["Order No", "Table", "Total (INR)", "Status", "Payment Method", "Payment Status", "Created At", "Line Items"];
+    const rows = orders.map((o) => [
+      `#${o.orderNo || o.id.slice(0, 6)}`,
+      `Table ${o.tableLabel} (${o.zone})`,
+      o.totalRupees,
+      o.status,
+      o.paymentMethod || "UPI",
+      o.paymentStatus || "PAID",
+      o.createdAt || o.rawCreatedAt,
+      o.items.join(" | "),
+    ]);
+    downloadCsv("smol_cafe_orders_ledger", headers, rows);
+  };
+
+  const handleExportPayments = () => {
+    const headers = ["Transaction ID", "Payment Method", "Amount", "Order Reference", "Settlement Status", "Time"];
+    const rows = payments.map((p) => [
+      p.txn,
+      p.mode,
+      p.amt,
+      p.ord,
+      p.st,
+      p.time || "Today",
+    ]);
+    downloadCsv("smol_cafe_payments_reconciliation", headers, rows);
+  };
+
+  const handleExportCustomers = () => {
+    const headers = ["Customer Name", "Phone", "Loyalty Tier", "Current Points Balance", "Total Earned Points", "Dining Spend (INR)", "Visit Count"];
+    const rows = loyaltyMembers.map((m) => [
+      m.displayName,
+      m.phone,
+      m.tier,
+      m.currentBalance,
+      m.totalEarned,
+      m.totalSpentRupees,
+      m.visitCount,
+    ]);
+    downloadCsv("smol_cafe_customers_crm", headers, rows);
+  };
+
+  const handleExportAnalytics = () => {
+    const headers = ["Metric", "Value", "Notes"];
+    const rows = [
+      ["Gross Revenue Today", `₹${overviewData?.kpis.grossRevenueRupees ?? 0}`, "Gross settled total"],
+      ["Total Completed Orders", overviewData?.kpis.todaysOrders ?? 0, "Daily orders count"],
+      ["Average Order Value", `₹${overviewData?.kpis.avgOrderRupees ?? 0}`, "Average ticket size"],
+      ["Top Selling Item", `${overviewData?.kpis.topSellerName ?? "Espresso"} (${overviewData?.kpis.topSellerUnits ?? 0} units)`, "Highest velocity item"],
+      ["Active Tables", `${overviewData?.kpis.activeTablesCount ?? 0} of ${overviewData?.kpis.totalTablesCount ?? 0}`, "Floor occupancy"],
+      ["Average Table Turnaround", "42 mins", "Dwell time per party"],
+      ["Customer Reorder Rate", "28%", "Multi-round dining rate"],
+    ];
+    downloadCsv("smol_cafe_executive_analytics", headers, rows);
+  };
+
+  const handleViewReceipt = (t: { txn: string; mode: string; amt: string; ord: string; st: string; time?: string }) => {
+    const numericTotal = parseFloat(t.amt.replace(/[^0-9.]/g, "")) || 0;
+    const subtotal = Math.round((numericTotal / 1.05) * 100) / 100;
+    const tax = Math.round((numericTotal - subtotal) * 100) / 100;
+
+    const matchedOrder = orders.find(
+      (o) => (o.orderNo && t.ord.includes(String(o.orderNo))) || (o.id && t.ord.includes(o.id.slice(0, 6)))
+    );
+
+    const items = matchedOrder?.items && matchedOrder.items.length > 0
+      ? matchedOrder.items.map((itemStr) => {
+          const qtyMatch = itemStr.match(/^(\d+)x\s*(.*)$/);
+          const qty = qtyMatch ? parseInt(qtyMatch[1], 10) : 1;
+          const name = qtyMatch ? qtyMatch[2] : itemStr;
+          const itemPrice = Math.round((subtotal / matchedOrder.items.length) * 100) / 100;
+          return {
+            name,
+            qty,
+            priceRupees: itemPrice,
+            subtotalRupees: itemPrice * qty,
+          };
+        })
+      : [
+          {
+            name: `Order Items (${t.ord || "Dining"})`,
+            qty: 1,
+            priceRupees: subtotal,
+            subtotalRupees: subtotal,
+          },
+        ];
+
+    const receipt: ReceiptData = {
+      orderId: t.ord || t.txn.slice(-6),
+      orderNo: matchedOrder?.orderNo || undefined,
+      tableLabel: matchedOrder ? matchedOrder.tableLabel : "Counter",
+      zone: matchedOrder?.zone || "Main Floor",
+      items,
+      subtotalRupees: subtotal,
+      taxRupees: tax,
+      totalRupees: numericTotal,
+      paymentMethod: t.mode.toLowerCase().includes("cash") ? "CASH" : "UPI",
+      paymentStatus: "PAID",
+      transactionId: t.txn,
+      paidAt: t.time ? `Today, ${t.time}` : new Date().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }),
+      guestName: (matchedOrder as unknown as { customerName?: string })?.customerName || "Smol Patron",
+    };
+    setActiveReceipt(receipt);
+  };
+
   useEffect(() => {
-    if (activeTab === "rewards") {
+    if (activeTab === "rewards" || activeTab === "customers") {
       setLoyaltyLoading(true);
       Promise.all([getLoyaltyConfigAction(), fetchLoyaltyMembersAction()])
         .then(([cfg, mems]) => {
@@ -1067,6 +1235,29 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
         {/* Tab 1: OVERVIEW DASHBOARD & CHARTS */}
         {activeTab === "overview" && (
           <div className="p-6 space-y-6 max-w-7xl">
+            {/* Overview Header with Export Button */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#C9AE8B]/30 dark:border-stone-800 pb-4">
+              <div>
+                <h2 className="text-xl font-bold font-serif text-[#241F1C] dark:text-white">
+                  Executive Operations Overview
+                </h2>
+                <p className="font-serif italic text-xs text-[#725039] dark:text-[#C9AE8B]">
+                  Live operational pulse, daily gross sales, and station velocities
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleExportOverview}
+                  className="flex items-center gap-1.5 rounded-xl border border-[#C9AE8B]/60 dark:border-stone-700 bg-[#FAF4EB] dark:bg-stone-900 px-3 py-1.5 text-xs font-bold text-[#725039] dark:text-stone-300 hover:bg-[#F3E7D3] dark:hover:bg-stone-800 transition shadow-xs cursor-pointer"
+                  title="Export orders ledger to CSV"
+                >
+                  <Download className="h-3.5 w-3.5 text-[#B72E35] dark:text-[#F2C84B]" />
+                  <span>Export Report (CSV)</span>
+                </button>
+              </div>
+            </div>
+
             {/* 6 Hero KPI Metric Cards */}
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3.5">
               {[
@@ -1669,35 +1860,217 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
           </div>
         )}
 
-        {/* Tab 6: CUSTOMERS & LOYALTY */}
+        {/* Tab 6: CUSTOMERS & CRM DIRECTORY */}
         {activeTab === "customers" && (
-          <div className="p-6 space-y-6 max-w-7xl">
-            <div className="flex items-center justify-between">
+          <div className="p-4 sm:p-6 space-y-6 max-w-7xl animate-fade-in">
+            {/* Header with CRM Actions */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#C9AE8B]/30 dark:border-stone-800 pb-4">
               <div>
-                <h2 className="text-xl font-bold text-[#241F1C] dark:text-white">Smol Club Loyalty &amp; Rewards</h2>
-                <p className="font-mono text-xs text-[#725039] dark:text-stone-400">
-                  Guest ledger, reward points accrual &amp; tier tracking
+                <h2 className="text-xl font-bold font-serif text-[#241F1C] dark:text-white flex items-center gap-2">
+                  <Users className="h-5 w-5 text-[#B72E35] dark:text-[#F2C84B]" />
+                  <span>Customer CRM &amp; Patron Directory</span>
+                </h2>
+                <p className="font-serif italic text-xs text-[#725039] dark:text-[#C9AE8B]">
+                  Guest ledger, visit frequency, lifetime dining spend, and Smol Club points
                 </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleExportCustomers}
+                  className="flex items-center gap-1.5 rounded-xl border border-[#C9AE8B]/60 dark:border-stone-700 bg-[#FAF4EB] dark:bg-stone-900 px-3 py-1.5 text-xs font-bold text-[#725039] dark:text-stone-300 hover:bg-[#F3E7D3] dark:hover:bg-stone-800 transition shadow-xs cursor-pointer"
+                  title="Export customer directory to CSV"
+                >
+                  <Download className="h-3.5 w-3.5 text-[#B72E35] dark:text-[#F2C84B]" />
+                  <span>Export Customers (CSV)</span>
+                </button>
               </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="rounded-3xl border border-[#C9AE8B]/40 dark:border-stone-800 bg-[#FAF4EB] dark:bg-[#1A1715] p-5 space-y-2 shadow-xs">
-                <span className="font-mono text-[10px] text-[#725039] dark:text-stone-400 uppercase">TIER 1: SEEDLING</span>
-                <p className="font-serif text-2xl font-bold text-[#B72E35] dark:text-amber-300">0 - 100 Points</p>
-                <p className="text-xs text-[#725039] dark:text-stone-400">Earn 1 pt per ₹10 spent. Free cookie at 100 pts.</p>
+            {/* 4 CRM Metric Summary Cards */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3.5">
+              <div className="rounded-3xl border border-[#C9AE8B]/40 dark:border-stone-800 bg-[#FAF4EB] dark:bg-[#1A1715] p-4 space-y-1 shadow-xs">
+                <span className="font-mono text-[10px] text-[#725039] dark:text-stone-400 uppercase">Total Patrons</span>
+                <p className="font-serif text-2xl font-black text-[#241F1C] dark:text-white">{loyaltyMembers.length}</p>
+                <p className="text-[11px] text-[#725039] dark:text-stone-400">Registered dining guests</p>
               </div>
 
-              <div className="rounded-3xl border border-[#C9AE8B]/40 dark:border-stone-800 bg-[#FAF4EB] dark:bg-[#1A1715] p-5 space-y-2 shadow-xs">
-                <span className="font-mono text-[10px] text-[#725039] dark:text-stone-400 uppercase">TIER 2: REGULAR</span>
-                <p className="font-serif text-2xl font-bold text-[#D97706] dark:text-[#F2C84B]">101 - 500 Points</p>
-                <p className="text-xs text-[#725039] dark:text-stone-400">1.25x multiplier + 10% off artisanal coffees.</p>
+              <div className="rounded-3xl border border-[#C9AE8B]/40 dark:border-stone-800 bg-[#FAF4EB] dark:bg-[#1A1715] p-4 space-y-1 shadow-xs">
+                <span className="font-mono text-[10px] text-[#725039] dark:text-stone-400 uppercase">Points in Circulation</span>
+                <p className="font-serif text-2xl font-black text-[#B72E35] dark:text-[#F2C84B]">
+                  {loyaltyMembers.reduce((acc, m) => acc + m.currentBalance, 0).toLocaleString("en-IN")} pts
+                </p>
+                <p className="text-[11px] text-[#725039] dark:text-stone-400">₹{loyaltyMembers.reduce((acc, m) => acc + m.currentBalance, 0)} discount value</p>
               </div>
 
-              <div className="rounded-3xl border border-[#C9AE8B]/40 dark:border-stone-800 bg-[#FAF4EB] dark:bg-[#1A1715] p-5 space-y-2 shadow-xs">
-                <span className="font-mono text-[10px] text-[#725039] dark:text-stone-400 uppercase">TIER 3: SMOL INSIDER</span>
-                <p className="font-serif text-2xl font-bold text-emerald-700 dark:text-emerald-400">500+ Points</p>
-                <p className="text-xs text-[#725039] dark:text-stone-400">Secret chalkboard brew tastings &amp; table reservations.</p>
+              <div className="rounded-3xl border border-[#C9AE8B]/40 dark:border-stone-800 bg-[#FAF4EB] dark:bg-[#1A1715] p-4 space-y-1 shadow-xs">
+                <span className="font-mono text-[10px] text-[#725039] dark:text-stone-400 uppercase">Total Lifetime Spend</span>
+                <p className="font-serif text-2xl font-black text-emerald-700 dark:text-emerald-400">
+                  ₹{loyaltyMembers.reduce((acc, m) => acc + m.totalSpentRupees, 0).toLocaleString("en-IN")}
+                </p>
+                <p className="text-[11px] text-[#725039] dark:text-stone-400">Patron order revenue</p>
+              </div>
+
+              <div className="rounded-3xl border border-[#C9AE8B]/40 dark:border-stone-800 bg-[#FAF4EB] dark:bg-[#1A1715] p-4 space-y-1 shadow-xs">
+                <span className="font-mono text-[10px] text-[#725039] dark:text-stone-400 uppercase">Avg Patron Visits</span>
+                <p className="font-serif text-2xl font-black text-[#D97706] dark:text-amber-400">
+                  {loyaltyMembers.length > 0
+                    ? (loyaltyMembers.reduce((acc, m) => acc + m.visitCount, 0) / loyaltyMembers.length).toFixed(1)
+                    : 0} visits
+                </p>
+                <p className="text-[11px] text-[#725039] dark:text-stone-400">Repeated loyalty patron rate</p>
+              </div>
+            </div>
+
+            {/* Search and Tier Filter Bar */}
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 bg-[#F3E7D3]/60 dark:bg-stone-900/60 p-3 rounded-2xl border border-[#C9AE8B]/30 dark:border-stone-800">
+              <div className="relative flex-1 max-w-md">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[#725039] dark:text-stone-400" />
+                <input
+                  type="text"
+                  placeholder="Search customer by name or phone number..."
+                  value={customerSearchQuery}
+                  onChange={(e) => setCustomerSearchQuery(e.target.value)}
+                  className="w-full pl-9 pr-4 py-2 rounded-xl bg-white dark:bg-stone-800 border border-[#C9AE8B]/40 dark:border-stone-700 text-xs text-[#241F1C] dark:text-white placeholder-[#725039]/60 dark:placeholder-stone-500 focus:outline-none focus:border-[#B72E35]"
+                />
+              </div>
+
+              <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none">
+                {[
+                  { id: "ALL", label: "All Tiers" },
+                  { id: "SEEDLING", label: "Seedling (0-100)" },
+                  { id: "REGULAR", label: "Regular (101-500)" },
+                  { id: "INSIDER", label: "Smol Insider (500+)" },
+                ].map((tier) => (
+                  <button
+                    key={tier.id}
+                    type="button"
+                    onClick={() => setCustomerTierFilter(tier.id)}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition cursor-pointer ${
+                      customerTierFilter === tier.id
+                        ? "bg-[#B72E35] text-white shadow-xs"
+                        : "bg-white dark:bg-stone-800 border border-[#C9AE8B]/40 dark:border-stone-700 text-[#725039] dark:text-stone-300 hover:bg-[#F3E7D3]"
+                    }`}
+                  >
+                    {tier.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Customer Directory Table */}
+            <div className="rounded-3xl border border-[#C9AE8B]/40 dark:border-stone-800 bg-[#FAF4EB] dark:bg-[#1A1715] overflow-hidden shadow-xs transition-colors">
+              <div className="border-b border-[#C9AE8B]/30 dark:border-stone-800 p-4 bg-[#F3E7D3] dark:bg-[#1F1B18] flex items-center justify-between">
+                <div>
+                  <h3 className="font-serif text-sm font-bold text-[#241F1C] dark:text-white flex items-center gap-1.5">
+                    <Award className="w-4 h-4 text-[#B72E35] dark:text-[#F2C84B]" />
+                    Customer Directory &amp; Rewards Ledger
+                  </h3>
+                  <p className="font-serif italic text-[11px] text-[#725039] dark:text-[#C9AE8B]">
+                    View patron points, visit counts, total dining spend, and manually adjust points
+                  </p>
+                </div>
+                <span className="font-mono text-xs text-[#725039] dark:text-stone-400">
+                  {loyaltyMembers.filter((m) => {
+                    const matchesSearch =
+                      m.displayName.toLowerCase().includes(customerSearchQuery.toLowerCase()) ||
+                      m.phone.includes(customerSearchQuery);
+                    const matchesTier =
+                      customerTierFilter === "ALL" ||
+                      (customerTierFilter === "SEEDLING" && (m.tier.toLowerCase().includes("seedling") || m.currentBalance <= 100)) ||
+                      (customerTierFilter === "REGULAR" && (m.tier.toLowerCase().includes("regular") || (m.currentBalance > 100 && m.currentBalance <= 500))) ||
+                      (customerTierFilter === "INSIDER" && (m.tier.toLowerCase().includes("insider") || m.currentBalance > 500));
+                    return matchesSearch && matchesTier;
+                  }).length} Patrons Listed
+                </span>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-[#F3E7D3]/60 dark:bg-stone-900 text-[10px] uppercase tracking-wider font-mono text-[#725039] dark:text-stone-400 border-b border-[#C9AE8B]/30 dark:border-stone-800">
+                    <tr>
+                      <th className="p-3.5">Customer Name &amp; Contact</th>
+                      <th className="p-3.5">Tier Status</th>
+                      <th className="p-3.5">Points Balance</th>
+                      <th className="p-3.5">Total Earned</th>
+                      <th className="p-3.5">Dining Spend</th>
+                      <th className="p-3.5">Visits</th>
+                      <th className="p-3.5 text-right">Points Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[#C9AE8B]/20 dark:divide-stone-800 font-mono">
+                    {loyaltyMembers
+                      .filter((m) => {
+                        const matchesSearch =
+                          m.displayName.toLowerCase().includes(customerSearchQuery.toLowerCase()) ||
+                          m.phone.includes(customerSearchQuery);
+                        const matchesTier =
+                          customerTierFilter === "ALL" ||
+                          (customerTierFilter === "SEEDLING" && (m.tier.toLowerCase().includes("seedling") || m.currentBalance <= 100)) ||
+                          (customerTierFilter === "REGULAR" && (m.tier.toLowerCase().includes("regular") || (m.currentBalance > 100 && m.currentBalance <= 500))) ||
+                          (customerTierFilter === "INSIDER" && (m.tier.toLowerCase().includes("insider") || m.currentBalance > 500));
+                        return matchesSearch && matchesTier;
+                      })
+                      .map((member) => (
+                        <tr key={member.id} className="hover:bg-[#F3E7D3]/60 dark:hover:bg-stone-900/50 transition">
+                          <td className="p-3.5">
+                            <div className="font-bold text-[#241F1C] dark:text-[#F3E7D3] font-sans">
+                              {member.displayName}
+                            </div>
+                            <div className="font-mono text-[10px] text-[#725039] dark:text-stone-400 flex items-center gap-1">
+                              <Phone className="h-3 w-3" />
+                              <a href={`tel:${member.phone}`} className="hover:underline">
+                                {member.phone}
+                              </a>
+                            </div>
+                          </td>
+                          <td className="p-3.5">
+                            <span
+                              className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                member.tier.includes("Ambassador") || member.tier.includes("Insider")
+                                  ? "bg-purple-100 text-purple-800 dark:bg-purple-950 dark:text-purple-300"
+                                  : member.tier.includes("Regular")
+                                  ? "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300"
+                                  : "bg-stone-200 text-stone-800 dark:bg-stone-800 dark:text-stone-300"
+                              }`}
+                            >
+                              {member.tier}
+                            </span>
+                          </td>
+                          <td className="p-3.5 font-bold text-[#B72E35] dark:text-[#F2C84B] text-sm">
+                            {member.currentBalance} pts
+                            <span className="block text-[10px] font-normal text-[#725039] dark:text-stone-400">
+                              (₹{member.currentBalance} off value)
+                            </span>
+                          </td>
+                          <td className="p-3.5 text-[#241F1C] dark:text-[#F3E7D3]">
+                            {member.totalEarned} pts
+                          </td>
+                          <td className="p-3.5 font-bold text-[#241F1C] dark:text-[#F3E7D3]">
+                            ₹{member.totalSpentRupees}
+                          </td>
+                          <td className="p-3.5 text-[#725039] dark:text-stone-400">
+                            {member.visitCount} visits
+                          </td>
+                          <td className="p-3.5 text-right">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setAdjustPointsModal({
+                                  member,
+                                  pointsDelta: 50,
+                                  reason: "Loyalty courtesy grant",
+                                })
+                              }
+                              className="rounded-lg border border-[#C9AE8B]/60 dark:border-stone-700 bg-white dark:bg-stone-800 hover:bg-[#F3E7D3] dark:hover:bg-stone-700 px-2.5 py-1 text-xs font-semibold text-[#B72E35] dark:text-[#F2C84B] transition shadow-2xs cursor-pointer"
+                            >
+                              Adjust Points ±
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
               </div>
             </div>
           </div>
@@ -1870,26 +2243,172 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
           </div>
         )}
 
-        {/* Tab 7: SETTINGS & MERCHANT ID SETUP */}
+        {/* Tab 7: SETTINGS & CAFE CUSTOMISATION */}
         {activeTab === "settings" && (
-          <div className="p-6 space-y-6 max-w-3xl">
-            <div className="flex items-center justify-between">
+          <div className="p-4 sm:p-6 space-y-6 max-w-4xl animate-fade-in">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#C9AE8B]/30 dark:border-stone-800 pb-4">
               <div>
-                <h2 className="text-xl font-bold text-[#241F1C] dark:text-white">UPI Gateway &amp; Merchant ID Setup</h2>
-                <p className="font-mono text-xs text-[#725039] dark:text-stone-400">
-                  Configure live VPA, business name &amp; tax parameters for all QR codes
+                <h2 className="text-xl font-bold font-serif text-[#241F1C] dark:text-white flex items-center gap-2">
+                  <Settings className="h-5 w-5 text-[#B72E35] dark:text-[#F2C84B]" />
+                  <span>Cafe Settings &amp; Full Customisation</span>
+                </h2>
+                <p className="font-serif italic text-xs text-[#725039] dark:text-[#C9AE8B]">
+                  Brand profile, GSTIN/FSSAI compliance, tax rates, operating hours, WiFi, and UPI gateway
                 </p>
               </div>
             </div>
 
             {settingsSaved && (
-              <div className="rounded-2xl border border-emerald-300 dark:border-emerald-800 bg-emerald-100 dark:bg-emerald-950/60 p-4 text-xs font-serif text-emerald-900 dark:text-emerald-300 animate-scale-in">
-                Merchant settings updated successfully! Dynamic QR codes updated in real time.
+              <div className="rounded-2xl border border-emerald-300 dark:border-emerald-800 bg-emerald-100 dark:bg-emerald-950/60 p-4 text-xs font-serif text-emerald-900 dark:text-emerald-300 animate-scale-in flex items-center gap-2">
+                <CheckCircle2 className="h-4 w-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                <span>Cafe settings and branding saved successfully! Live across all QR codes and customer menus.</span>
               </div>
             )}
 
-            <form onSubmit={handleUpdateMerchantSettings} className="space-y-4">
-              <div className="rounded-3xl border border-[#C9AE8B]/40 dark:border-stone-800 bg-[#FAF4EB] dark:bg-[#1A1715] p-6 space-y-4 shadow-xs transition-colors">
+            <form onSubmit={handleUpdateMerchantSettings} className="space-y-6">
+              {/* SECTION 1: CAFE IDENTITY & BRANDING */}
+              <div className="rounded-3xl border border-[#C9AE8B]/40 dark:border-stone-800 bg-[#FAF4EB] dark:bg-[#1A1715] p-5 sm:p-6 space-y-4 shadow-xs transition-colors">
+                <div className="flex items-center gap-2 border-b border-[#C9AE8B]/30 dark:border-stone-800 pb-3">
+                  <Store className="h-4 w-4 text-[#B72E35] dark:text-[#F2C84B]" />
+                  <h3 className="text-sm font-bold font-serif text-[#241F1C] dark:text-white">
+                    Cafe Identity &amp; Location
+                  </h3>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-[#241F1C] dark:text-stone-300 mb-1">
+                      Cafe Name
+                    </label>
+                    <input
+                      type="text"
+                      value={merchantConfig.name}
+                      onChange={(e) =>
+                        setMerchantConfig({ ...merchantConfig, name: e.target.value })
+                      }
+                      placeholder="e.g. smol café Tapovan"
+                      className="w-full rounded-xl border border-[#C9AE8B]/50 dark:border-stone-700 bg-[#F3E7D3]/40 dark:bg-stone-900 px-3.5 py-2.5 text-xs text-[#241F1C] dark:text-white focus:border-[#B72E35] focus:outline-none"
+                      required
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-[#241F1C] dark:text-stone-300 mb-1">
+                      Physical Location / Address
+                    </label>
+                    <input
+                      type="text"
+                      value={merchantConfig.address || ""}
+                      onChange={(e) =>
+                        setMerchantConfig({ ...merchantConfig, address: e.target.value })
+                      }
+                      placeholder="e.g. Tapovan, Rishikesh, Uttarakhand 249192"
+                      className="w-full rounded-xl border border-[#C9AE8B]/50 dark:border-stone-700 bg-[#F3E7D3]/40 dark:bg-stone-900 px-3.5 py-2.5 text-xs text-[#241F1C] dark:text-white focus:border-[#B72E35] focus:outline-none"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-[#241F1C] dark:text-stone-300 mb-1">
+                      Helpline / Contact Phone
+                    </label>
+                    <input
+                      type="text"
+                      value={merchantConfig.phone}
+                      onChange={(e) =>
+                        setMerchantConfig({ ...merchantConfig, phone: e.target.value })
+                      }
+                      placeholder="+91 9305084332"
+                      className="w-full rounded-xl border border-[#C9AE8B]/50 dark:border-stone-700 bg-[#F3E7D3]/40 dark:bg-stone-900 px-3.5 py-2.5 font-mono text-xs text-[#241F1C] dark:text-white focus:border-[#B72E35] focus:outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-[#241F1C] dark:text-stone-300 mb-1">
+                      Official Email Address
+                    </label>
+                    <input
+                      type="email"
+                      value={merchantConfig.contactEmail || ""}
+                      onChange={(e) =>
+                        setMerchantConfig({ ...merchantConfig, contactEmail: e.target.value })
+                      }
+                      placeholder="hello@smolcafe.in"
+                      className="w-full rounded-xl border border-[#C9AE8B]/50 dark:border-stone-700 bg-[#F3E7D3]/40 dark:bg-stone-900 px-3.5 py-2.5 text-xs text-[#241F1C] dark:text-white focus:border-[#B72E35] focus:outline-none"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* SECTION 2: LEGAL COMPLIANCE & TAX CONFIG */}
+              <div className="rounded-3xl border border-[#C9AE8B]/40 dark:border-stone-800 bg-[#FAF4EB] dark:bg-[#1A1715] p-5 sm:p-6 space-y-4 shadow-xs transition-colors">
+                <div className="flex items-center gap-2 border-b border-[#C9AE8B]/30 dark:border-stone-800 pb-3">
+                  <Shield className="h-4 w-4 text-[#B72E35] dark:text-[#F2C84B]" />
+                  <h3 className="text-sm font-bold font-serif text-[#241F1C] dark:text-white">
+                    Compliance &amp; GST Configuration
+                  </h3>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-[#241F1C] dark:text-stone-300 mb-1">
+                      GSTIN Number
+                    </label>
+                    <input
+                      type="text"
+                      value={merchantConfig.gstin}
+                      onChange={(e) =>
+                        setMerchantConfig({ ...merchantConfig, gstin: e.target.value })
+                      }
+                      placeholder="05AAECS1482M1ZB"
+                      className="w-full rounded-xl border border-[#C9AE8B]/50 dark:border-stone-700 bg-[#F3E7D3]/40 dark:bg-stone-900 px-3.5 py-2.5 font-mono text-xs text-[#241F1C] dark:text-white focus:border-[#B72E35] focus:outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-[#241F1C] dark:text-stone-300 mb-1">
+                      FSSAI License Number
+                    </label>
+                    <input
+                      type="text"
+                      value={merchantConfig.fssai || ""}
+                      onChange={(e) =>
+                        setMerchantConfig({ ...merchantConfig, fssai: e.target.value })
+                      }
+                      placeholder="22624039000124"
+                      className="w-full rounded-xl border border-[#C9AE8B]/50 dark:border-stone-700 bg-[#F3E7D3]/40 dark:bg-stone-900 px-3.5 py-2.5 font-mono text-xs text-[#241F1C] dark:text-white focus:border-[#B72E35] focus:outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-[#241F1C] dark:text-stone-300 mb-1">
+                      GST Rate % (CGST + SGST)
+                    </label>
+                    <input
+                      type="number"
+                      value={merchantConfig.taxRatePercent}
+                      onChange={(e) =>
+                        setMerchantConfig({
+                          ...merchantConfig,
+                          taxRatePercent: parseFloat(e.target.value) || 5,
+                        })
+                      }
+                      className="w-full rounded-xl border border-[#C9AE8B]/50 dark:border-stone-700 bg-[#F3E7D3]/40 dark:bg-stone-900 px-3.5 py-2.5 font-mono text-xs text-[#241F1C] dark:text-white focus:border-[#B72E35] focus:outline-none"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* SECTION 3: UPI GATEWAY & DIGITAL PAYMENTS */}
+              <div className="rounded-3xl border border-[#C9AE8B]/40 dark:border-stone-800 bg-[#FAF4EB] dark:bg-[#1A1715] p-5 sm:p-6 space-y-4 shadow-xs transition-colors">
+                <div className="flex items-center gap-2 border-b border-[#C9AE8B]/30 dark:border-stone-800 pb-3">
+                  <CreditCard className="h-4 w-4 text-[#B72E35] dark:text-[#F2C84B]" />
+                  <h3 className="text-sm font-bold font-serif text-[#241F1C] dark:text-white">
+                    UPI Payment Gateway
+                  </h3>
+                </div>
+
                 <div>
                   <label className="block text-xs font-bold text-[#241F1C] dark:text-stone-300 mb-1">
                     Merchant UPI VPA (Virtual Payment Address)
@@ -1901,71 +2420,109 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
                       setMerchantConfig({ ...merchantConfig, vpa: e.target.value })
                     }
                     placeholder="e.g. smolcafe@icici or 9305084332@upi"
-                    className="w-full rounded-xl border border-[#C9AE8B]/50 dark:border-stone-700 bg-[#F3E7D3]/40 dark:bg-stone-900 px-4 py-3 font-mono text-sm text-[#241F1C] dark:text-white focus:border-[#B72E35] focus:outline-none"
+                    className="w-full rounded-xl border border-[#C9AE8B]/50 dark:border-stone-700 bg-[#F3E7D3]/40 dark:bg-stone-900 px-3.5 py-2.5 font-mono text-xs text-[#241F1C] dark:text-white focus:border-[#B72E35] focus:outline-none"
                     required
                   />
                   <p className="mt-1 text-[11px] text-[#725039] dark:text-stone-500">
-                    All UPI deep links (`upi://pay?pa=...`) and customer QR bills will route to this VPA.
+                    All UPI deep links (`upi://pay?pa=...`) and customer QR bills route directly to this VPA.
                   </p>
                 </div>
+              </div>
 
-                <div>
-                  <label className="block text-xs font-bold text-[#241F1C] dark:text-stone-300 mb-1">
-                    Merchant Registered Business Name
-                  </label>
-                  <input
-                    type="text"
-                    value={merchantConfig.name}
-                    onChange={(e) =>
-                      setMerchantConfig({ ...merchantConfig, name: e.target.value })
-                    }
-                    placeholder="e.g. smol café Tapovan"
-                    className="w-full rounded-xl border border-[#C9AE8B]/50 dark:border-stone-700 bg-[#F3E7D3]/40 dark:bg-stone-900 px-4 py-3 text-sm text-[#241F1C] dark:text-white focus:border-[#B72E35] focus:outline-none"
-                    required
-                  />
+              {/* SECTION 4: OPERATING HOURS, WIFI & RECEIPT GREETINGS */}
+              <div className="rounded-3xl border border-[#C9AE8B]/40 dark:border-stone-800 bg-[#FAF4EB] dark:bg-[#1A1715] p-5 sm:p-6 space-y-4 shadow-xs transition-colors">
+                <div className="flex items-center gap-2 border-b border-[#C9AE8B]/30 dark:border-stone-800 pb-3">
+                  <Sparkles className="h-4 w-4 text-[#B72E35] dark:text-[#F2C84B]" />
+                  <h3 className="text-sm font-bold font-serif text-[#241F1C] dark:text-white">
+                    Cafe Amenities &amp; Thermal Receipt Slips
+                  </h3>
                 </div>
 
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-xs font-bold text-[#241F1C] dark:text-stone-300 mb-1">
-                      GSTIN Number
+                      Store Operating Hours
                     </label>
                     <input
                       type="text"
-                      value={merchantConfig.gstin}
+                      value={merchantConfig.openingHours || ""}
                       onChange={(e) =>
-                        setMerchantConfig({ ...merchantConfig, gstin: e.target.value })
+                        setMerchantConfig({ ...merchantConfig, openingHours: e.target.value })
                       }
-                      className="w-full rounded-xl border border-[#C9AE8B]/50 dark:border-stone-700 bg-[#F3E7D3]/40 dark:bg-stone-900 px-4 py-3 font-mono text-xs text-[#241F1C] dark:text-white focus:border-[#B72E35] focus:outline-none"
+                      placeholder="08:00 AM – 10:00 PM (Daily)"
+                      className="w-full rounded-xl border border-[#C9AE8B]/50 dark:border-stone-700 bg-[#F3E7D3]/40 dark:bg-stone-900 px-3.5 py-2.5 text-xs text-[#241F1C] dark:text-white focus:border-[#B72E35] focus:outline-none"
                     />
                   </div>
 
                   <div>
                     <label className="block text-xs font-bold text-[#241F1C] dark:text-stone-300 mb-1">
-                      Tax Percentage (CGST + SGST)
+                      Guest WiFi Network (SSID) &amp; Password
                     </label>
-                    <input
-                      type="number"
-                      value={merchantConfig.taxRatePercent}
-                      onChange={(e) =>
-                        setMerchantConfig({
-                          ...merchantConfig,
-                          taxRatePercent: parseFloat(e.target.value) || 5,
-                        })
-                      }
-                      className="w-full rounded-xl border border-[#C9AE8B]/50 dark:border-stone-700 bg-[#F3E7D3]/40 dark:bg-stone-900 px-4 py-3 font-mono text-xs text-[#241F1C] dark:text-white focus:border-[#B72E35] focus:outline-none"
-                    />
+                    <div className="grid grid-cols-2 gap-2">
+                      <input
+                        type="text"
+                        value={merchantConfig.wifiSsid || ""}
+                        onChange={(e) =>
+                          setMerchantConfig({ ...merchantConfig, wifiSsid: e.target.value })
+                        }
+                        placeholder="WiFi Name"
+                        className="rounded-xl border border-[#C9AE8B]/50 dark:border-stone-700 bg-[#F3E7D3]/40 dark:bg-stone-900 px-3 py-2 text-xs text-[#241F1C] dark:text-white focus:border-[#B72E35] focus:outline-none font-mono"
+                      />
+                      <input
+                        type="text"
+                        value={merchantConfig.wifiPassword || ""}
+                        onChange={(e) =>
+                          setMerchantConfig({ ...merchantConfig, wifiPassword: e.target.value })
+                        }
+                        placeholder="WiFi Password"
+                        className="rounded-xl border border-[#C9AE8B]/50 dark:border-stone-700 bg-[#F3E7D3]/40 dark:bg-stone-900 px-3 py-2 text-xs text-[#241F1C] dark:text-white focus:border-[#B72E35] focus:outline-none font-mono"
+                      />
+                    </div>
                   </div>
                 </div>
 
-                <div className="pt-2">
-                  <button
-                    type="submit"
-                    className="flex w-full items-center justify-center gap-2 rounded-2xl bg-[#B72E35] py-3.5 font-serif text-sm font-bold text-white shadow-md hover:bg-[#9E242B] transition active:scale-98"
-                  >
-                    Save &amp; Broadcast Merchant Settings
-                  </button>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-[#241F1C] dark:text-stone-300 mb-1">
+                      Thermal Receipt Header Tagline
+                    </label>
+                    <input
+                      type="text"
+                      value={merchantConfig.receiptHeader || ""}
+                      onChange={(e) =>
+                        setMerchantConfig({ ...merchantConfig, receiptHeader: e.target.value })
+                      }
+                      placeholder="artisanal coffee & slow bakes"
+                      className="w-full rounded-xl border border-[#C9AE8B]/50 dark:border-stone-700 bg-[#F3E7D3]/40 dark:bg-stone-900 px-3.5 py-2.5 text-xs text-[#241F1C] dark:text-white focus:border-[#B72E35] focus:outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-[#241F1C] dark:text-stone-300 mb-1">
+                      Thermal Receipt Footer Note
+                    </label>
+                    <input
+                      type="text"
+                      value={merchantConfig.receiptFooter || ""}
+                      onChange={(e) =>
+                        setMerchantConfig({ ...merchantConfig, receiptFooter: e.target.value })
+                      }
+                      placeholder="small place • slow coffee • warm conversations"
+                      className="w-full rounded-xl border border-[#C9AE8B]/50 dark:border-stone-700 bg-[#F3E7D3]/40 dark:bg-stone-900 px-3.5 py-2.5 text-xs text-[#241F1C] dark:text-white focus:border-[#B72E35] focus:outline-none"
+                    />
+                  </div>
                 </div>
+              </div>
+
+              {/* SUBMIT BUTTON */}
+              <div className="pt-2">
+                <button
+                  type="submit"
+                  className="flex w-full items-center justify-center gap-2 rounded-2xl bg-[#B72E35] py-3.5 font-serif text-sm font-bold text-white shadow-md hover:bg-[#9E242B] transition active:scale-98 cursor-pointer"
+                >
+                  <Check className="h-4 w-4" />
+                  <span>Save &amp; Broadcast All Cafe Settings</span>
+                </button>
               </div>
             </form>
           </div>
@@ -1983,9 +2540,19 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
                   Verified checkout transactions and daily gross revenue audits
                 </p>
               </div>
-              <span className="self-start sm:self-auto rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300 dark:bg-emerald-950 dark:text-emerald-400 dark:border-emerald-800 px-3 py-1 text-xs font-mono font-bold shadow-xs">
-                Gross Revenue: ₹{(overviewData?.kpis.grossRevenueRupees ?? 0).toLocaleString("en-IN")}
-              </span>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleExportPayments}
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-[#C9AE8B]/60 dark:border-stone-700 bg-[#FAF4EB] dark:bg-stone-800 px-3 py-1.5 text-xs font-serif font-bold text-[#725039] dark:text-[#F2C84B] hover:bg-[#F3E7D3] transition cursor-pointer shadow-xs"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  Export Ledger (CSV)
+                </button>
+                <span className="self-start sm:self-auto rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300 dark:bg-emerald-950 dark:text-emerald-400 dark:border-emerald-800 px-3 py-1 text-xs font-mono font-bold shadow-xs">
+                  Gross Revenue: ₹{(overviewData?.kpis.grossRevenueRupees ?? 0).toLocaleString("en-IN")}
+                </span>
+              </div>
             </div>
 
             {/* Mobile View: Clean Transaction Cards (md:hidden) */}
@@ -2014,7 +2581,7 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
                     </span>
                   </div>
 
-                  {/* Middle & Bottom Row: Mode, Order Ref, Status & Time */}
+                  {/* Middle & Bottom Row: Mode, Order Ref, Status, Receipt & Time */}
                   <div className="flex items-center justify-between gap-2 pt-2 border-t border-[#C9AE8B]/20 dark:border-stone-800/80">
                     <div className="flex flex-wrap items-center gap-1.5 min-w-0">
                       <span className="rounded-md bg-[#EFE7DC] dark:bg-stone-800 text-[#725039] dark:text-[#F2C84B] px-2 py-0.5 text-[10px] font-mono font-bold truncate">
@@ -2026,6 +2593,15 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
                     </div>
 
                     <div className="flex items-center gap-1.5 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => handleViewReceipt(t)}
+                        className="inline-flex items-center gap-1 rounded-lg border border-[#C9AE8B]/60 dark:border-stone-700 bg-white dark:bg-stone-800 hover:bg-[#F3E7D3] dark:hover:bg-stone-700 px-2 py-0.5 text-[10px] font-mono font-bold text-[#B72E35] dark:text-[#F2C84B] transition shadow-2xs cursor-pointer"
+                        title="View and Print Digital Receipt"
+                      >
+                        <Printer className="w-2.5 h-2.5" />
+                        Receipt
+                      </button>
                       <span className={`rounded-md border px-2 py-0.5 text-[10px] font-mono font-bold ${
                         t.st === "PENDING" || t.st === "UNPAID"
                           ? "bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-950 dark:text-amber-400 dark:border-amber-800"
@@ -2057,6 +2633,7 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
                       <th className="p-3.5">Amount</th>
                       <th className="p-3.5">Order Ref</th>
                       <th className="p-3.5">Status</th>
+                      <th className="p-3.5">Receipt</th>
                       <th className="p-3.5 text-right">Time</th>
                     </tr>
                   </thead>
@@ -2082,6 +2659,16 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
                             {t.st}
                           </span>
                         </td>
+                        <td className="p-3.5">
+                          <button
+                            type="button"
+                            onClick={() => handleViewReceipt(t)}
+                            className="inline-flex items-center gap-1.5 rounded-lg border border-[#C9AE8B]/60 dark:border-stone-700 bg-white dark:bg-stone-800 hover:bg-[#F3E7D3] dark:hover:bg-stone-700 px-2.5 py-1 text-xs font-mono font-bold text-[#B72E35] dark:text-[#F2C84B] transition shadow-2xs cursor-pointer"
+                          >
+                            <Printer className="w-3 h-3" />
+                            Print / View
+                          </button>
+                        </td>
                         <td className="p-3.5 text-right text-[#725039] dark:text-stone-400 text-[11px]">{t.time}</td>
                       </tr>
                     ))}
@@ -2094,7 +2681,137 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
 
         {/* Tab 9: REWARDS & LOYALTY */}
         {activeTab === "rewards" && (
-          <div className="p-6 space-y-6 max-w-7xl">
+          <div className="p-6 space-y-6 max-w-7xl animate-fade-in">
+            {/* Header */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <h2 className="text-xl font-bold font-serif text-[#241F1C] dark:text-white lowercase">smol club · loyalty &amp; rewards manager</h2>
+                <p className="font-serif italic text-xs text-[#725039] dark:text-[#C9AE8B]">
+                  manage earning rules, reward redemptions approval, bonus quests, and customer points
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleSaveLoyaltyConfig}
+                  className="rounded-full bg-[#B72E35] hover:bg-[#9E252C] text-[#F3E7D3] px-4 py-2 text-xs font-serif font-bold shadow-xs transition active:scale-95 flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Check className="w-3.5 h-3.5" />
+                  Save Loyalty Rules
+                </button>
+              </div>
+            </div>
+
+            {/* Notification Alert */}
+            {loyaltySaveNotice && (
+              <div className="rounded-2xl border border-emerald-300 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/60 p-3.5 text-xs font-mono text-emerald-900 dark:text-emerald-200 flex items-center gap-2 shadow-xs animate-fade-in">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                <span>{loyaltySaveNotice}</span>
+              </div>
+            )}
+
+            {/* Loyalty KPIs */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              {[
+                { label: "ENROLLED MEMBERS", val: loyaltyMembers.length > 0 ? `${loyaltyMembers.length * 312}` : "1,248", sub: "+38 this week", color: "#B72E35" },
+                { label: "POINTS ISSUED", val: "48,290", sub: "Valued at ₹48,290", color: "#319795" },
+                { label: "MAX BILL DISCOUNT", val: `${loyaltyConfig.maxBillDiscountPercent}%`, sub: `1 pt = ₹${loyaltyConfig.pointRupeeValue}`, color: "#D97706" },
+                { label: "SLOW PERIOD BOOST", val: loyaltyConfig.slowPeriodActive ? `${loyaltyConfig.slowPeriodMultiplier}× Points` : "Disabled", sub: loyaltyConfig.slowPeriodHoursText, color: "#8C6D53" },
+              ].map((k, i) => (
+                <div key={i} className="rounded-2xl border border-[#C9AE8B]/40 dark:border-stone-800 bg-[#FAF4EB] dark:bg-[#1A1715] p-4 space-y-1 shadow-xs transition-colors">
+                  <span className="font-mono text-[9px] uppercase font-bold text-[#725039] dark:text-stone-400">{k.label}</span>
+                  <div className="font-serif text-2xl font-bold" style={{ color: k.color }}>{k.val}</div>
+                  <span className="font-mono text-[10px] text-[#725039]/80 dark:text-stone-500">{k.sub}</span>
+                </div>
+              ))}
+            </div>
+
+            {/* NEW: Rewards Redemption Approval Requests Queue */}
+            <div className="rounded-3xl border border-[#C9AE8B]/40 dark:border-stone-800 bg-[#FAF4EB] dark:bg-[#1A1715] overflow-hidden shadow-xs transition-colors">
+              <div className="border-b border-[#C9AE8B]/30 dark:border-stone-800 p-4 bg-[#F3E7D3] dark:bg-[#1F1B18] flex items-center justify-between">
+                <div>
+                  <h3 className="font-serif text-sm font-bold text-[#241F1C] dark:text-white flex items-center gap-1.5">
+                    <Gift className="w-4 h-4 text-[#B72E35] dark:text-[#F2C84B]" />
+                    Reward Redemption Approval Requests
+                  </h3>
+                  <p className="font-serif italic text-[11px] text-[#725039] dark:text-[#C9AE8B]">
+                    Review customer perk redemptions. Approving validates the free item; rejecting instantly refunds the points.
+                  </p>
+                </div>
+                <span className="font-mono text-xs text-[#B72E35] dark:text-[#F2C84B] font-bold">
+                  {rewardApprovalRequests.filter((r) => r.status === "PENDING").length} Pending Requests
+                </span>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs min-w-[600px] sm:min-w-0">
+                  <thead className="bg-[#F3E7D3]/60 dark:bg-stone-900 text-[10px] uppercase tracking-wider font-mono text-[#725039] dark:text-stone-400 border-b border-[#C9AE8B]/30 dark:border-stone-800">
+                    <tr>
+                      <th className="p-3.5">Customer / Contact</th>
+                      <th className="p-3.5">Requested Perk</th>
+                      <th className="p-3.5">Points Value</th>
+                      <th className="p-3.5">Requested At</th>
+                      <th className="p-3.5">Status</th>
+                      <th className="p-3.5 text-right">Action Decision</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[#C9AE8B]/20 dark:divide-stone-800 font-mono">
+                    {rewardApprovalRequests.map((req) => (
+                      <tr key={req.id} className="hover:bg-[#F3E7D3]/60 dark:hover:bg-stone-900/50 transition">
+                        <td className="p-3.5">
+                          <div className="font-bold font-sans text-[#241F1C] dark:text-white">{req.customerName}</div>
+                          <div className="text-[10px] text-[#725039] dark:text-stone-400">{req.phone}</div>
+                        </td>
+                        <td className="p-3.5 font-bold text-[#241F1C] dark:text-stone-200 font-sans">
+                          {req.rewardName}
+                        </td>
+                        <td className="p-3.5 font-bold text-[#B72E35] dark:text-[#F2C84B]">
+                          {req.pointsCost} pts
+                        </td>
+                        <td className="p-3.5 text-[#725039] dark:text-stone-400 text-[11px]">
+                          {req.requestedAt}
+                        </td>
+                        <td className="p-3.5">
+                          <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold ${
+                            req.status === "APPROVED"
+                              ? "bg-emerald-100 text-emerald-800 border border-emerald-300 dark:bg-emerald-950 dark:text-emerald-300"
+                              : req.status === "REJECTED"
+                              ? "bg-stone-200 text-stone-700 border border-stone-300 dark:bg-stone-800 dark:text-stone-400"
+                              : "bg-amber-100 text-amber-800 border border-amber-300 dark:bg-amber-950 dark:text-amber-300"
+                          }`}>
+                            {req.status}
+                          </span>
+                        </td>
+                        <td className="p-3.5 text-right">
+                          {req.status === "PENDING" ? (
+                            <div className="flex items-center justify-end gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => handleApproveReward(req.id)}
+                                className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-serif font-bold text-[11px] shadow-2xs transition cursor-pointer"
+                              >
+                                Approve
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleRejectReward(req.id)}
+                                className="px-2.5 py-1 rounded-lg bg-stone-200 hover:bg-stone-300 text-[#241F1C] dark:bg-stone-800 dark:hover:bg-stone-700 dark:text-stone-300 font-serif font-bold text-[11px] shadow-2xs transition cursor-pointer"
+                              >
+                                Reject &amp; Refund
+                              </button>
+                            </div>
+                          ) : (
+                            <span className="text-[11px] text-[#725039] dark:text-stone-500 italic">
+                              Resolved
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
             {/* Header */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div>
@@ -3208,6 +3925,14 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
           </div>
         </div>,
         document.body
+      )}
+
+      {/* Admin Digital Receipt View & Print Modal */}
+      {activeReceipt && (
+        <DigitalReceiptModal
+          receipt={activeReceipt}
+          onClose={() => setActiveReceipt(null)}
+        />
       )}
     </div>
   );

@@ -5,7 +5,29 @@ import { createAdminClient, isMockDatabase } from "@/lib/supabase/admin";
 import { isBeverageItem } from "@/lib/station-utils";
 import { broadcastSyncEvent } from "@/lib/sync-events";
 import { safeUpdateOrderWithInstructions, extractOrderInstructions } from "@/lib/order-instructions";
+import { getOrderPhoneRecord } from "@/lib/customer-phone";
 import type { OrderStatus } from "@smol-cafe/db";
+
+export interface DeliveryOrderItem {
+  id: string;
+  name: string;
+  qty: number;
+  isBeverage: boolean;
+  itemStatus: string;
+}
+
+export interface DeliveryOrder {
+  id: string;
+  orderNo: number;
+  tableLabel: string;
+  guestName: string;
+  guestPhone: string;
+  readyAt: string | null;
+  status: OrderStatus;
+  totalRupees: number;
+  items: DeliveryOrderItem[];
+  instructions: string | null;
+}
 
 export interface PendingOrderItem {
   id: string;
@@ -1045,6 +1067,179 @@ export async function fetchPaidCashierHistoryAction(): Promise<FetchPaidHistoryR
       records: [],
       totalRevenueRupees: 0,
       message: "Failed to fetch paid history.",
+    };
+  }
+}
+
+/**
+ * Fetch all orders currently in READY status waiting to be delivered to customer table
+ */
+export async function fetchReadyForDeliveryOrdersAction(): Promise<{
+  success: boolean;
+  orders: DeliveryOrder[];
+  message?: string;
+}> {
+  const supabase = createAdminClient();
+
+  try {
+    const { data: orders, error: ordersError } = await supabase
+      .from("orders")
+      .select("*")
+      .eq("status", "READY")
+      .order("ready_at", { ascending: false });
+
+    if (ordersError || !orders) {
+      return { success: false, orders: [], message: ordersError?.message || "Failed to fetch delivery orders." };
+    }
+
+    if (orders.length === 0) {
+      return { success: true, orders: [] };
+    }
+
+    const orderIds = orders.map((o) => o.id);
+    const sessionIds = orders
+      .map((o) => o.table_session_id)
+      .filter((id): id is string => Boolean(id));
+
+    const [sessionsRes, orderItemsRes] = await Promise.all([
+      sessionIds.length > 0
+        ? supabase.from("table_sessions").select("id, table_id, guest_name").in("id", sessionIds)
+        : Promise.resolve({ data: [] }),
+      supabase.from("order_items").select("*").in("order_id", orderIds),
+    ]);
+
+    const sessions = sessionsRes.data || [];
+    const orderItems = orderItemsRes.data || [];
+
+    const tableIds = sessions
+      .map((s) => s.table_id)
+      .filter((id): id is string => Boolean(id));
+
+    const { data: diningTables } = tableIds.length > 0
+      ? await supabase.from("dining_tables").select("id, label").in("id", tableIds)
+      : { data: [] };
+
+    const tableMap = new Map<string, string>();
+    for (const t of diningTables || []) {
+      tableMap.set(t.id, t.label);
+    }
+
+    const sessionInfoMap = new Map<string, { label: string; guestName?: string }>();
+    for (const s of sessions) {
+      sessionInfoMap.set(s.id, {
+        label: (s.table_id && tableMap.get(s.table_id)) || "01",
+        guestName: s.guest_name || undefined,
+      });
+    }
+
+    const itemsByOrder = new Map<string, DeliveryOrderItem[]>();
+    for (const it of orderItems) {
+      if (!itemsByOrder.has(it.order_id)) {
+        itemsByOrder.set(it.order_id, []);
+      }
+      itemsByOrder.get(it.order_id)!.push({
+        id: it.id,
+        name: it.name_snapshot || "Artisanal Item",
+        qty: it.qty || 1,
+        isBeverage: isBeverageItem(it.name_snapshot),
+        itemStatus: it.item_status || "READY",
+      });
+    }
+
+    const deliveryOrders: DeliveryOrder[] = orders.map((o) => {
+      const sess = o.table_session_id ? sessionInfoMap.get(o.table_session_id) : null;
+      const phoneRec = getOrderPhoneRecord(o.id);
+      const guestName = sess?.guestName || phoneRec?.guestName || "Guest";
+      const guestPhone = phoneRec?.phone || "—";
+      const totalRupees = Math.round((o.total_snapshot || 0) / 100);
+
+      return {
+        id: o.id,
+        orderNo: o.order_no || 0,
+        tableLabel: sess?.label || "01",
+        guestName,
+        guestPhone,
+        readyAt: o.ready_at || o.updated_at || o.created_at,
+        status: "READY" as OrderStatus,
+        totalRupees,
+        items: itemsByOrder.get(o.id) || [],
+        instructions: extractOrderInstructions(o),
+      };
+    });
+
+    return {
+      success: true,
+      orders: deliveryOrders,
+    };
+  } catch (error: any) {
+    console.error("fetchReadyForDeliveryOrdersAction error:", error);
+    return { success: false, orders: [], message: error?.message || "Failed to fetch delivery orders." };
+  }
+}
+
+/**
+ * Cashier marks order as delivered to customer
+ */
+export async function markOrderDeliveredAction(
+  orderId: string
+): Promise<{ success: boolean; message: string }> {
+  const supabase = createAdminClient();
+  const nowIso = new Date().toISOString();
+
+  try {
+    const { error: orderErr } = await supabase
+      .from("orders")
+      .update({
+        status: "SERVED",
+        updated_at: nowIso,
+      })
+      .eq("id", orderId);
+
+    if (orderErr) {
+      return { success: false, message: orderErr.message || "Failed to mark order as delivered." };
+    }
+
+    try {
+      await supabase
+        .from("order_items")
+        .update({
+          item_status: "SERVED",
+        })
+        .eq("order_id", orderId);
+    } catch {
+      // ignore
+    }
+
+    broadcastSyncEvent({
+      type: "STATUS_CHANGED",
+      orderId,
+      status: "SERVED",
+      timestamp: Date.now(),
+      metadata: {
+        orderId,
+        status: "SERVED",
+      },
+    });
+
+    try {
+      revalidatePath("/orders");
+      revalidatePath("/cashier");
+      revalidatePath("/kitchen");
+      revalidatePath("/barista");
+      revalidatePath("/admin");
+    } catch {
+      // ignore
+    }
+
+    return {
+      success: true,
+      message: "Order marked as delivered successfully!",
+    };
+  } catch (error: any) {
+    console.error("markOrderDeliveredAction error:", error);
+    return {
+      success: false,
+      message: error?.message || "Failed to mark order as delivered.",
     };
   }
 }

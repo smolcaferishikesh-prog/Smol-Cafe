@@ -3,6 +3,7 @@
 import React, { useRef } from "react";
 import Image from "next/image";
 import { X, Printer, CheckCircle, Clock } from "lucide-react";
+import { printHtmlContent, generateThermalReceiptHtml } from "@/lib/print";
 
 export interface ReceiptItem {
   name: string;
@@ -17,6 +18,7 @@ export interface ReceiptData {
   tableLabel: string;
   zone?: string;
   guestCount?: number;
+  guestName?: string;
   items: ReceiptItem[];
   subtotalRupees: number;
   taxRupees: number;
@@ -62,7 +64,28 @@ export const DigitalReceiptModal: React.FC<DigitalReceiptModalProps> = ({ receip
   const isPending = receipt.paymentStatus === "PENDING" || receipt.paymentMethod === "CASHIER";
 
   const handlePrint = () => {
-    window.print();
+    const html = generateThermalReceiptHtml({
+      orderId: receipt.orderId,
+      orderNo: receipt.orderNo,
+      tableLabel: receipt.tableLabel,
+      guestName: receipt.guestName,
+      items: receipt.items.map((it) => ({
+        name: it.name,
+        qty: it.qty,
+        priceRupees: it.priceRupees,
+        subtotalRupees: it.subtotalRupees,
+      })),
+      subtotalRupees: receipt.subtotalRupees,
+      taxRupees: receipt.taxRupees,
+      totalRupees: receipt.totalRupees,
+      paymentMethod: (["UPI", "CASH", "CARD"].includes(receipt.paymentMethod)
+        ? receipt.paymentMethod
+        : "CASH") as "UPI" | "CASH" | "CARD",
+      transactionId: receipt.transactionId,
+      paidAt: receipt.paidAt,
+      gstin: receipt.gstin,
+    });
+    printHtmlContent(html, `Receipt_${receipt.orderNo || receipt.orderId.slice(0, 8)}`);
   };
 
   return (

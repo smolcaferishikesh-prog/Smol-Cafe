@@ -15,8 +15,11 @@ import {
   rejectCashierOrderAction,
   clearAllPendingCashierOrdersAction,
   fetchPaidCashierHistoryAction,
+  fetchReadyForDeliveryOrdersAction,
+  markOrderDeliveredAction,
   type PendingOrderVerification,
   type PaidHistoryRecord,
+  type DeliveryOrder,
 } from "@/app/cashier/actions";
 import {
   Bell,
@@ -40,6 +43,10 @@ import {
   LogOut,
   Clock,
   Loader2,
+  Truck,
+  Phone,
+  UserCheck,
+  CheckCircle2,
 } from "lucide-react";
 import { staffBackdoorLogoutAction } from "@/app/smol-backdoor/actions";
 import { useSupabaseRealtime } from "@/hooks/useSupabaseRealtime";
@@ -55,17 +62,21 @@ import { CashierOrderEditorModal } from "./CashierOrderEditorModal";
 interface CashierDashboardProps {
   initialTables: ActiveCashierTable[];
   initialPendingOrders?: PendingOrderVerification[];
+  initialDeliveryOrders?: DeliveryOrder[];
   initialPaidHistory?: PaidHistoryRecord[];
 }
 
 export const CashierDashboard: React.FC<CashierDashboardProps> = ({
   initialTables,
   initialPendingOrders = [],
+  initialDeliveryOrders = [],
   initialPaidHistory = [],
 }) => {
-  const [activeTab, setActiveTab] = useState<"queue" | "paid">("queue");
+  const [activeTab, setActiveTab] = useState<"queue" | "delivery" | "paid">("queue");
   const [tables, setTables] = useState<ActiveCashierTable[]>(initialTables);
   const [pendingOrders, setPendingOrders] = useState<PendingOrderVerification[]>(initialPendingOrders);
+  const [deliveryOrders, setDeliveryOrders] = useState<DeliveryOrder[]>(initialDeliveryOrders);
+  const [deliveringOrderIds, setDeliveringOrderIds] = useState<Set<string>>(new Set());
   const [paidHistory, setPaidHistory] = useState<PaidHistoryRecord[]>(initialPaidHistory);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isMounted, setIsMounted] = useState(false);
@@ -111,9 +122,10 @@ export const CashierDashboard: React.FC<CashierDashboardProps> = ({
       setIsRefreshing(true);
     }
     try {
-      const [tableData, pendingData, paidData] = await Promise.all([
+      const [tableData, pendingData, deliveryData, paidData] = await Promise.all([
         fetchActiveCashierTablesAction(),
         fetchPendingCashierOrdersAction(),
+        fetchReadyForDeliveryOrdersAction(),
         fetchPaidCashierHistoryAction(),
       ]);
       setTables(tableData);
@@ -134,6 +146,9 @@ export const CashierDashboard: React.FC<CashierDashboardProps> = ({
         filteredPending.forEach((o) => playedChimeOrderIdsRef.current.add(o.id));
 
         setPendingOrders(filteredPending);
+      }
+      if (deliveryData.success) {
+        setDeliveryOrders(deliveryData.orders);
       }
       if (paidData.success) {
         setPaidHistory(paidData.records);
@@ -544,6 +559,28 @@ export const CashierDashboard: React.FC<CashierDashboardProps> = ({
     }
   };
 
+  const handleMarkDelivered = async (orderId: string) => {
+    setDeliveringOrderIds((prev) => new Set(prev).add(orderId));
+    try {
+      const res = await markOrderDeliveredAction(orderId);
+      if (res.success) {
+        setActionFeedback({ type: "success", text: "Order marked as Delivered & Served to Customer!" });
+        setDeliveryOrders((prev) => prev.filter((o) => o.id !== orderId));
+        void refreshData(true);
+      } else {
+        setActionFeedback({ type: "error", text: res.message || "Failed to mark order as delivered." });
+      }
+    } catch {
+      setActionFeedback({ type: "error", text: "An error occurred while marking order delivered." });
+    } finally {
+      setDeliveringOrderIds((prev) => {
+        const next = new Set(prev);
+        next.delete(orderId);
+        return next;
+      });
+    }
+  };
+
   const selectedTotalRupees = selectedTable ? Math.round(selectedTable.totalPaise / 100) : 0;
   const tenderedRupees = parseFloat(amountTendered) || 0;
   const changeDueRupees = Math.max(0, tenderedRupees - selectedTotalRupees);
@@ -659,8 +696,8 @@ export const CashierDashboard: React.FC<CashierDashboardProps> = ({
             }`}
           >
             <Bell className="h-4 w-4 shrink-0 text-[#8C6207] dark:text-[#F6AD55]" />
-            <span className="hidden sm:inline">Order Confirmation Queue</span>
-            <span className="sm:hidden">Order Queue</span>
+            <span className="hidden sm:inline">Order Queue</span>
+            <span className="sm:hidden">Queue</span>
             {pendingOrders.length > 0 && (
               <span className="rounded-full bg-white px-1.5 sm:px-2 py-0.2 text-[10px] font-black text-[#B72E35] animate-bounce">
                 {pendingOrders.length}
@@ -668,6 +705,25 @@ export const CashierDashboard: React.FC<CashierDashboardProps> = ({
             )}
           </button>
 
+          {/* TAB 2: ORDER DELIVERY (Kitchen Ready) */}
+          <button
+            type="button"
+            onClick={() => setActiveTab("delivery")}
+            className={`flex shrink-0 items-center gap-1.5 sm:gap-2 rounded-xl sm:rounded-2xl px-3.5 sm:px-5 py-2 sm:py-2.5 text-xs font-bold transition-all cursor-pointer ${
+              activeTab === "delivery"
+                ? "bg-[#1E7250] text-white shadow-md font-extrabold"
+                : "bg-[#FAF4EB] dark:bg-stone-900 border border-[#C9AE8B]/40 dark:border-stone-800 text-[#725039] dark:text-stone-400 hover:bg-[#F3E7D3] dark:hover:bg-stone-800"
+            }`}
+          >
+            <Truck className="h-4 w-4 shrink-0 text-emerald-500 dark:text-emerald-400" />
+            <span className="hidden sm:inline">Order Delivery</span>
+            <span className="sm:hidden">Delivery</span>
+            {deliveryOrders.length > 0 && (
+              <span className="rounded-full bg-emerald-500 text-white px-1.5 sm:px-2 py-0.2 text-[10px] font-black animate-pulse">
+                {deliveryOrders.length} Ready
+              </span>
+            )}
+          </button>
 
           {/* TAB 3: PAID ORDERS */}
           <button
@@ -962,7 +1018,156 @@ export const CashierDashboard: React.FC<CashierDashboardProps> = ({
           </div>
         )}
 
-        {/* TAB 2: PAID ORDERS & SETTLEMENT AUDIT */}
+        {/* TAB 2: ORDER DELIVERY (READY FOR SERVING) */}
+        {activeTab === "delivery" && (
+          <div className="space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+              <div>
+                <h1 className="text-xl font-extrabold tracking-tight text-[#241F1C] dark:text-white">
+                  Order Delivery Board (Ready from Kitchen &amp; Bar)
+                </h1>
+                <p className="text-xs text-[#725039] dark:text-stone-400">
+                  Kitchen and Barista have prepared these orders. Verify customer details and mark delivered to table.
+                </p>
+              </div>
+              <div className="self-start sm:self-auto">
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-100 dark:bg-emerald-950/80 border border-emerald-300 dark:border-emerald-800/60 px-3 py-1 font-mono text-xs font-bold text-emerald-800 dark:text-emerald-300 shadow-xs">
+                  <Truck className="h-3.5 w-3.5" />
+                  <span>{deliveryOrders.length} Ready for Delivery</span>
+                </span>
+              </div>
+            </div>
+
+            {deliveryOrders.length === 0 ? (
+              <div className="rounded-3xl border border-[#C9AE8B]/40 dark:border-stone-800 bg-[#FAF4EB] dark:bg-[#1A1715] p-10 text-center text-[#725039] dark:text-stone-400 space-y-3 shadow-xs transition-colors">
+                <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-900/50">
+                  <CheckCircle2 className="h-7 w-7 text-emerald-600 dark:text-emerald-400" />
+                </div>
+                <h2 className="text-base font-bold text-[#241F1C] dark:text-stone-200">No Orders Waiting for Delivery</h2>
+                <p className="text-xs max-w-sm mx-auto text-[#725039] dark:text-stone-400">
+                  When Kitchen or Barista marks items as READY, they will appear here with customer contact details for instant table service.
+                </p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {deliveryOrders.map((order) => {
+                  const isDelivering = deliveringOrderIds.has(order.id);
+                  const readyTimeStr = order.readyAt
+                    ? new Date(order.readyAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+                    : "Just now";
+
+                  return (
+                    <div
+                      key={order.id}
+                      className="rounded-3xl border-2 border-emerald-600/40 dark:border-emerald-500/30 bg-[#FAF4EB] dark:bg-[#1A1715] p-5 shadow-sm space-y-4 hover:border-emerald-600 dark:hover:border-emerald-500 transition-all flex flex-col justify-between"
+                    >
+                      {/* Card Header: Table + Order # + Total */}
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between border-b border-[#C9AE8B]/30 dark:border-stone-800 pb-3">
+                          <div className="flex items-center gap-2">
+                            <span className="rounded-xl bg-[#B72E35] text-white px-3 py-1 font-serif text-sm font-black shadow-xs">
+                              Table {order.tableLabel}
+                            </span>
+                            <span className="font-mono text-xs font-bold text-[#725039] dark:text-stone-300">
+                              #{order.orderNo ? order.orderNo.toString().padStart(4, "0") : order.id.slice(0, 6)}
+                            </span>
+                          </div>
+                          <span className="font-serif text-base font-extrabold text-[#241F1C] dark:text-stone-100">
+                            ₹{order.totalRupees}
+                          </span>
+                        </div>
+
+                        {/* Customer Identification Block */}
+                        <div className="rounded-2xl border border-[#C9AE8B]/30 dark:border-stone-800 bg-[#F3E7D3]/60 dark:bg-stone-900/60 p-3.5 space-y-2">
+                          <div className="flex items-center justify-between text-xs">
+                            <div className="flex items-center gap-1.5 font-bold text-[#241F1C] dark:text-stone-200">
+                              <UserCheck className="h-4 w-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                              <span className="truncate">{order.guestName}</span>
+                            </div>
+                            <div className="flex items-center gap-1 font-mono text-[11px] text-[#725039] dark:text-stone-400">
+                              <Clock className="h-3.5 w-3.5 shrink-0" />
+                              <span>Ready {readyTimeStr}</span>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-2 pt-1 border-t border-[#C9AE8B]/20 dark:border-stone-800/80">
+                            <Phone className="h-3.5 w-3.5 text-[#8C6207] dark:text-[#F6AD55] shrink-0" />
+                            {order.guestPhone && order.guestPhone !== "—" ? (
+                              <a
+                                href={`tel:${order.guestPhone}`}
+                                className="font-mono text-xs font-bold text-[#8C6207] dark:text-[#F6AD55] hover:underline"
+                                title="Call customer"
+                              >
+                                {order.guestPhone}
+                              </a>
+                            ) : (
+                              <span className="font-mono text-xs text-stone-500 dark:text-stone-400">
+                                Direct / Walk-in Guest
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Line Items List */}
+                        <div className="space-y-1.5">
+                          <div className="text-[10px] font-mono uppercase tracking-wider text-[#725039] dark:text-stone-400">
+                            Items Ready to Serve ({order.items.reduce((acc, it) => acc + it.qty, 0)})
+                          </div>
+                          <div className="space-y-1 max-h-40 overflow-y-auto pr-1">
+                            {order.items.map((item, idx) => (
+                              <div
+                                key={idx}
+                                className="flex items-center justify-between rounded-xl bg-white/70 dark:bg-stone-900/80 px-2.5 py-1.5 text-xs border border-[#C9AE8B]/20 dark:border-stone-800"
+                              >
+                                <div className="flex items-center gap-2 min-w-0">
+                                  {item.isBeverage ? (
+                                    <Coffee className="h-3.5 w-3.5 text-[#B72E35] dark:text-[#F6AD55] shrink-0" />
+                                  ) : (
+                                    <UtensilsCrossed className="h-3.5 w-3.5 text-amber-700 dark:text-amber-400 shrink-0" />
+                                  )}
+                                  <span className="font-medium text-[#241F1C] dark:text-stone-200 truncate">
+                                    {item.name}
+                                  </span>
+                                </div>
+                                <span className="font-mono font-bold text-[#B72E35] dark:text-[#F6AD55] shrink-0">
+                                  {item.qty}×
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* Special Instructions */}
+                        {order.instructions && (
+                          <div className="rounded-xl border border-amber-300 dark:border-amber-900/50 bg-amber-50 dark:bg-amber-950/30 p-2 text-[11px] text-amber-900 dark:text-amber-300">
+                            <strong>Note:</strong> {order.instructions}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Card Action: Mark Delivered */}
+                      <button
+                        type="button"
+                        disabled={isDelivering}
+                        onClick={() => handleMarkDelivered(order.id)}
+                        className="w-full flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-700 hover:from-emerald-500 hover:to-teal-600 text-white py-3 text-xs sm:text-sm font-extrabold shadow-md active:scale-[0.98] transition cursor-pointer disabled:opacity-50"
+                      >
+                        {isDelivering ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <CheckCircle2 className="h-4 w-4" />
+                        )}
+                        <span>Mark Order as Delivered &amp; Served</span>
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* TAB 3: PAID ORDERS & SETTLEMENT AUDIT */}
         {activeTab === "paid" && (
           <div className="space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
