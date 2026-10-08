@@ -43,7 +43,7 @@ export const TableClientView: React.FC<TableClientViewProps> = ({
   const [activeItemModal, setActiveItemModal] = useState<TableItemView | null>(null);
   const [switchingTable, setSwitchingTable] = useState<string | null>(null);
   const [availableTables, setAvailableTables] = useState<string[]>(() =>
-    Array.from({ length: 12 }, (_, i) => (i + 1).toString().padStart(2, "0"))
+    Array.from({ length: 14 }, (_, i) => (i + 1).toString().padStart(2, "0"))
   );
 
   React.useEffect(() => {

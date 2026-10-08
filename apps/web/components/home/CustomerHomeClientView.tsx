@@ -278,7 +278,7 @@ export const CustomerHomeClientView: React.FC<CustomerHomeClientProps> = ({
                 <span>👤</span> Loyalty &amp; Rewards (Coming Soon)
               </Link>
               <Link
-                href="/"
+                href="/home"
                 prefetch={true}
                 onClick={() => setIsSideMenuOpen(false)}
                 className="flex items-center gap-3 text-[#241F1C] dark:text-[#FAF4EB] hover:text-[#B72E35] dark:hover:text-[#FF5B52]"

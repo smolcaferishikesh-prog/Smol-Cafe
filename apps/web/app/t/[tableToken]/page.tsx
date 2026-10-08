@@ -1,5 +1,5 @@
 import Image from "next/image";
-import { resolveQrToken, clearTableSession, activateTableAndRedirectAction } from "../actions";
+import { resolveQrToken, clearTableSession, activateTableAndRedirectAction, fetchActiveTablesAction } from "../actions";
 import { AlertTriangle } from "lucide-react";
 import { TableActionBar } from "@/components/table/TableActionBar";
 import { TableGuestOnboardingForm } from "@/components/table/TableGuestOnboardingForm";
@@ -26,6 +26,8 @@ export default async function TableEntryPage({ params }: PageProps) {
 
   // 1. Invalid or Revoked QR Error Screen (Strictly on-brand colors)
   if (!result.success || !result.session) {
+    const activeTables = await fetchActiveTablesAction().catch(() => []);
+
     return (
       <div className="flex min-h-screen flex-col items-center justify-center bg-[#F3E7D3] dark:bg-[#241F1C] px-6 py-12 text-[#241F1C] dark:text-[#F3E7D3]">
         <div className="w-full max-w-md rounded-3xl border border-[#C9AE8B]/40 dark:border-white/10 bg-[#FAF4EB] dark:bg-[#2A2420] p-8 text-center shadow-lg backdrop-blur-md">
@@ -42,11 +44,30 @@ export default async function TableEntryPage({ params }: PageProps) {
               "We couldn&apos;t connect this QR code to an active table session. Please wave to a team member or ask at the counter."}
           </p>
 
-          <div className="mt-8 space-y-3">
+          <div className="mt-8 space-y-4">
             <div className="rounded-xl border border-[#C9AE8B]/40 dark:border-white/10 bg-[#F3E7D3]/60 dark:bg-[#1C1715] p-3.5 text-xs text-[#725039] dark:text-[#C9AE8B] font-mono">
               Token:{" "}
               <span className="font-mono text-[#241F1C] dark:text-[#F3E7D3] font-bold">{tableToken}</span>
             </div>
+
+            {activeTables.length > 0 && (
+              <div className="space-y-2 text-center pt-2">
+                <p className="text-xs font-semibold text-[#725039] dark:text-[#C9AE8B]">
+                  Or select your table:
+                </p>
+                <div className="flex flex-wrap gap-2 justify-center max-h-36 overflow-y-auto">
+                  {activeTables.map((t) => (
+                    <a
+                      key={t.label}
+                      href={`/t/table-${t.label}`}
+                      className="rounded-lg border border-[#C9AE8B]/60 bg-white dark:bg-[#1C1715] px-2.5 py-1 text-xs font-bold text-[#241F1C] dark:text-[#F3E7D3] hover:bg-[#B72E35] hover:text-white transition"
+                    >
+                      Table {t.label}
+                    </a>
+                  ))}
+                </div>
+              </div>
+            )}
 
             <form action={clearTableSession}>
               <button

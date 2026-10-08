@@ -15,6 +15,7 @@ import { JsonTagInspectorModal } from "@/components/table/JsonTagInspectorModal"
 import { UpiPaymentDrawer } from "@/components/payment/UpiPaymentDrawer";
 import { ThemeToggle } from "@/components/common/ThemeToggle";
 import { PastBillsModal } from "./PastBillsModal";
+import { fetchActiveTablesAction } from "@/app/t/actions";
 import { soundManager } from "@/lib/sound";
 
 interface OrderStatusClientViewProps {
@@ -23,6 +24,7 @@ interface OrderStatusClientViewProps {
   locationName?: string;
   hasSession: boolean;
   guestName?: string;
+  availableTables?: string[];
 }
 
 export const OrderStatusClientView: React.FC<OrderStatusClientViewProps> = ({
@@ -31,8 +33,27 @@ export const OrderStatusClientView: React.FC<OrderStatusClientViewProps> = ({
   locationName = "Rishikesh",
   hasSession,
   guestName = "",
+  availableTables,
 }) => {
   const [orders, setOrders] = useState<CustomerOrderDetails[]>(initialOrders);
+  const [tablesList, setTablesList] = useState<string[]>(
+    availableTables && availableTables.length > 0 ? availableTables : []
+  );
+
+  useEffect(() => {
+    if (availableTables && availableTables.length > 0) {
+      setTablesList(availableTables);
+    } else {
+      fetchActiveTablesAction()
+        .then((data) => {
+          if (data && data.length > 0) {
+            setTablesList(data.map((t) => t.label));
+          }
+        })
+        .catch(() => {});
+    }
+  }, [availableTables]);
+
   const ordersRef = useRef<CustomerOrderDetails[]>(orders);
   useEffect(() => {
     ordersRef.current = orders;
@@ -237,7 +258,10 @@ export const OrderStatusClientView: React.FC<OrderStatusClientViewProps> = ({
             Please scan the QR code on your table stand or tap a table below to view live orders:
           </p>
           <div className="mt-4 flex flex-wrap justify-center gap-2 max-h-40 overflow-y-auto">
-            {Array.from({ length: 13 }, (_, i) => (i + 1).toString().padStart(2, "0")).map((label) => {
+            {(tablesList.length > 0
+              ? tablesList
+              : Array.from({ length: 14 }, (_, i) => (i + 1).toString().padStart(2, "0"))
+            ).map((label) => {
               return (
                 <a
                   key={label}
@@ -251,7 +275,7 @@ export const OrderStatusClientView: React.FC<OrderStatusClientViewProps> = ({
           </div>
           <div className="mt-5">
             <Link
-              href="/"
+              href="/home"
               className="inline-flex w-full items-center justify-center rounded-xl bg-stone-900 py-3 text-sm font-semibold text-white transition hover:bg-stone-800 dark:bg-stone-100 dark:text-stone-900"
             >
               Back to Home
