@@ -773,7 +773,7 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
     { id: "overview", label: "Overview", icon: BarChart3 },
     { id: "orders", label: "Orders", icon: ShoppingBag, badge: `${orders.length}` },
     { id: "tables", label: "Tables", icon: Armchair, badge: `${overviewData?.kpis?.totalTablesCount || 14}` },
-    { id: "menu", label: "Menu", icon: Coffee, badge: "59" },
+    { id: "menu", label: "Menu", icon: Coffee, badge: `${overviewData?.menuItems?.length || 65}` },
     { id: "inventory", label: "Grocery & Stock", icon: Flame, badge: procurementData?.radarData?.criticalCount ? `${procurementData.radarData.criticalCount} Low` : undefined },
     { id: "customers", label: "Customers", icon: Users },
     { id: "staff", label: "Staff", icon: Shield },

@@ -261,14 +261,19 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ tableLabel, guestName = 
 
   const handleAddConversationBoard = () => {
     const boardItem: MenuItemWithDetails = {
-      id: "conversation_board",
-      categoryId: "cat_06",
+      id: "item_35",
+      categoryId: "cat_05",
       name: "Conversation Board",
       status: "ACTIVE",
-      description: "Cheese, fruits, nuts & a little something sweet.",
-      pricePaise: 26000,
+      description:
+        "A changing sharing board with smashed chickpea dip, crispy chana, toast, potatoes, pickle, vegetables and seasonal dips.",
+      pricePaise: 32900,
       imageUrl: getFoodImage("conversation board", null),
-      metadata: { dietary: "Vegetarian" },
+      metadata: {
+        dietary: "Vegetarian; vegan adaptable",
+        core_ingredients:
+          "Chickpeas, bread, potatoes, vegetables, pickle, yoghurt/tahini dips",
+      },
     };
     addItem(boardItem, 1);
     setBoardAdded(true);
@@ -1084,8 +1089,8 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ tableLabel, guestName = 
                         <h4 className="font-serif font-bold text-[13.5px] text-[#241F1C] dark:text-[#FAF4EB] leading-snug truncate">
                           Conversation Board
                         </h4>
-                        <p className="font-mono text-[10.5px] text-[#374438] dark:text-[#C9AE8B] leading-tight mt-0.5">
-                          Cheese, fruits, nuts &amp; a little something sweet.
+                        <p className="font-mono text-[10.5px] text-[#374438] dark:text-[#C9AE8B] leading-tight mt-0.5 line-clamp-2">
+                          A changing sharing board with smashed chickpea dip, crispy chana, toast, potatoes, pickle &amp; seasonal dips.
                         </p>
                       </div>
 
@@ -1093,10 +1098,10 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ tableLabel, guestName = 
                       <div className="flex flex-col items-end gap-1.5 shrink-0 pl-1">
                         <div className="flex items-center gap-1 font-serif text-right">
                           <span className="line-through font-mono text-[11px] text-[#725039]/70 dark:text-[#C9AE8B]/60">
-                            ₹350
+                            ₹349
                           </span>
                           <span className="font-serif font-bold text-[13.5px] text-[#241F1C] dark:text-[#FAF4EB]">
-                            ₹260
+                            ₹329
                           </span>
                         </div>
 
@@ -1104,13 +1109,13 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ tableLabel, guestName = 
                           type="button"
                           onClick={handleAddConversationBoard}
                           className={`w-9 h-9 rounded-full border border-[#241F1C] dark:border-white/20 flex items-center justify-center transition-all duration-200 active:scale-90 shadow-xs cursor-pointer ${
-                            boardAdded || items.some((i) => i.item.id === "conversation_board")
+                            boardAdded || items.some((i) => i.item.id === "item_35" || i.item.name.toLowerCase().includes("conversation board"))
                               ? "bg-[#2E5550] text-[#F3E7D3] border-[#241F1C]"
                               : "bg-[#F2C84B] text-[#241F1C] hover:bg-[#DEB63E]"
                           }`}
                           aria-label="Add Conversation Board"
                         >
-                          {boardAdded || items.some((i) => i.item.id === "conversation_board") ? (
+                          {boardAdded || items.some((i) => i.item.id === "item_35" || i.item.name.toLowerCase().includes("conversation board")) ? (
                             <Check className="w-4 h-4 stroke-[2.5]" />
                           ) : (
                             <Plus className="w-4 h-4 stroke-[2.5]" />
