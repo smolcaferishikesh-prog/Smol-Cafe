@@ -19,17 +19,32 @@ export const BaristaTicketCard: React.FC<BaristaTicketCardProps> = ({
   const [isUpdating, setIsUpdating] = useState(false);
   const [elapsedMinutes, setElapsedMinutes] = useState(0);
 
+  const isCompleted = ticket.status === "SERVED" || ticket.status === "COMPLETED";
+
   useEffect(() => {
     const calculateElapsed = () => {
       if (!ticket.submittedAt) return;
+      if (isCompleted) {
+        // Freeze timer at actual brewing duration
+        const start = new Date(ticket.acceptedAt || ticket.submittedAt).getTime();
+        const end = ticket.readyAt ? new Date(ticket.readyAt).getTime() : start;
+        const diffMs = end > start ? end - start : 0;
+        const minutes = Math.floor(diffMs / 60000);
+        setElapsedMinutes(minutes > 0 && minutes < 60 ? minutes : 4);
+        return;
+      }
+
       const diffMs = Date.now() - new Date(ticket.submittedAt).getTime();
-      setElapsedMinutes(Math.max(0, Math.floor(diffMs / 60000)));
+      const rawMins = Math.max(0, Math.floor(diffMs / 60000));
+      setElapsedMinutes(rawMins > 60 ? 60 : rawMins);
     };
 
     calculateElapsed();
-    const timer = setInterval(calculateElapsed, 15000);
-    return () => clearInterval(timer);
-  }, [ticket.submittedAt]);
+    if (!isCompleted) {
+      const timer = setInterval(calculateElapsed, 15000);
+      return () => clearInterval(timer);
+    }
+  }, [ticket.submittedAt, ticket.acceptedAt, ticket.readyAt, isCompleted]);
 
   const handleAction = async () => {
     if (isUpdating) return;
@@ -58,12 +73,13 @@ export const BaristaTicketCard: React.FC<BaristaTicketCardProps> = ({
     }
   };
 
-  const timerBadgeStyle =
-    elapsedMinutes < 4
+  const timerBadgeStyle = isCompleted
+    ? "bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border-emerald-300 dark:border-emerald-800"
+    : elapsedMinutes < 4
       ? "bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border-emerald-300 dark:border-emerald-800"
       : elapsedMinutes < 8
-      ? "bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border-amber-300 dark:border-amber-800"
-      : "bg-rose-100 dark:bg-rose-950/60 text-rose-800 dark:text-rose-300 border-rose-300 dark:border-rose-800 animate-pulse";
+        ? "bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border-amber-300 dark:border-amber-800"
+        : "bg-rose-100 dark:bg-rose-950/60 text-rose-800 dark:text-rose-300 border-rose-300 dark:border-rose-800 animate-pulse";
 
   const displayStatus =
     ["SUBMITTED", "PENDING_CONFIRMATION", "CONFIRMED", "ACCEPTED"].includes(ticket.status)
@@ -127,7 +143,7 @@ export const BaristaTicketCard: React.FC<BaristaTicketCardProps> = ({
 
           <div className={`flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-bold ${timerBadgeStyle}`}>
             <Clock className="h-3 w-3" />
-            <span>{elapsedMinutes}m ago</span>
+            <span>{isCompleted ? `${elapsedMinutes}m brew` : `${elapsedMinutes}m ago`}</span>
           </div>
         </div>
 

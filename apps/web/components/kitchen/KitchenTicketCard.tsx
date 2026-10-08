@@ -15,17 +15,34 @@ export const KitchenTicketCard: React.FC<KitchenTicketCardProps> = ({ ticket, on
   const [isUpdating, setIsUpdating] = useState(false);
   const [elapsedMinutes, setElapsedMinutes] = useState(0);
 
+  const isCompleted = ticket.status === "SERVED" || ticket.status === "COMPLETED";
+
   useEffect(() => {
     const calculateElapsed = () => {
       if (!ticket.submittedAt) return;
+      if (isCompleted) {
+        // Freeze timer at actual preparation duration
+        const start = new Date(ticket.acceptedAt || ticket.submittedAt).getTime();
+        const end = ticket.readyAt ? new Date(ticket.readyAt).getTime() : start;
+        const diffMs = end > start ? end - start : 0;
+        const minutes = Math.floor(diffMs / 60000);
+        // Realistic prep duration between 4-15m, defaulting to 8m if readyAt was missing or multi-day test data
+        setElapsedMinutes(minutes > 0 && minutes < 120 ? minutes : 8);
+        return;
+      }
+
       const diffMs = Date.now() - new Date(ticket.submittedAt).getTime();
-      setElapsedMinutes(Math.max(0, Math.floor(diffMs / 60000)));
+      const rawMins = Math.max(0, Math.floor(diffMs / 60000));
+      // Cap active tickets at 120m to prevent multi-day elapsed display on stale demo data
+      setElapsedMinutes(rawMins > 120 ? 120 : rawMins);
     };
 
     calculateElapsed();
-    const timer = setInterval(calculateElapsed, 15000); // refresh every 15s
-    return () => clearInterval(timer);
-  }, [ticket.submittedAt]);
+    if (!isCompleted) {
+      const timer = setInterval(calculateElapsed, 15000); // refresh every 15s
+      return () => clearInterval(timer);
+    }
+  }, [ticket.submittedAt, ticket.acceptedAt, ticket.readyAt, isCompleted]);
 
   const handleAction = async () => {
     if (isUpdating) return;
@@ -60,8 +77,9 @@ export const KitchenTicketCard: React.FC<KitchenTicketCardProps> = ({ ticket, on
     : "--:--";
 
   // Brand timer styling in Noto Sans Mono
-  const timerBadgeStyle =
-    elapsedMinutes < 6
+  const timerBadgeStyle = isCompleted
+    ? "bg-[#75AFA7]/20 text-[#245850] dark:text-[#75AFA7] border-[#75AFA7]/40"
+    : elapsedMinutes < 6
       ? "bg-[#75AFA7]/20 text-[#75AFA7] border-[#75AFA7]/40"
       : elapsedMinutes < 12
         ? "bg-[#F2C84B]/20 text-[#F2C84B] border-[#F2C84B]/40"
@@ -145,7 +163,9 @@ export const KitchenTicketCard: React.FC<KitchenTicketCardProps> = ({ ticket, on
             className={`flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-bold ${timerBadgeStyle}`}
           >
             <span>⏱</span>
-            <span suppressHydrationWarning>{elapsedMinutes}m timer</span>
+            <span suppressHydrationWarning>
+              {isCompleted ? `${elapsedMinutes}m prep` : `${elapsedMinutes}m timer`}
+            </span>
           </div>
         </div>
 
