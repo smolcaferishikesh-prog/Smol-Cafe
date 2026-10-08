@@ -497,6 +497,13 @@ export async function placePaidOrderAction(
           updated_at: now,
         })
         .eq("id", result.orderId);
+
+      if (targetStatus === "ACCEPTED") {
+        await supabase
+          .from("order_items")
+          .update({ item_status: "ACCEPTED" })
+          .eq("order_id", result.orderId);
+      }
     } catch (err) {
       console.warn("Failed to mark status on order:", err);
     }

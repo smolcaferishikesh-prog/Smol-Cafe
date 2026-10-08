@@ -377,7 +377,17 @@ export const BaristaBoardView: React.FC<BaristaBoardViewProps> = ({ initialOrder
       }
 
       if (event.orderId) {
-        handleIncomingTicket(event.orderId, event.status as OrderStatus);
+        // If this event specifically belongs to another station (e.g. KITCHEN), do not overwrite barista ticket status
+        if (event.station === "KITCHEN") {
+          debouncedRefresh();
+          return;
+        }
+
+        if (event.type === "TICKET_STATUS_CHANGED" && event.station === "BARISTA") {
+          handleIncomingTicket(event.orderId, event.status as OrderStatus);
+        } else if (event.type === "ORDER_CONFIRMED") {
+          handleIncomingTicket(event.orderId, event.status as OrderStatus);
+        }
       }
       debouncedRefresh();
     });

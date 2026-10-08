@@ -507,6 +507,32 @@ export async function confirmCashierOrderAction(
       return { success: false, message: `Failed to confirm order: ${updateErr.message || "database error"}` };
     }
 
+    // 2b. Update item statuses according to stationTarget
+    try {
+      const { data: dbItems } = await supabase
+        .from("order_items")
+        .select("id, name_snapshot")
+        .eq("order_id", orderId);
+
+      if (dbItems && dbItems.length > 0) {
+        if (stationTarget === "KITCHEN") {
+          const foodIds = dbItems.filter((i) => !isBeverageItem(i.name_snapshot)).map((i) => i.id);
+          if (foodIds.length > 0) {
+            await supabase.from("order_items").update({ item_status: "ACCEPTED" }).in("id", foodIds);
+          }
+        } else if (stationTarget === "BARISTA") {
+          const drinkIds = dbItems.filter((i) => isBeverageItem(i.name_snapshot)).map((i) => i.id);
+          if (drinkIds.length > 0) {
+            await supabase.from("order_items").update({ item_status: "ACCEPTED" }).in("id", drinkIds);
+          }
+        } else {
+          await supabase.from("order_items").update({ item_status: "ACCEPTED" }).eq("order_id", orderId);
+        }
+      }
+    } catch (itemStatusErr) {
+      console.warn("Notice updating item statuses on dispatch:", itemStatusErr);
+    }
+
     // 3. Settle bill and payment attempt for Cashier Audit
     if (sessionId) {
       try {
@@ -571,8 +597,19 @@ export async function confirmCashierOrderAction(
     }
 
     broadcastSyncEvent({
+      type: "ORDER_CONFIRMED",
+      orderId,
+      orderNo: currentOrder?.order_no,
+      station: stationTarget,
+      status: "ACCEPTED",
+      timestamp: Date.now(),
+      metadata: { stationTarget },
+    });
+
+    broadcastSyncEvent({
       type: "STATUS_CHANGED",
       orderId,
+      station: stationTarget,
       status: "ACCEPTED",
       timestamp: Date.now(),
       metadata: { stationTarget },

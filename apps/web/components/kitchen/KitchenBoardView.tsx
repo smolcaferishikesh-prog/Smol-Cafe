@@ -391,7 +391,17 @@ export const KitchenBoardView: React.FC<KitchenBoardViewProps> = ({ initialOrder
       }
 
       if (event.orderId) {
-        handleIncomingTicket(event.orderId, event.status as OrderStatus);
+        // If this event specifically belongs to another station (e.g. BARISTA), do not overwrite kitchen ticket status
+        if (event.station === "BARISTA") {
+          debouncedRefresh();
+          return;
+        }
+
+        if (event.type === "TICKET_STATUS_CHANGED" && event.station === "KITCHEN") {
+          handleIncomingTicket(event.orderId, event.status as OrderStatus);
+        } else if (event.type === "ORDER_CONFIRMED") {
+          handleIncomingTicket(event.orderId, event.status as OrderStatus);
+        }
       }
       debouncedRefresh();
     });
