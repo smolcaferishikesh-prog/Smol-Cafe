@@ -402,6 +402,28 @@ export async function placeOrderAction(
     });
     recordOrderAttempt(true, result.order_id);
 
+    // Authoritative check: If legacy RPC returned total without 5% GST, reconcile totalPaise & DB order snapshot
+    const rawSubtotalPaise = items.reduce((acc, it) => acc + (it.expected_unit_price_paise || 0) * (it.qty || 1), 0);
+    const effectiveDiscountPaise = result.discount_paise || 0;
+    const taxablePaise = Math.max(0, rawSubtotalPaise - effectiveDiscountPaise);
+    const expectedTaxPaise = Math.round(taxablePaise * 0.05);
+    const expectedTotalPaise = taxablePaise + expectedTaxPaise;
+
+    let finalTotalPaise = result.total_paise || expectedTotalPaise;
+    if (finalTotalPaise > 0 && finalTotalPaise === taxablePaise && expectedTaxPaise > 0) {
+      finalTotalPaise = expectedTotalPaise;
+      if (result.order_id) {
+        void supabase
+          .from("orders")
+          .update({
+            tax_snapshot: expectedTaxPaise,
+            total_snapshot: expectedTotalPaise,
+          })
+          .eq("id", result.order_id)
+          .then(undefined, () => {});
+      }
+    }
+
     return {
       success: true,
       orderId: result.order_id,
@@ -411,7 +433,7 @@ export async function placeOrderAction(
       tableLabel: session.tableLabel || "01",
       verificationCode: result.verification_code || "4821",
       discountPaise: result.discount_paise || 0,
-      totalPaise: result.total_paise,
+      totalPaise: finalTotalPaise,
       isDuplicate: result.is_duplicate || false,
       message:
         result.discount_paise && result.discount_paise > 0

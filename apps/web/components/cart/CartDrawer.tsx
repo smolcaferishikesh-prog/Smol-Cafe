@@ -124,9 +124,10 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ tableLabel = "07", guest
   const maxDiscountRupees = Math.min(userBalance, Math.floor(itemsTotal * (maxDiscountPercent / 100)));
   const pointsDiscountRupees = redeemPoints ? maxDiscountRupees : 0;
   const effectiveItemsTotal = Math.max(0, itemsTotal - pointsDiscountRupees);
-  const taxesAndCharges = 0;
-  const grandTotal = effectiveItemsTotal;
-  const totalRupees = effectiveItemsTotal;
+  // Standard Restaurant GST: 5% (2.5% CGST + 2.5% SGST)
+  const taxesAndCharges = Math.round(effectiveItemsTotal * 0.05);
+  const grandTotal = effectiveItemsTotal + taxesAndCharges;
+  const totalRupees = grandTotal;
 
   // Potential points earned on this order
   const rupeesPerPt = loyaltyData?.config?.rupeesPerPoint ?? 10;
@@ -652,6 +653,17 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ tableLabel = "07", guest
                         <span>-₹{pointsDiscountRupees}</span>
                       </div>
                     )}
+
+                    {/* Taxes & Charges Row (5% Restaurant GST: 2.5% CGST + 2.5% SGST) */}
+                    <div className="flex items-center justify-between text-[#725039] dark:text-[#C9AE8B]">
+                      <span className="flex items-center gap-1">
+                        <span>Taxes (GST 5%)</span>
+                        <span className="text-[10px] text-[#725039]/70 dark:text-[#C9AE8B]/70 font-sans">
+                          (CGST 2.5% + SGST 2.5%)
+                        </span>
+                      </span>
+                      <span>₹{taxesAndCharges}</span>
+                    </div>
                   </div>
 
                   {/* Points Earning Notice */}

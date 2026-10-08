@@ -16,7 +16,9 @@ export const FloatingCartBar: React.FC = () => {
 
   if (totalCount === 0) return null;
 
-  const totalRupees = Math.round(subtotalPaise / 100);
+  // Match CartDrawer & server 5% restaurant GST
+  const taxPaise = Math.round(subtotalPaise * 0.05);
+  const totalRupees = Math.round((subtotalPaise + taxPaise) / 100);
 
   return (
     <aside
