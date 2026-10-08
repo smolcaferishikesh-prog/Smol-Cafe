@@ -202,10 +202,11 @@ export const ItemDetailModal: React.FC<ItemDetailModalProps> = ({
   const handleAddToCart = () => {
     // If an add-on was selected, bundle it with option details
     if (optionDelta > 0 && selectedOption) {
+      const modifierLabel = selectedOption.label.replace(/\s*\+₹\d+.*$/, "").trim();
       const modifiedItem: MenuItemWithDetails = {
         ...item,
         id: `${item.id}-${selectedOption.id}`,
-        name: `${item.name} (${selectedOption.label.split(" ")[0]})`,
+        name: `${item.name} (${modifierLabel})`,
         pricePaise: item.pricePaise + optionDelta * 100,
       };
       addItem(modifiedItem, 1);
