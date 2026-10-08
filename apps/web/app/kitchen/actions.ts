@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { createAdminClient, isMockDatabase } from "@/lib/supabase/admin";
 import { broadcastSyncEvent } from "@/lib/sync-events";
 import { isBeverageItem } from "@/lib/station-utils";
+import { extractOrderInstructions } from "@/lib/order-instructions";
 import type { OrderStatus } from "@smol-cafe/db";
 import { generateRequestId, logger } from "@/lib/observability/logger";
 import { recordKdsHeartbeat, evaluateKdsSilence } from "@/lib/observability/alerts";
@@ -115,7 +116,7 @@ export async function fetchSingleKitchenTicketAction(orderId: string): Promise<{
       submittedAt: order.submitted_at || order.created_at,
       acceptedAt: order.accepted_at,
       readyAt: order.ready_at,
-      instructions: order.instructions || order.notes || null,
+      instructions: extractOrderInstructions(order),
       items: foodItems,
     };
 
@@ -257,7 +258,7 @@ export async function fetchKitchenOrdersAction(): Promise<FetchKitchenOrdersResu
           submittedAt: o.submitted_at || o.created_at,
           acceptedAt: o.accepted_at,
           readyAt: o.ready_at,
-          instructions: (o as { instructions?: string | null }).instructions || null,
+          instructions: extractOrderInstructions(o),
           items: foodItems,
         });
       }

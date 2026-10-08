@@ -214,7 +214,8 @@ export const OrderCard: React.FC<OrderCardProps> = ({ order, tableLabel = "01", 
               className="flex items-center gap-1.5 text-xs font-serif font-bold text-[#725039] dark:text-[#C9AE8B] transition hover:text-[#241F1C] dark:hover:text-[#FAF4EB] cursor-pointer"
             >
               <span>
-                {order.items.length} {order.items.length === 1 ? "item" : "items"} (₹{totalRupees})
+                {order.items.reduce((acc, i) => acc + (i.qty || 1), 0)}{" "}
+                {order.items.reduce((acc, i) => acc + (i.qty || 1), 0) === 1 ? "item" : "items"} (₹{totalRupees})
               </span>
               <span className="text-[#C9AE8B] text-[10px]">{showItems ? "▲" : "▼"}</span>
             </button>

@@ -11,6 +11,7 @@ import { captureAppException } from "@/lib/observability/sentry";
 const STAFF_SESSION_COOKIE = "smol_staff_session";
 
 import { isBeverageItem } from "@/lib/station-utils";
+import { extractOrderInstructions } from "@/lib/order-instructions";
 
 export interface BaristaOrderItem {
   id: string;
@@ -169,7 +170,7 @@ export async function fetchBaristaOrdersAction(): Promise<FetchBaristaOrdersResu
           submittedAt: o.submitted_at || o.created_at,
           acceptedAt: o.accepted_at,
           readyAt: o.ready_at,
-          instructions: (o as { instructions?: string | null }).instructions || null,
+          instructions: extractOrderInstructions(o),
           items: beverageItems, // show beverages for barista
         });
       }
@@ -327,7 +328,7 @@ export async function fetchSingleBaristaTicketAction(
       submittedAt: o.submitted_at || o.created_at,
       acceptedAt: o.accepted_at,
       readyAt: o.ready_at,
-      instructions: o.instructions || o.special_instructions || o.notes || null,
+      instructions: extractOrderInstructions(o),
       items: beverageItems,
     };
 

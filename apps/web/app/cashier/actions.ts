@@ -1,8 +1,10 @@
 "use server";
 
+import { revalidatePath } from "next/cache";
 import { createAdminClient, isMockDatabase } from "@/lib/supabase/admin";
 import { isBeverageItem } from "@/lib/station-utils";
 import { broadcastSyncEvent } from "@/lib/sync-events";
+import { safeUpdateOrderWithInstructions, extractOrderInstructions } from "@/lib/order-instructions";
 import type { OrderStatus } from "@smol-cafe/db";
 
 export interface PendingOrderItem {
@@ -233,7 +235,7 @@ export async function fetchPendingCashierOrdersAction(): Promise<FetchPendingOrd
         totalPaise: o.total_snapshot || 0,
         subtotalPaise: (o as unknown as { subtotal_snapshot?: number }).subtotal_snapshot || 0,
         taxPaise: (o as unknown as { tax_snapshot?: number }).tax_snapshot || 0,
-        instructions: o.instructions || null,
+        instructions: extractOrderInstructions(o),
         items,
         hasFoodItems,
         hasBeverageItems,
@@ -277,6 +279,17 @@ export async function editCashierOrderAction(
   try {
     const isUuid = (str?: string) => Boolean(str && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str));
 
+    // 0. Fetch existing order to verify existence and get table_session_id & current version
+    const { data: existingOrder, error: fetchErr } = await supabase
+      .from("orders")
+      .select("id, table_session_id, version, status")
+      .eq("id", orderId)
+      .maybeSingle();
+
+    if (fetchErr || !existingOrder) {
+      return { success: false, message: "Order not found in database." };
+    }
+
     let subtotalPaise = 0;
     const orderItemsPayload = items.map((it) => {
       const lineSubtotal = it.unitPricePaise * it.qty;
@@ -297,65 +310,145 @@ export async function editCashierOrderAction(
     const taxPaise = Math.round(subtotalPaise * 0.05); // 5% GST
     const totalPaise = subtotalPaise + taxPaise;
 
-    // 1. Update order totals
+    // 1. Update order totals & instructions with fail-safe rollback
     const updatePayload: Record<string, any> = {
       subtotal_snapshot: subtotalPaise,
       tax_snapshot: taxPaise,
       total_snapshot: totalPaise,
+      version: (existingOrder.version || 1) + 1,
       updated_at: nowIso,
     };
-    if (instructions !== undefined) {
-      updatePayload.instructions = instructions;
+
+    const updateRes = await safeUpdateOrderWithInstructions(
+      supabase,
+      orderId,
+      updatePayload,
+      instructions
+    );
+
+    if (!updateRes.success) {
+      console.error("Failed to update order snapshot in editCashierOrderAction:", updateRes.error);
+      return {
+        success: false,
+        message: "Failed to update order totals in database. Edit was rolled back.",
+      };
     }
 
-    const { error: orderUpdateErr } = await supabase
-      .from("orders")
-      .update(updatePayload)
-      .eq("id", orderId);
+    // 2. Atomically replace order items
+    const { error: delErr } = await supabase
+      .from("order_items")
+      .delete()
+      .eq("order_id", orderId);
 
-    if (orderUpdateErr) {
-      console.error("Failed to update order snapshot in editCashierOrderAction:", orderUpdateErr);
+    if (delErr) {
+      console.error("Failed to delete existing order items in editCashierOrderAction:", delErr);
+      return { success: false, message: "Failed to update order line items." };
     }
 
-    // 2. If paymentMethod provided and order has session, update payment_attempts
-    if (paymentMethod && paymentMethod.trim().length > 0) {
-      const cleanMethod = paymentMethod.trim().toUpperCase();
+    const { error: insErr } = await supabase
+      .from("order_items")
+      .insert(orderItemsPayload);
+
+    if (insErr) {
+      console.error("Failed to insert updated order items in editCashierOrderAction:", insErr);
+      return { success: false, message: "Failed to save updated line items." };
+    }
+
+    // 3. Atomically synchronize table session running bill
+    const sessionId = existingOrder.table_session_id;
+    if (sessionId) {
       try {
-        const { data: ord } = await supabase
+        const { data: sessionOrders } = await supabase
           .from("orders")
-          .select("table_session_id")
-          .eq("id", orderId)
-          .single();
+          .select("id, status, subtotal_snapshot, tax_snapshot, total_snapshot")
+          .eq("table_session_id", sessionId);
 
-        if (ord?.table_session_id) {
-          const { data: b } = await supabase
+        if (sessionOrders && sessionOrders.length > 0) {
+          const activeOrders = sessionOrders.filter(
+            (o) => o.status !== "CANCELLED" && o.status !== "REJECTED"
+          );
+          const newSessionSubtotal = activeOrders.reduce(
+            (sum, o) => sum + (o.id === orderId ? subtotalPaise : (o.subtotal_snapshot || 0)),
+            0
+          );
+          const newSessionTax = activeOrders.reduce(
+            (sum, o) => sum + (o.id === orderId ? taxPaise : (o.tax_snapshot || 0)),
+            0
+          );
+          const newSessionTotal = activeOrders.reduce(
+            (sum, o) => sum + (o.id === orderId ? totalPaise : (o.total_snapshot || 0)),
+            0
+          );
+
+          const { data: existingBill } = await supabase
             .from("bills")
             .select("id")
-            .eq("table_session_id", ord.table_session_id)
+            .eq("table_session_id", sessionId)
             .maybeSingle();
 
-          if (b?.id) {
-            await supabase.from("payment_attempts").insert({
-              bill_id: b.id,
-              provider: cleanMethod,
-              amount: totalPaise,
-              currency: "INR",
-              status: "CAPTURED",
-              idempotency_key: `cashier_edit_${orderId}_${Date.now()}`,
-              created_at: nowIso,
-              captured_at: nowIso,
-            });
+          if (existingBill) {
+            await supabase
+              .from("bills")
+              .update({
+                subtotal: newSessionSubtotal,
+                tax: newSessionTax,
+                total: newSessionTotal,
+              })
+              .eq("id", existingBill.id);
           }
+        }
+      } catch (billSyncErr) {
+        console.warn("Notice syncing running bill after cashier order edit:", billSyncErr);
+      }
+    }
+
+    // 4. If paymentMethod provided and order has session, update payment_attempts
+    if (paymentMethod && paymentMethod.trim().length > 0 && sessionId) {
+      const cleanMethod = paymentMethod.trim().toUpperCase();
+      try {
+        const { data: b } = await supabase
+          .from("bills")
+          .select("id")
+          .eq("table_session_id", sessionId)
+          .maybeSingle();
+
+        if (b?.id) {
+          await supabase.from("payment_attempts").insert({
+            bill_id: b.id,
+            provider: cleanMethod,
+            amount: totalPaise,
+            currency: "INR",
+            status: "CAPTURED",
+            idempotency_key: `cashier_edit_${orderId}_${Date.now()}`,
+            created_at: nowIso,
+            captured_at: nowIso,
+          });
         }
       } catch (err) {
         console.warn("Notice updating payment attempt in editCashierOrderAction:", err);
       }
     }
 
-    // 3. Delete old order items & insert updated ones
-    await supabase.from("order_items").delete().eq("order_id", orderId);
-    await supabase.from("order_items").insert(orderItemsPayload);
+    // 5. Broadcast sync events
+    broadcastSyncEvent({
+      type: "STATUS_CHANGED",
+      orderId,
+      status: existingOrder.status,
+      timestamp: Date.now(),
+    });
+    broadcastSyncEvent({
+      type: "ORDER_PENDING_CASHIER",
+      orderId,
+      timestamp: Date.now(),
+    });
 
+    try {
+      revalidatePath("/cashier");
+      revalidatePath("/orders");
+      revalidatePath("/bill");
+    } catch {
+      // ignore outside request lifecycle
+    }
 
     return {
       success: true,
