@@ -34,6 +34,29 @@ interface DigitalReceiptModalProps {
   onClose: () => void;
 }
 
+export function formatReceiptOrderId(receipt: { orderNo?: number | string; orderId?: string }): string {
+  if (receipt.orderNo) {
+    return `ORD-${receipt.orderNo}`;
+  }
+  const id = (receipt.orderId || "").trim();
+  if (!id) return "ORD-001";
+
+  const match = id.match(/^ord[-_]?(.+)$/i);
+  if (match) {
+    return `ORD-${match[1].toUpperCase()}`;
+  }
+
+  if (/^\d+$/.test(id)) {
+    return `ORD-${id}`;
+  }
+
+  if (id.length <= 8) {
+    return id.toUpperCase();
+  }
+
+  return `ORD-${id.slice(-6).toUpperCase()}`;
+}
+
 export const DigitalReceiptModal: React.FC<DigitalReceiptModalProps> = ({ receipt, onClose }) => {
   const receiptRef = useRef<HTMLDivElement>(null);
   const isPending = receipt.paymentStatus === "PENDING" || receipt.paymentMethod === "CASHIER";
@@ -117,8 +140,8 @@ export const DigitalReceiptModal: React.FC<DigitalReceiptModalProps> = ({ receip
           <div className="border-t border-b border-dashed border-stone-400 dark:border-stone-700 py-2.5 space-y-1 text-[11px]">
             <div className="flex justify-between">
               <span className="text-stone-500 dark:text-stone-400">Order ID:</span>
-              <span className="font-bold text-[#241F1C] dark:text-white">
-                #{receipt.orderNo || (receipt.orderId.startsWith("ORD-") ? receipt.orderId.replace("ORD-", "") : receipt.orderId.slice(-6)).toUpperCase()}
+              <span className="font-bold text-[#241F1C] dark:text-white font-mono">
+                {formatReceiptOrderId(receipt)}
               </span>
             </div>
             <div className="flex justify-between">
