@@ -258,10 +258,14 @@ export async function createTableAction(input: CreateTableInput): Promise<{
       }
     }
 
-    revalidatePath("/admin");
-    revalidatePath("/admin/tables");
-    revalidatePath("/");
-    revalidatePath("/home");
+    try {
+      revalidatePath("/admin");
+      revalidatePath("/admin/tables");
+      revalidatePath("/");
+      revalidatePath("/home");
+    } catch {
+      // Non-fatal if revalidation context is absent
+    }
 
     const newTable: DiningTableRecord = {
       id: tableId,
@@ -369,10 +373,14 @@ export async function updateTableAction(
       globalThis.__SMOL_TABLE_SECTIONS_MAP__?.[cleanNum] ||
       "Café";
 
-    revalidatePath("/admin");
-    revalidatePath("/admin/tables");
-    revalidatePath("/");
-    revalidatePath("/home");
+    try {
+      revalidatePath("/admin");
+      revalidatePath("/admin/tables");
+      revalidatePath("/");
+      revalidatePath("/home");
+    } catch {
+      // Non-fatal if revalidation context is absent
+    }
 
     const updatedTable: DiningTableRecord = {
       id: (updated?.id as string) || tableId,
