@@ -9,6 +9,7 @@ import {
 import { CashierDashboard } from "@/components/cashier/CashierDashboard";
 
 export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 export const metadata = {
   title: "Cashier Desk & Settlement — smol café",

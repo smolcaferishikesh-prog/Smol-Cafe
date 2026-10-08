@@ -4,6 +4,7 @@ import { AdminClientWrapper } from "@/components/admin/AdminClientWrapper";
 import { fetchAdminOverviewAction } from "@/app/admin/actions";
 
 export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 export const metadata = {
   title: "Admin Command Tower — smol café",

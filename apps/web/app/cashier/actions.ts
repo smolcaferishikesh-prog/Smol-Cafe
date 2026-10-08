@@ -250,8 +250,22 @@ export async function fetchPendingCashierOrdersAction(): Promise<FetchPendingOrd
         const items = itemsByOrder.get(o.id) || [];
         const hasFoodItems = items.some((i) => !i.isBeverage);
         const hasBeverageItems = items.some((i) => i.isBeverage);
-        const hasPendingFood = items.some((i) => !i.isBeverage && (!i.itemStatus || i.itemStatus === "PENDING" || i.itemStatus === "DRAFT"));
-        const hasPendingBeverage = items.some((i) => i.isBeverage && (!i.itemStatus || i.itemStatus === "PENDING" || i.itemStatus === "DRAFT"));
+        const hasPendingFood = items.some(
+          (i) =>
+            !i.isBeverage &&
+            (!i.itemStatus ||
+              i.itemStatus === "PENDING" ||
+              i.itemStatus === "DRAFT" ||
+              i.itemStatus === "SUBMITTED")
+        );
+        const hasPendingBeverage = items.some(
+          (i) =>
+            i.isBeverage &&
+            (!i.itemStatus ||
+              i.itemStatus === "PENDING" ||
+              i.itemStatus === "DRAFT" ||
+              i.itemStatus === "SUBMITTED")
+        );
 
         return {
           id: o.id,
@@ -275,7 +289,16 @@ export async function fetchPendingCashierOrdersAction(): Promise<FetchPendingOrd
           hasPendingBeverage,
         };
       })
-      .filter((o) => o.items.length === 0 || o.hasPendingFood || o.hasPendingBeverage);
+      .filter(
+        (o) =>
+          o.items.length === 0 ||
+          o.hasPendingFood ||
+          o.hasPendingBeverage ||
+          o.status === "SUBMITTED" ||
+          o.status === "DRAFT" ||
+          o.status === "PENDING_CONFIRMATION" ||
+          o.paymentStatus === "PENDING"
+      );
 
     return {
       success: true,
