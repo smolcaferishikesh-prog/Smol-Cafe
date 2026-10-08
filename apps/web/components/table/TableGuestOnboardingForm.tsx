@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { User, Phone, ArrowRight, Sparkles, ChevronDown } from "lucide-react";
-import { onboardGuestAndRedirectAction } from "@/app/t/actions";
+import { onboardGuestAndRedirectAction, skipGuestOnboardingAction } from "@/app/t/actions";
 import { COUNTRY_CODES, normalizePhoneNumber } from "@/lib/customer-phone";
 
 interface TableGuestOnboardingFormProps {
@@ -91,6 +91,27 @@ export function TableGuestOnboardingForm({
         }
       } catch (err) {
         console.error("Error onboarding guest:", err);
+        router.push("/home");
+      }
+    });
+  };
+
+  const handleSkip = () => {
+    setError(null);
+    startTransition(async () => {
+      try {
+        const result = await skipGuestOnboardingAction(tableToken);
+        if (result && !result.success) {
+          setError(result.error || "Could not set up table session. Please try again.");
+          return;
+        }
+        if (typeof window !== "undefined") {
+          localStorage.setItem("smol_current_table", result?.tableLabel || tableLabel);
+          localStorage.setItem("smol_guest_name", "Guest");
+        }
+        router.push("/home");
+      } catch (err) {
+        console.error("Error establishing guest session:", err);
         router.push("/home");
       }
     });
@@ -192,15 +213,11 @@ export function TableGuestOnboardingForm({
 
         <button
           type="button"
-          onClick={() => {
-            if (typeof window !== "undefined") {
-              localStorage.setItem("smol_current_table", tableLabel);
-            }
-            router.push("/home");
-          }}
-          className="w-full mt-2 text-center text-xs font-mono text-[#725039] dark:text-[#C9AE8B] hover:text-[#B72E35] dark:hover:text-[#F2C84B] transition-colors cursor-pointer"
+          onClick={handleSkip}
+          disabled={isPending}
+          className="w-full mt-2 text-center text-xs font-mono text-[#725039] dark:text-[#C9AE8B] hover:text-[#B72E35] dark:hover:text-[#F2C84B] transition-colors cursor-pointer disabled:opacity-60"
         >
-          Skip &amp; order as guest →
+          {isPending ? "Entering as Guest..." : "Skip & order as guest →"}
         </button>
       </div>
     </form>

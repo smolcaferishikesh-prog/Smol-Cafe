@@ -44,9 +44,10 @@ interface CartDrawerProps {
   guestName?: string;
 }
 
-export const CartDrawer: React.FC<CartDrawerProps> = ({ tableLabel = "07", guestName = "" }) => {
+export const CartDrawer: React.FC<CartDrawerProps> = ({ tableLabel, guestName = "" }) => {
   const router = useRouter();
   const [currentGuestName, setCurrentGuestName] = useState(guestName);
+  const [currentTableLabel, setCurrentTableLabel] = useState(tableLabel || "");
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -54,8 +55,12 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ tableLabel = "07", guest
       if (saved && !currentGuestName) {
         setCurrentGuestName(saved);
       }
+      const savedTable = localStorage.getItem("smol_current_table");
+      if (savedTable && !currentTableLabel) {
+        setCurrentTableLabel(savedTable);
+      }
     }
-  }, [currentGuestName]);
+  }, [currentGuestName, currentTableLabel]);
   const {
     items,
     updateQty,
@@ -112,7 +117,10 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ tableLabel = "07", guest
     return () => unsub();
   }, [isCartOpen]);
 
-  const displayTable = (tableLabel || "07").replace(/^(table|t)[-\s_]*/i, "").trim().padStart(2, "0");
+  const effectiveTable = tableLabel || currentTableLabel;
+  const displayTable = effectiveTable
+    ? effectiveTable.replace(/^(table|t)[-\s_]*/i, "").trim()
+    : "";
   const itemsTotal = items.reduce(
     (sum, it) => sum + Math.round((it.item.pricePaise / 100) * it.qty),
     0
@@ -231,6 +239,11 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ tableLabel = "07", guest
     const idempotencyKey = cleanPhone
       ? `smol_ord_${cleanPhone}_${crypto.randomUUID()}`
       : `smol_ord_guest_${crypto.randomUUID()}`;
+
+    if (!displayTable) {
+      setErrorMessage("No active table session found. Please scan your table QR code.");
+      return null;
+    }
 
     const orderPayload = items.map((cartItem) => ({
       menu_item_id: cartItem.item.id,
@@ -508,7 +521,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ tableLabel = "07", guest
               {activeView === "bill" ? "Settle Up" : "Your Table"}
             </h2>
             <p className="font-serif italic text-[11px] text-[#725039] dark:text-[#C9AE8B]">
-              Table {displayTable}{currentGuestName ? ` • ${currentGuestName}` : ""}
+              {displayTable ? `Table ${displayTable}` : "Artisanal Table"}{currentGuestName ? ` • ${currentGuestName}` : ""}
             </p>
           </div>
 
@@ -554,7 +567,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ tableLabel = "07", guest
                   {orderSuccess.verificationCode || "4821"}
                 </span>
                 <p className="text-[10px] font-mono text-[#725039] mt-1">
-                  Table {displayTable}{currentGuestName ? ` • Guest: ${currentGuestName}` : " • Instant Verification"}
+                  {displayTable ? `Table ${displayTable}` : "Artisanal Table"}{currentGuestName ? ` • Guest: ${currentGuestName}` : " • Instant Verification"}
                 </p>
               </div>
 
