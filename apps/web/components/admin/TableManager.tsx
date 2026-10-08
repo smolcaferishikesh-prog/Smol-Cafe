@@ -26,6 +26,7 @@ import {
   Copy,
   Check,
   ChevronDown,
+  Loader2,
 } from "lucide-react";
 import {
   type DiningTableRecord,
@@ -1448,9 +1449,10 @@ export const TableManager: React.FC<TableManagerProps> = ({
                 <button
                   type="submit"
                   disabled={isLoading}
-                  className="flex items-center gap-1.5 rounded-xl bg-[#B72E35] hover:bg-[#9B252B] px-5 py-2 text-xs font-mono font-bold text-white shadow-md transition disabled:opacity-50"
+                  className="flex items-center gap-1.5 rounded-xl bg-[#B72E35] hover:bg-[#9B252B] px-5 py-2 text-xs font-mono font-bold text-white shadow-md transition disabled:opacity-50 cursor-pointer"
                 >
-                  {isLoading ? "Adding..." : "Add Table"}
+                  {isLoading && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                  {isLoading ? "Adding Table..." : "Add Table"}
                 </button>
               </div>
             </form>
@@ -1648,9 +1650,10 @@ export const TableManager: React.FC<TableManagerProps> = ({
                 <button
                   type="submit"
                   disabled={isLoading}
-                  className="flex items-center gap-1.5 rounded-xl bg-[#B72E35] hover:bg-[#9B252B] px-5 py-2 text-xs font-mono font-bold text-white shadow-md transition disabled:opacity-50"
+                  className="flex items-center gap-1.5 rounded-xl bg-[#B72E35] hover:bg-[#9B252B] px-5 py-2 text-xs font-mono font-bold text-white shadow-md transition disabled:opacity-50 cursor-pointer"
                 >
-                  {isLoading ? "Saving..." : "Save Changes"}
+                  {isLoading && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                  {isLoading ? "Saving Changes..." : "Save Changes"}
                 </button>
               </div>
             </form>

@@ -311,29 +311,24 @@ export async function onboardGuestAndRedirectAction(formData: FormData): Promise
     return { success: false, error: result.message || "Failed to start table session." };
   }
 
-  // Upsert profile record with deterministic E.164 phone UUID so order history & loyalty rewards immediately associate with this phone
-  try {
-    const supabase = createAdminClient();
-    const phoneUuid = getPhoneUuid(e164Phone);
-    const { data: existingProf } = await supabase
-      .from("profiles")
-      .select("id")
-      .eq("phone", e164Phone)
-      .maybeSingle();
-
-    const targetProfileId = existingProf?.id || phoneUuid;
-    await supabase.from("profiles").upsert(
-      {
-        id: targetProfileId,
-        display_name: guestName,
-        phone: e164Phone,
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: "phone" }
-    );
-  } catch (err) {
-    console.warn("Could not upsert profile during onboarding:", err);
-  }
+  // Non-blocking profile upsert in background so guest onboarding is instantaneous
+  (async () => {
+    try {
+      const supabase = createAdminClient();
+      const phoneUuid = getPhoneUuid(e164Phone);
+      await supabase.from("profiles").upsert(
+        {
+          id: phoneUuid,
+          display_name: guestName,
+          phone: e164Phone,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "phone" }
+      );
+    } catch (err) {
+      console.warn("Could not upsert profile during onboarding:", err);
+    }
+  })();
 
   return { success: true };
 }
