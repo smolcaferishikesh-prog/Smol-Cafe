@@ -81,6 +81,20 @@ export interface AdminMenuItemRecord {
   status: string;
 }
 
+export interface AdminTableRecord {
+  id: string;
+  label: string;
+  seats: number;
+  isActive: boolean;
+}
+
+export interface AdminAnalyticsMetrics {
+  tableTurnDurationMinutes: number | null;
+  reorderRatePercent: number | null;
+  avgTicketVsPriorWeekPercent: number | null;
+  peakHourWindow: string;
+}
+
 export interface AdminOverviewData {
   kpis: AdminOverviewKPIs;
   orders: AdminOrderRecord[];
@@ -92,6 +106,8 @@ export interface AdminOverviewData {
   cumulativeRevenuePoints: number[];
   menuItems: AdminMenuItemRecord[];
   menuCategories: string[];
+  tables: AdminTableRecord[];
+  analyticsMetrics: AdminAnalyticsMetrics;
 }
 
 /**
@@ -520,14 +536,91 @@ export async function fetchAdminOverviewAction(): Promise<{
       }
     }
 
+    // 10. Map real tables & compute live session analytics
+    const mappedTables: AdminTableRecord[] = (diningTables || []).map((t) => ({
+      id: t.id,
+      label: t.label,
+      seats: t.seats || 2,
+      isActive: Boolean(t.is_active ?? true),
+    }));
+
+    // Table Turn Duration from closed sessions
+    const closedSessions = (tableSessions || []).filter((s) => s.closed_at && s.opened_at);
+    let tableTurnDurationMinutes: number | null = null;
+    if (closedSessions.length > 0) {
+      const totalMinutes = closedSessions.reduce((acc, s) => {
+        const diff = (new Date(s.closed_at!).getTime() - new Date(s.opened_at).getTime()) / 60000;
+        return acc + (diff > 0 ? diff : 0);
+      }, 0);
+      tableTurnDurationMinutes = Math.round(totalMinutes / closedSessions.length);
+    }
+
+    // Re-order Frequency: dining sessions with > 1 order
+    const sessionOrderCounts = new Map<string, number>();
+    for (const o of orders) {
+      if (o.table_session_id && o.status !== "CANCELLED" && o.status !== "REJECTED") {
+        sessionOrderCounts.set(o.table_session_id, (sessionOrderCounts.get(o.table_session_id) || 0) + 1);
+      }
+    }
+    const totalSessionsWithOrders = sessionOrderCounts.size;
+    const reorderSessionsCount = Array.from(sessionOrderCounts.values()).filter((cnt) => cnt > 1).length;
+    const reorderRatePercent =
+      totalSessionsWithOrders > 0
+        ? Math.round((reorderSessionsCount / totalSessionsWithOrders) * 1000) / 10
+        : null;
+
+    // Average ticket comparison: past 7 days vs prior 7 days
+    const nowMs = Date.now();
+    const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
+    const validOrdersWithDates = orders.filter((o) => o.status !== "CANCELLED" && o.status !== "REJECTED");
+
+    const currentWeekOrders = validOrdersWithDates.filter((o) => {
+      const age = nowMs - new Date(o.created_at || nowMs).getTime();
+      return age <= sevenDaysMs;
+    });
+    const priorWeekOrders = validOrdersWithDates.filter((o) => {
+      const age = nowMs - new Date(o.created_at || nowMs).getTime();
+      return age > sevenDaysMs && age <= 2 * sevenDaysMs;
+    });
+
+    const currentAvg = currentWeekOrders.length > 0
+      ? currentWeekOrders.reduce((sum, o) => sum + (o.total_snapshot || 0), 0) / currentWeekOrders.length
+      : 0;
+    const priorAvg = priorWeekOrders.length > 0
+      ? priorWeekOrders.reduce((sum, o) => sum + (o.total_snapshot || 0), 0) / priorWeekOrders.length
+      : 0;
+
+    const avgTicketVsPriorWeekPercent =
+      priorAvg > 0
+        ? Math.round(((currentAvg - priorAvg) / priorAvg) * 1000) / 10
+        : null;
+
+    // Peak hour window derived from hourly counts
+    let peakHour = "12p";
+    let maxHourOrders = 0;
+    for (const [h, count] of Object.entries(hourlyCounts)) {
+      if (count > maxHourOrders) {
+        maxHourOrders = count;
+        peakHour = h;
+      }
+    }
+    const formatHourLabel = (h: string) => {
+      if (h.endsWith("a")) return `${h.replace("a", "")}:00 AM`;
+      if (h.endsWith("p")) return `${h.replace("p", "")}:00 PM`;
+      return h;
+    };
+    const peakHourWindow = maxHourOrders > 0 ? `${formatHourLabel(peakHour)} Peak` : "No peak window yet";
+
+    const realTotalTables = diningTables && diningTables.length > 0 ? diningTables.length : 1;
+
     return {
       success: true,
       data: {
         kpis: {
           todaysOrders: mappedOrders.length,
           grossRevenueRupees,
-          activeTablesCount: Math.min(diningTables?.length || 14, Math.max(activeTableIds.size, 1)),
-          totalTablesCount: diningTables && diningTables.length > 0 ? diningTables.length : 14,
+          activeTablesCount: Math.min(realTotalTables, activeTableIds.size),
+          totalTablesCount: realTotalTables,
           pendingKdsCount: pendingKdsTickets,
           avgOrderRupees,
           topSellerName: topSeller.name,
@@ -542,6 +635,13 @@ export async function fetchAdminOverviewAction(): Promise<{
         cumulativeRevenuePoints: [0, Math.round(grossRevenueRupees * 0.25), Math.round(grossRevenueRupees * 0.6), grossRevenueRupees],
         menuItems: allMenuItems,
         menuCategories,
+        tables: mappedTables,
+        analyticsMetrics: {
+          tableTurnDurationMinutes,
+          reorderRatePercent,
+          avgTicketVsPriorWeekPercent,
+          peakHourWindow,
+        },
       },
     };
   } catch (err) {

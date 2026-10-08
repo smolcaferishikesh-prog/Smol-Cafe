@@ -1084,8 +1084,8 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
                 },
                 {
                   label: "ACTIVE TABLES",
-                  value: `${overviewData?.kpis.activeTablesCount ?? 1} / ${overviewData?.kpis?.totalTablesCount || 14}`,
-                  trend: `${Math.round(((overviewData?.kpis.activeTablesCount ?? 1) / (overviewData?.kpis?.totalTablesCount || 14)) * 100)}% capacity`,
+                  value: `${overviewData?.kpis.activeTablesCount ?? 0} / ${overviewData?.kpis?.totalTablesCount || 1}`,
+                  trend: `${Math.round(((overviewData?.kpis.activeTablesCount ?? 0) / (overviewData?.kpis?.totalTablesCount || 1)) * 100)}% capacity`,
                   color: "#ED8936",
                 },
                 {
@@ -2469,26 +2469,48 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
               <div className="rounded-2xl border border-[#C9AE8B]/40 dark:border-stone-800 bg-[#FAF4EB] dark:bg-[#1A1715] p-4 space-y-1 shadow-xs transition-colors">
                 <span className="font-mono text-[9px] uppercase font-bold text-[#725039] dark:text-stone-400">AVG TICKET VALUE</span>
                 <div className="font-serif text-2xl font-bold text-[#B72E35] dark:text-[#F2C84B]">
-                  ₹{overviewData?.kpis.avgOrderRupees ?? 384}
+                  ₹{overviewData?.kpis.avgOrderRupees ?? 0}
                 </div>
-                <span className="font-mono text-[10px] text-emerald-600 dark:text-emerald-400">+8.4% vs last week</span>
+                <span className="font-mono text-[10px] text-stone-500">
+                  {overviewData?.analyticsMetrics?.avgTicketVsPriorWeekPercent != null
+                    ? `${overviewData.analyticsMetrics.avgTicketVsPriorWeekPercent >= 0 ? "+" : ""}${overviewData.analyticsMetrics.avgTicketVsPriorWeekPercent}% vs prior week`
+                    : "— Baseline period"}
+                </span>
               </div>
               <div className="rounded-2xl border border-[#C9AE8B]/40 dark:border-stone-800 bg-[#FAF4EB] dark:bg-[#1A1715] p-4 space-y-1 shadow-xs transition-colors">
                 <span className="font-mono text-[9px] uppercase font-bold text-[#725039] dark:text-stone-400">TABLE TURN DURATION</span>
-                <div className="font-serif text-2xl font-bold text-[#319795] dark:text-[#75AFA7]">38 mins</div>
-                <span className="font-mono text-[10px] text-[#725039] dark:text-stone-400">Optimal cafe rhythm</span>
+                <div className="font-serif text-2xl font-bold text-[#319795] dark:text-[#75AFA7]">
+                  {overviewData?.analyticsMetrics?.tableTurnDurationMinutes != null
+                    ? `${overviewData.analyticsMetrics.tableTurnDurationMinutes} mins`
+                    : "—"}
+                </div>
+                <span className="font-mono text-[10px] text-[#725039] dark:text-stone-400">
+                  {overviewData?.analyticsMetrics?.tableTurnDurationMinutes != null
+                    ? "Derived from closed sessions"
+                    : "No closed sessions yet"}
+                </span>
               </div>
               <div className="rounded-2xl border border-[#C9AE8B]/40 dark:border-stone-800 bg-[#FAF4EB] dark:bg-[#1A1715] p-4 space-y-1 shadow-xs transition-colors">
                 <span className="font-mono text-[9px] uppercase font-bold text-[#725039] dark:text-stone-400">PEAK ORDER RATE</span>
                 <div className="font-serif text-2xl font-bold text-[#B72E35]">
-                  {Math.max(...(overviewData?.hourlyTrend || []).map((b) => b.orders), 1)} tickets/hr
+                  {Math.max(...(overviewData?.hourlyTrend || []).map((b) => b.orders), 0)} tickets/hr
                 </div>
-                <span className="font-mono text-[10px] text-amber-600 dark:text-amber-400">4:00 PM – 6:00 PM</span>
+                <span className="font-mono text-[10px] text-amber-600 dark:text-amber-400">
+                  {overviewData?.analyticsMetrics?.peakHourWindow || "No peak window yet"}
+                </span>
               </div>
               <div className="rounded-2xl border border-[#C9AE8B]/40 dark:border-stone-800 bg-[#FAF4EB] dark:bg-[#1A1715] p-4 space-y-1 shadow-xs transition-colors">
                 <span className="font-mono text-[9px] uppercase font-bold text-[#725039] dark:text-stone-400">RE-ORDER FREQUENCY</span>
-                <div className="font-serif text-2xl font-bold text-[#D97706] dark:text-[#C9AE8B]">34.2%</div>
-                <span className="font-mono text-[10px] text-[#725039] dark:text-stone-400">Dessert &amp; second coffee</span>
+                <div className="font-serif text-2xl font-bold text-[#D97706] dark:text-[#C9AE8B]">
+                  {overviewData?.analyticsMetrics?.reorderRatePercent != null
+                    ? `${overviewData.analyticsMetrics.reorderRatePercent}%`
+                    : "—"}
+                </div>
+                <span className="font-mono text-[10px] text-[#725039] dark:text-stone-400">
+                  {overviewData?.analyticsMetrics?.reorderRatePercent != null
+                    ? "Dessert & second coffee reorders"
+                    : "Single-order sessions"}
+                </span>
               </div>
             </div>
 
@@ -2769,10 +2791,20 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
               {/* Chart 4: Table Utilization & Payment Methods (Live customer state) */}
               <div className="rounded-3xl border border-[#C9AE8B]/40 dark:border-stone-800 bg-[#FAF4EB] dark:bg-[#1A1715] p-5 shadow-xs space-y-4 transition-colors">
                 {(() => {
-                  const activeTableCount = Array.from({ length: 12 }).filter((_, i) => {
-                    const tableNum = (i + 1).toString().padStart(2, "0");
+                  const actualTables =
+                    overviewData?.tables && overviewData.tables.length > 0
+                      ? overviewData.tables
+                      : [{ id: "t-01", label: "01", seats: 2, isActive: true }];
+
+                  const activeTableCount = actualTables.filter((t) => {
                     return orders.some(
-                      (o) => o.tableLabel === tableNum && o.status !== "COMPLETED" && o.status !== "CANCELLED" && o.status !== "REJECTED"
+                      (o) =>
+                        (o.tableLabel === t.label ||
+                          o.tableLabel === t.label.padStart(2, "0") ||
+                          o.tableLabel.toLowerCase() === t.label.toLowerCase()) &&
+                        o.status !== "COMPLETED" &&
+                        o.status !== "CANCELLED" &&
+                        o.status !== "REJECTED"
                     );
                   }).length;
 
@@ -2781,25 +2813,36 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
                       <div className="flex items-center justify-between mb-2">
                         <h3 className="font-serif text-base font-bold text-[#241F1C] dark:text-white">Table Utilization</h3>
                         <span className="font-mono text-xs text-[#B72E35] dark:text-[#F2C84B]">
-                          {activeTableCount} / 12 Active ({Math.round((activeTableCount / 12) * 100)}%)
+                          {activeTableCount} / {actualTables.length} Active ({actualTables.length > 0 ? Math.round((activeTableCount / actualTables.length) * 100) : 0}%)
                         </span>
                       </div>
-                      <div className="grid grid-cols-6 gap-2 pt-1">
-                        {Array.from({ length: 12 }, (_, i) => {
-                          const tableNum = (i + 1).toString().padStart(2, "0");
+                      <div className={`grid gap-2 pt-1 ${actualTables.length <= 4 ? "grid-cols-2 sm:grid-cols-4" : actualTables.length <= 8 ? "grid-cols-4" : "grid-cols-6"}`}>
+                        {actualTables.map((t) => {
                           const isOccupied = orders.some(
-                            (o) => o.tableLabel === tableNum && o.status !== "COMPLETED" && o.status !== "CANCELLED" && o.status !== "REJECTED"
+                            (o) =>
+                              (o.tableLabel === t.label ||
+                                o.tableLabel === t.label.padStart(2, "0") ||
+                                o.tableLabel.toLowerCase() === t.label.toLowerCase()) &&
+                              o.status !== "COMPLETED" &&
+                              o.status !== "CANCELLED" &&
+                              o.status !== "REJECTED"
                           );
+                          const displayLabel = t.label.toUpperCase().startsWith("T")
+                            ? t.label.toUpperCase()
+                            : isNaN(Number(t.label))
+                            ? t.label
+                            : `T${t.label}`;
+
                           return (
                             <div
-                              key={tableNum}
+                              key={t.id}
                               className={`flex flex-col items-center justify-center p-2 rounded-xl border text-center font-mono text-xs ${
                                 isOccupied
                                   ? "border-[#B72E35] bg-[#B72E35]/10 dark:bg-[#B72E35]/20 text-[#B72E35] dark:text-[#F2C84B] font-bold"
                                   : "border-[#C9AE8B]/30 dark:border-stone-800 bg-[#F3E7D3] dark:bg-stone-900 text-[#725039] dark:text-stone-500"
                               }`}
                             >
-                              <span className="font-bold">T{tableNum}</span>
+                              <span className="font-bold truncate max-w-full">{displayLabel}</span>
                               <span className="text-[9px]">{isOccupied ? "Busy" : "Free"}</span>
                             </div>
                           );
