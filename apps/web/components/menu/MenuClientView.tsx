@@ -296,10 +296,18 @@ const MenuContentInner: React.FC<MenuClientViewProps> = ({
           item.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
           item.metadata.core_ingredients?.toLowerCase().includes(searchQuery.toLowerCase());
 
-        const isVeg =
-          !filterVegOnly ||
-          (item.metadata.dietary || "").toLowerCase().includes("veg") ||
-          (item.metadata.dietary || "").toLowerCase().includes("vegan");
+        const dietaryLower = (item.metadata?.dietary || "").toLowerCase();
+        const containsEgg =
+          dietaryLower.includes("egg") ||
+          item.name.toLowerCase().includes("egg") ||
+          item.name.toLowerCase().includes("omelette") ||
+          (item.metadata?.core_ingredients || "").toLowerCase().includes("egg");
+
+        const isPureVeg =
+          !containsEgg &&
+          (dietaryLower.includes("veg") || dietaryLower.includes("vegan"));
+
+        const isVeg = !filterVegOnly || isPureVeg;
 
         return matchesSearch && isVeg;
       });

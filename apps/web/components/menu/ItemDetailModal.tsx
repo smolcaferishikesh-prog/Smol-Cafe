@@ -185,9 +185,13 @@ export const ItemDetailModal: React.FC<ItemDetailModalProps> = ({
   const totalPriceRupees = basePriceRupees + optionDelta;
 
   const dietary = (item.metadata?.dietary || "").toLowerCase();
-  const isVeg = dietary.includes("veg") && !dietary.includes("egg");
-  const isVegan = dietary.includes("vegan");
-  const isEgg = dietary.includes("egg");
+  const isEgg =
+    dietary.includes("egg") ||
+    item.name.toLowerCase().includes("egg") ||
+    item.name.toLowerCase().includes("omelette") ||
+    (item.metadata?.core_ingredients || "").toLowerCase().includes("egg");
+  const isVegan = !isEgg && dietary.includes("vegan");
+  const isVeg = !isEgg && (dietary.includes("veg") || isVegan);
 
   // Determine tag badge
   let tagBadge = "SINGLE ORIGIN";

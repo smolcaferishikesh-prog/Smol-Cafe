@@ -12,7 +12,11 @@ export const MenuItemCard: React.FC<MenuItemCardProps> = ({ item, onOpenDetail }
   const [imageError, setImageError] = useState(false);
   const priceRupees = Math.round(item.pricePaise / 100);
   const dietary = (item.metadata?.dietary || "").toLowerCase();
-  const isEgg = dietary.includes("egg");
+  const isEgg =
+    dietary.includes("egg") ||
+    item.name.toLowerCase().includes("egg") ||
+    item.name.toLowerCase().includes("omelette") ||
+    (item.metadata?.core_ingredients || "").toLowerCase().includes("egg");
   const spiceLevel = item.metadata?.spice || "";
   const pairing = item.metadata?.best_pairing || "";
   const foodImageUrl = getFoodImage(item.name, item.imageUrl);

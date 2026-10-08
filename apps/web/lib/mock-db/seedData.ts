@@ -351,7 +351,7 @@ export const RAW_MENU_ITEMS: RawItemData[] = [
     avail: "All Day",
     pairing: "Cappuccino / Americano",
     saathi: false,
-    dietary: "Egg; Vegetarian otherwise",
+    dietary: "Egg",
     protein: "High",
     spice: "Mild",
     status: "ACTIVE",
