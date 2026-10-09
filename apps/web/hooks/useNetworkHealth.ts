@@ -27,6 +27,16 @@ export function useNetworkHealth(): NetworkHealthState {
 
   const checkHealth = useCallback(async (force = false) => {
     const now = Date.now();
+    const navOnline = typeof navigator !== "undefined" ? navigator.onLine : true;
+    if (!navOnline) {
+      globalIsOnline = false;
+      globalIsBackendReachable = false;
+      setIsOnline(false);
+      setIsBackendReachable(false);
+      setLastCheckedAt(new Date());
+      return;
+    }
+
     // Throttle: Skip if checked within last 30 seconds unless forced or currently offline
     if (!force && now - globalLastCheckTime < 30000 && globalIsBackendReachable && globalIsOnline) {
       return;

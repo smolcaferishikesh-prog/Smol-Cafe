@@ -33,6 +33,7 @@ import { useSupabaseRealtime } from "@/hooks/useSupabaseRealtime";
 import { broadcastSyncEvent, subscribeToSyncEvents } from "@/lib/sync-events";
 import { ThemeToggle } from "@/components/common/ThemeToggle";
 import { soundManager } from "@/lib/sound";
+import { generateSafeUuid } from "@/lib/uuid";
 
 interface KitchenBoardViewProps {
   initialOrders: KitchenTicket[];
@@ -370,7 +371,7 @@ export const KitchenBoardView: React.FC<KitchenBoardViewProps> = ({ initialOrder
               readyAt: null,
               instructions: ticketData.instructions || null,
               items: foodItems.map((f) => ({
-                id: f.id || crypto.randomUUID(),
+                id: f.id || generateSafeUuid(),
                 name: f.name,
                 qty: f.qty || 1,
                 itemStatus: (f.itemStatus as KitchenOrderItem["itemStatus"]) || "PENDING",

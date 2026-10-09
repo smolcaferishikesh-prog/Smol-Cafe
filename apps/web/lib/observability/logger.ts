@@ -1,4 +1,5 @@
 import crypto from "crypto";
+import { generateSafeUuid } from "../uuid";
 
 export type LogLevel = "INFO" | "WARN" | "ERROR";
 
@@ -77,7 +78,7 @@ function emitLog(
   }
 ) {
   const entry: LogEntry = {
-    id: crypto.randomUUID(),
+    id: generateSafeUuid(),
     timestamp: new Date().toISOString(),
     level,
     requestId: meta?.requestId || "req_global",

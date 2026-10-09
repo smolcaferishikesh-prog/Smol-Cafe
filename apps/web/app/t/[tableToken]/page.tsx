@@ -14,15 +14,15 @@ interface PageProps {
 function getPlacardFontSize(text: string): string {
   const len = text.length;
   if (len <= 2) {
-    return "text-3xl sm:text-4xl font-serif font-bold tracking-tight";
+    return "text-2xl sm:text-3xl font-serif font-bold tracking-tight";
   }
   if (len <= 4) {
-    return "text-xl sm:text-2xl font-serif font-bold tracking-tight";
+    return "text-lg sm:text-xl font-serif font-bold tracking-tight";
   }
   if (len <= 7) {
-    return "text-xs sm:text-sm font-sans font-black tracking-wide uppercase break-all leading-tight";
+    return "text-[11px] sm:text-xs font-sans font-black tracking-wide uppercase break-all leading-tight";
   }
-  return "text-[10px] sm:text-[11px] font-sans font-black tracking-tight uppercase break-all leading-none";
+  return "text-[9px] sm:text-[10px] font-sans font-black tracking-tight uppercase break-all leading-none";
 }
 
 function getDisplayTableNumber(tableLabel?: string, tableToken?: string): string {
@@ -47,7 +47,7 @@ export default async function TableEntryPage({ params }: PageProps) {
     const activeTables = await fetchActiveTablesAction().catch(() => []);
 
     return (
-      <div className="flex min-h-screen flex-col items-center justify-center bg-[#F3E7D3] dark:bg-[#241F1C] px-6 py-12 text-[#241F1C] dark:text-[#F3E7D3]">
+      <div className="flex min-h-[100dvh] flex-col items-center justify-center bg-[#F3E7D3] dark:bg-[#241F1C] px-6 py-8 text-[#241F1C] dark:text-[#F3E7D3]">
         <div className="w-full max-w-md rounded-3xl border border-[#C9AE8B]/40 dark:border-white/10 bg-[#FAF4EB] dark:bg-[#2A2420] p-8 text-center shadow-lg backdrop-blur-md">
           <div className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-2xl bg-[#F2C84B]/20 dark:bg-[#F2C84B]/10">
             <AlertTriangle className="h-8 w-8 text-[#B72E35] dark:text-[#F2C84B]" />
@@ -111,15 +111,15 @@ export default async function TableEntryPage({ params }: PageProps) {
   // - walnut: #725039
   // - biscuit: #C9AE8B
   return (
-    <div className="relative min-h-screen bg-[#F3E7D3] dark:bg-[#151110] text-[#241F1C] dark:text-[#FAF4EB] flex flex-col justify-between items-center px-6 py-6 sm:py-8 transition-colors duration-200 select-none">
+    <div className="relative min-h-[100dvh] h-[100dvh] max-h-[100dvh] bg-[#F3E7D3] dark:bg-[#151110] text-[#241F1C] dark:text-[#FAF4EB] flex flex-col justify-between items-center px-4 py-2 sm:py-3 transition-colors duration-200 select-none overflow-y-auto sm:overflow-hidden">
       {/* Floating Theme Toggle (Day / Night switch) */}
-      <div className="absolute top-4 right-4 z-40">
+      <div className="absolute top-3 right-3 sm:top-4 sm:right-4 z-40">
         <ThemeToggle variant="icon" />
       </div>
 
-      <div className="w-full max-w-sm flex flex-col items-center flex-1 justify-center space-y-3 sm:space-y-4">
+      <div className="w-full max-w-xs sm:max-w-sm flex flex-col items-center flex-1 justify-center space-y-1.5 sm:space-y-2.5 my-auto">
         {/* Top Brand Door Logo & Tagline with Dynamic Moving Animations */}
-        <div className="pt-2 sm:pt-4 flex flex-col items-center">
+        <div className="flex flex-col items-center">
           <div className="relative transition-transform duration-300 hover:scale-105 cursor-pointer flex flex-col items-center">
             {/* Day Mode Logo: Clean Arched Red Door with Gentle Floating Bob */}
             <Image
@@ -127,7 +127,7 @@ export default async function TableEntryPage({ params }: PageProps) {
               alt="smol café - Good Coffee Brighter Days"
               width={112}
               height={164}
-              className="w-24 sm:w-28 h-auto object-contain select-none dark:hidden animate-logo-moving-light drop-shadow-[0_8px_16px_rgba(114,80,57,0.18)]"
+              className="w-16 sm:w-20 md:w-22 h-auto object-contain select-none dark:hidden animate-logo-moving-light drop-shadow-[0_6px_12px_rgba(114,80,57,0.15)]"
               priority
             />
             {/* Night Mode Logo: Glowing Neon Violet Door & Tagline with Moving Levitation + Breathing Neon Glow */}
@@ -136,14 +136,14 @@ export default async function TableEntryPage({ params }: PageProps) {
               alt="smol café - Good Company Brighter Days"
               width={198}
               height={244}
-              className="w-24 sm:w-28 h-auto object-contain select-none hidden dark:block animate-logo-moving-dark"
+              className="w-16 sm:w-20 md:w-22 h-auto object-contain select-none hidden dark:block animate-logo-moving-dark"
               priority
             />
           </div>
         </div>
 
         {/* Hand-drawn Architectural Door Illustration on Transparent Cutout */}
-        <div className="relative w-full max-w-[340px] sm:max-w-[370px] mx-auto">
+        <div className="relative w-full max-w-[190px] sm:max-w-[220px] md:max-w-[240px] mx-auto">
           {/* Day Mode Gate (Clean Architectural Door Cutout) */}
           <Image
             src="/table-door-blank-transparent.png?v=8"
@@ -159,7 +159,7 @@ export default async function TableEntryPage({ params }: PageProps) {
             alt={`Table ${displayTableNumber}`}
             width={592}
             height={588}
-            className="w-full h-auto object-contain select-none pointer-events-none hidden dark:block drop-shadow-[0_0_24px_rgba(117,76,255,0.25)]"
+            className="w-full h-auto object-contain select-none pointer-events-none hidden dark:block drop-shadow-[0_0_20px_rgba(117,76,255,0.22)]"
             priority
           />
 
@@ -174,7 +174,7 @@ export default async function TableEntryPage({ params }: PageProps) {
               height: "28%",
             }}
           >
-            <span className="text-[9px] sm:text-[10px] font-sans font-bold tracking-[0.16em] text-[#241F1C]/75 uppercase mb-0.5">
+            <span className="text-[7.5px] sm:text-[8.5px] font-sans font-bold tracking-[0.16em] text-[#241F1C]/75 uppercase mb-0.5">
               TABLE
             </span>
             <span
@@ -198,7 +198,7 @@ export default async function TableEntryPage({ params }: PageProps) {
               height: "30%",
             }}
           >
-            <span className="text-[9px] sm:text-[10px] font-sans font-bold tracking-[0.16em] text-[#C4B5FD] uppercase drop-shadow-[0_0_8px_rgba(196,181,253,0.6)] mb-0.5">
+            <span className="text-[7.5px] sm:text-[8.5px] font-sans font-bold tracking-[0.16em] text-[#C4B5FD] uppercase drop-shadow-[0_0_8px_rgba(196,181,253,0.6)] mb-0.5">
               TABLE
             </span>
             <span
@@ -213,8 +213,8 @@ export default async function TableEntryPage({ params }: PageProps) {
         </div>
 
         {/* Headline: EB Garamond, espresso ink + smol cherry (#B72E35) */}
-        <div className="text-center pt-1 px-2 max-w-xs sm:max-w-sm mx-auto">
-          <h1 className="font-serif text-2xl sm:text-3xl font-bold tracking-tight text-[#241F1C] dark:text-[#FAF4EB] leading-tight break-words">
+        <div className="text-center pt-0 px-2 max-w-xs mx-auto">
+          <h1 className="font-serif text-xl sm:text-2xl font-bold tracking-tight text-[#241F1C] dark:text-[#FAF4EB] leading-tight break-words">
             You&apos;re at{" "}
             <span className="text-[#B72E35] dark:text-[#F2C84B] font-extrabold">
               {displayTableNumber.toLowerCase().startsWith("table")
@@ -225,19 +225,19 @@ export default async function TableEntryPage({ params }: PageProps) {
         </div>
 
         {/* Coffee Bean Divider */}
-        <div className="flex items-center justify-center my-1.5">
+        <div className="flex items-center justify-center my-0.5">
           <Image
             src="/table-bean-divider.png"
             alt="coffee bean divider"
             width={162}
             height={31}
-            className="h-3.5 sm:h-4 w-auto object-contain select-none dark:invert opacity-90"
+            className="h-2.5 sm:h-3 w-auto object-contain select-none dark:invert opacity-90"
             priority
           />
         </div>
 
         {/* Poetic Subtitle in walnut (#725039) per brand kit */}
-        <div className="text-[#725039] dark:text-[#C9AE8B] font-mono text-xs sm:text-sm leading-relaxed space-y-0.5 text-center">
+        <div className="text-[#725039] dark:text-[#C9AE8B] font-mono text-[11px] sm:text-xs leading-tight space-y-0.5 text-center">
           <p>We&apos;ve got your table.</p>
           <p>Scan, sip &amp; stay awhile.</p>
         </div>

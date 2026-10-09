@@ -18,6 +18,7 @@ import { fetchLiveMenuCatalogAction } from "@/app/admin/menu-actions";
 import MenuLoading from "@/app/menu/loading";
 
 import { useSupabaseRealtime } from "@/hooks/useSupabaseRealtime";
+import { generateSafeUuid } from "@/lib/uuid";
 
 interface MenuClientViewProps {
   categories: CategoryWithItems[];
@@ -61,7 +62,7 @@ const MenuContentInner: React.FC<MenuClientViewProps> = ({
           loadedCartItems.push({ item: catalogMatch, qty: ordItem.qty });
         } else {
           const fallbackItem: MenuItemWithDetails = {
-            id: ordItem.menuItemId || crypto.randomUUID(),
+            id: ordItem.menuItemId || generateSafeUuid(),
             name: ordItem.name,
             description: "Customer ordered item",
             pricePaise: ordItem.unitPricePaise,
@@ -591,7 +592,7 @@ const MenuContentInner: React.FC<MenuClientViewProps> = ({
         )}
       </header>
       {/* Main Menu List */}
-      <main className="mx-auto max-w-md px-4 pt-4 space-y-6">
+      <main className="mx-auto max-w-md px-4 pt-4 pb-[calc(11rem+env(safe-area-inset-bottom,0px))] space-y-6">
         {filteredCategories.map((category) => (
           <section key={category.id} id={`category-${category.id}`} className="space-y-2.5">
             {/* Category Section Header */}

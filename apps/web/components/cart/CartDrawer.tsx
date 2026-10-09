@@ -24,6 +24,7 @@ import type { MenuItemWithDetails } from "@/lib/queries/menu";
 import { getLoyaltyAccountAction, redeemLoyaltyPointsAction, type LoyaltyAccountDetails } from "@/app/account/loyalty-actions";
 import { TableArchedCard } from "@/components/table/TableArchedCard";
 import { enqueueOfflineOrder } from "@/lib/offline-queue";
+import { generateSafeUuid } from "@/lib/uuid";
 import {
   CheckCircle2,
   CreditCard,
@@ -289,8 +290,8 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ tableLabel, guestName = 
     }
     const cleanPhone = normalizePhoneNumber(clientPhone);
     const idempotencyKey = cleanPhone
-      ? `smol_ord_${cleanPhone}_${crypto.randomUUID()}`
-      : `smol_ord_guest_${crypto.randomUUID()}`;
+      ? `smol_ord_${cleanPhone}_${generateSafeUuid()}`
+      : `smol_ord_guest_${generateSafeUuid()}`;
 
     if (!displayTable) {
       setErrorMessage("No active table session found. Please scan your table QR code.");
@@ -482,27 +483,13 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ tableLabel, guestName = 
         return;
       }
 
-      // 2. Clear cart
+      // 2. Clear cart & close drawer
       clearCart();
+      closeCart();
 
-      // 3. Trigger order confirmation modal with PENDING payment status (no fake settlement)
-      setCelebrationData({
-        orderId: orderRes.orderId,
-        orderNo: orderRes.orderNo,
-        tableLabel: displayTable,
-        zone: (["07", "08", "09", "10"].includes(displayTable)) ? "smol-lounge" : (["11", "12", "13", "14"].includes(displayTable)) ? "smol-terrace" : "smol-cafe",
-        totalRupees: Math.round(orderRes.totalPaise / 100),
-        items: currentItemsSnapshot.length > 0 ? currentItemsSnapshot : [
-          { name: "Artisanal Table Order", qty: 1, priceRupees: Math.round(orderRes.totalPaise / 100), subtotalRupees: Math.round(orderRes.totalPaise / 100) }
-        ],
-        appName: "Cashier Desk (Pay at Counter)",
-        paymentStatus: "PENDING",
-        onClose: () => {
-          setCelebrationData(null);
-          closeCart();
-          router.push(`/orders/${orderRes.orderId}?t=${orderRes.orderNo}`);
-        },
-      });
+      // 3. Directly navigate to Orders page
+      router.push("/orders");
+      router.refresh();
     } catch (err) {
       console.error("Order dispatch to cashier failed:", err);
       setErrorMessage("Could not send order to cashier. Please try again.");
@@ -1024,105 +1011,41 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ tableLabel, guestName = 
                   ))}
                 </div>
 
-                {/* Smol Club Rewards Points Bar */}
-                <div className="px-3 pt-2 pb-1">
-                  <div className="rounded-[1.25rem] border border-[#B72E35]/30 dark:border-white/10 bg-[#FAF4EB] dark:bg-[#1A1513] p-3 shadow-xs">
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <div className="w-8 h-8 rounded-full bg-[#B72E35]/15 flex items-center justify-center shrink-0 text-[#B72E35] dark:text-[#F2C84B]">
-                          <Award className="w-4 h-4" />
-                        </div>
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-1.5">
-                            <span className="font-serif font-bold text-[13.5px] text-[#241F1C] dark:text-[#FAF4EB]">
-                              Smol Club Rewards
-                            </span>
-                            <span className="rounded-full bg-[#B72E35] text-white px-2 py-0.2 font-mono text-[9.5px] font-bold">
-                              Coming Soon 🚀
-                            </span>
-                          </div>
-                          <p className="font-mono text-[10.5px] text-[#725039] dark:text-[#C9AE8B] truncate">
-                            Patron Rewards &amp; Cashback launching soon
-                          </p>
-                        </div>
-                      </div>
+                {/* Itemized Bill Breakdown Section inside Arched Card */}
+                <div className="border-t border-[#C9AE8B]/40 dark:border-white/10 bg-[#FAF4EB]/70 dark:bg-[#1A1513]/70 px-4 py-3.5 mt-1">
+                  <div className="space-y-1.5 font-mono text-[13px] text-[#241F1C] dark:text-[#FAF4EB]">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[#725039] dark:text-[#C9AE8B]">Items Total</span>
+                      <span className="font-semibold">₹{itemsTotal}</span>
+                    </div>
 
-                      <span className="shrink-0 px-2.5 py-1.5 rounded-full font-serif text-[11px] font-bold bg-[#EFE7DC] dark:bg-stone-800 text-[#725039] dark:text-[#C9AE8B] border border-[#C9AE8B]/40">
-                        Coming Soon
+                    <div className="flex items-center justify-between text-[#725039] dark:text-[#C9AE8B]">
+                      <span className="flex items-center gap-1">
+                        <span>GST (5%)</span>
+                        <span className="text-[10.5px] text-[#725039]/70 dark:text-[#C9AE8B]/70 font-sans">
+                          (2.5% CGST + 2.5% SGST)
+                        </span>
+                      </span>
+                      <span>₹{taxesAndCharges}</span>
+                    </div>
+                  </div>
+
+                  {/* Dashed Separator */}
+                  <div className="border-t border-dashed border-[#C9AE8B]/60 dark:border-white/15 my-2.5" />
+
+                  {/* Grand Total Row */}
+                  <div className="flex items-baseline justify-between pt-0.5">
+                    <div>
+                      <span className="font-serif font-bold text-[16px] text-[#241F1C] dark:text-[#FAF4EB] block leading-tight">
+                        Total Payable
+                      </span>
+                      <span className="font-mono text-[10.5px] text-[#725039] dark:text-[#C9AE8B]">
+                        Incl. all taxes &amp; services
                       </span>
                     </div>
-
-                    {/* Happy Hour Bonus Notice */}
-                    {slowMultiplier > 1 && (
-                      <div className="mt-2 pt-1.5 border-t border-[#C9AE8B]/20 dark:border-white/5 flex items-center justify-between text-[10.5px] font-mono text-[#B72E35] dark:text-[#F2C84B]">
-                        <span className="flex items-center gap-1">
-                          <Sparkles className="w-3 h-3" />
-                          Slow Period active:
-                        </span>
-                        <span className="font-bold">2× points on this order!</span>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Upsell Card: "Make it a moment?" with Dusty Pool accent & Butter Taxi button */}
-                <div className="p-3">
-                  <div className="rounded-[1.4rem] border border-[#75AFA7]/50 dark:border-white/10 bg-gradient-to-br from-[#E2EBE8] via-[#DAE6E2] to-[#CEDDD8] dark:from-[#251E1B] dark:via-[#201A18] dark:to-[#1C1715] p-3 shadow-xs transition-all">
-                    <h3 className="font-serif font-semibold text-[16px] text-[#241F1C] dark:text-[#FAF4EB] mb-1.5">
-                      Make it a moment?
-                    </h3>
-
-                    <div className="flex items-center justify-between gap-2">
-                      {/* Left: Platter Illustration */}
-                      <div className="shrink-0 -ml-1 flex items-center justify-center">
-                        <Image
-                          src="/conversation_board_clean.png"
-                          alt="Conversation Board"
-                          width={100}
-                          height={64}
-                          className="w-[100px] h-[64px] object-contain select-none pointer-events-none"
-                        />
-                      </div>
-
-                      {/* Center: Title & Description */}
-                      <div className="flex-1 min-w-0 pr-1">
-                        <h4 className="font-serif font-bold text-[13.5px] text-[#241F1C] dark:text-[#FAF4EB] leading-snug truncate">
-                          Conversation Board
-                        </h4>
-                        <p className="font-mono text-[10.5px] text-[#374438] dark:text-[#C9AE8B] leading-tight mt-0.5 line-clamp-2">
-                          A changing sharing board with smashed chickpea dip, crispy chana, toast, potatoes, pickle &amp; seasonal dips.
-                        </p>
-                      </div>
-
-                      {/* Right: Price & Butter Taxi Button */}
-                      <div className="flex flex-col items-end gap-1.5 shrink-0 pl-1">
-                        <div className="flex items-center gap-1 font-serif text-right">
-                          <span className="line-through font-mono text-[11px] text-[#725039]/70 dark:text-[#C9AE8B]/60">
-                            ₹349
-                          </span>
-                          <span className="font-serif font-bold text-[13.5px] text-[#241F1C] dark:text-[#FAF4EB]">
-                            ₹329
-                          </span>
-                        </div>
-
-                        <button
-                          type="button"
-                          onClick={handleAddConversationBoard}
-                          className={`w-9 h-9 rounded-full border border-[#241F1C] dark:border-white/20 flex items-center justify-center transition-all duration-200 active:scale-90 shadow-xs cursor-pointer ${
-                            boardAdded || items.some((i) => i.item.id === "item_35" || i.item.name.toLowerCase().includes("conversation board"))
-                              ? "bg-[#2E5550] text-[#F3E7D3] border-[#241F1C]"
-                              : "bg-[#F2C84B] text-[#241F1C] hover:bg-[#DEB63E]"
-                          }`}
-                          aria-label="Add Conversation Board"
-                        >
-                          {boardAdded || items.some((i) => i.item.id === "item_35" || i.item.name.toLowerCase().includes("conversation board")) ? (
-                            <Check className="w-4 h-4 stroke-[2.5]" />
-                          ) : (
-                            <Plus className="w-4 h-4 stroke-[2.5]" />
-                          )}
-                        </button>
-                      </div>
-                    </div>
+                    <span className="font-serif font-extrabold text-[20px] text-[#B72E35] dark:text-[#F2C84B]">
+                      ₹{grandTotal}
+                    </span>
                   </div>
                 </div>
               </TableArchedCard>
@@ -1130,7 +1053,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ tableLabel, guestName = 
           )}
         </div>
 
-        {/* Sticky Bottom Summary & "View Bill" CTA Button in Smol Cherry */}
+        {/* Sticky Bottom Summary & "Order Now" CTA Button in Smol Cherry */}
         {!orderSuccess && activeView === "table_order" && items.length > 0 && (
           <div className="sticky bottom-0 left-0 right-0 z-30 px-5 pt-2 pb-5 bg-gradient-to-t from-[#F3E7D3] via-[#F3E7D3]/95 to-transparent dark:from-[#1A1513] dark:via-[#1A1513]/95 dark:to-transparent">
             <p className="font-serif text-[15px] font-medium text-[#241F1C] dark:text-[#FAF4EB] text-center mb-2 tracking-wide">
@@ -1158,13 +1081,15 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ tableLabel, guestName = 
             ) : (
               <button
                 type="button"
-                onClick={() => setActiveView("bill")}
-                className="group relative overflow-hidden w-full block rounded-full bg-gradient-to-b from-[#E03A43]/70 via-[#B72E35]/80 to-[#7D1217]/90 dark:from-[#A855F7]/70 dark:via-[#7E22CE]/80 dark:to-[#4C1D95]/90 text-white font-serif text-[17.5px] font-medium py-3.5 backdrop-blur-[16px] border border-white/55 dark:border-purple-300/40 shadow-[0_8px_26px_rgba(183,46,53,0.42),inset_0_1.5px_1.5px_rgba(255,255,255,0.85),inset_0_-1.5px_2px_rgba(0,0,0,0.4),inset_0_0_14px_rgba(255,140,140,0.35)] dark:shadow-[0_8px_28px_rgba(126,34,206,0.5),inset_0_1.5px_1.5px_rgba(255,255,255,0.85),inset_0_-1.5px_2px_rgba(0,0,0,0.5),inset_0_0_16px_rgba(192,132,252,0.45)] active:scale-[0.99] transition duration-150 cursor-pointer text-center"
+                disabled={isBypassing}
+                onClick={handleSendOrderToCashier}
+                className="group relative overflow-hidden w-full block rounded-full bg-gradient-to-b from-[#E03A43]/70 via-[#B72E35]/80 to-[#7D1217]/90 dark:from-[#A855F7]/70 dark:via-[#7E22CE]/80 dark:to-[#4C1D95]/90 text-white font-serif text-[17.5px] font-medium py-3.5 backdrop-blur-[16px] border border-white/55 dark:border-purple-300/40 shadow-[0_8px_26px_rgba(183,46,53,0.42),inset_0_1.5px_1.5px_rgba(255,255,255,0.85),inset_0_-1.5px_2px_rgba(0,0,0,0.4),inset_0_0_14px_rgba(255,140,140,0.35)] dark:shadow-[0_8px_28px_rgba(126,34,206,0.5),inset_0_1.5px_1.5px_rgba(255,255,255,0.85),inset_0_-1.5px_2px_rgba(0,0,0,0.5),inset_0_0_16px_rgba(192,132,252,0.45)] active:scale-[0.99] transition duration-150 cursor-pointer text-center disabled:opacity-60"
               >
                 {/* Curved Specular Glass Gloss Reflection */}
                 <span className="absolute inset-x-4 top-1 h-[42%] rounded-full bg-gradient-to-b from-white/50 via-white/15 to-transparent pointer-events-none opacity-90" />
-                <span className="relative z-10 drop-shadow-[0_1.5px_2.5px_rgba(0,0,0,0.35)]">
-                  View Bill
+                <span className="relative z-10 flex items-center justify-center gap-2 drop-shadow-[0_1.5px_2.5px_rgba(0,0,0,0.35)]">
+                  {isBypassing && <Loader2 className="w-5 h-5 animate-spin" />}
+                  <span>{isBypassing ? "Placing Order..." : "Order Now"}</span>
                 </span>
               </button>
             )}

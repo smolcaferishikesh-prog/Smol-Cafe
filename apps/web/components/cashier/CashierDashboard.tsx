@@ -83,6 +83,9 @@ export const CashierDashboard: React.FC<CashierDashboardProps> = ({
   const playedChimeOrderIdsRef = useRef<Set<string>>(
     new Set(initialPendingOrders.map((o) => o.id))
   );
+  const playedDeliveryChimeOrderIdsRef = useRef<Set<string>>(
+    new Set(initialDeliveryOrders.map((o) => o.id))
+  );
 
   useEffect(() => {
     setIsMounted(true);
@@ -148,13 +151,22 @@ export const CashierDashboard: React.FC<CashierDashboardProps> = ({
         setPendingOrders(filteredPending);
       }
       if (deliveryData.success) {
+        const hasNewDelivery = deliveryData.orders.some(
+          (o) => !playedDeliveryChimeOrderIdsRef.current.has(o.id)
+        );
+        if (hasNewDelivery) {
+          soundManager.playOrderReadyChime();
+        }
+        deliveryData.orders.forEach((o) => playedDeliveryChimeOrderIdsRef.current.add(o.id));
+
         setDeliveryOrders(deliveryData.orders);
       }
       if (paidData.success) {
         setPaidHistory(paidData.records);
       }
     } catch (err) {
-      console.error("Failed to refresh cashier data:", err);
+      // Cashier polling standby during hot-reloads / tab suspend
+      console.warn("Cashier poll standby (retrying on next cycle):", (err as Error)?.message || err);
     } finally {
       isRefreshingRef.current = false;
       if (!isBackground) {
@@ -174,16 +186,23 @@ export const CashierDashboard: React.FC<CashierDashboardProps> = ({
     onData: (payload: { new?: { id?: string; status?: string } | null }) => {
       const newRow = payload?.new;
       if (newRow && newRow.id) {
-        if (
+        if (newRow.status === "READY") {
+          if (!playedDeliveryChimeOrderIdsRef.current.has(newRow.id)) {
+            playedDeliveryChimeOrderIdsRef.current.add(newRow.id);
+            soundManager.playOrderReadyChime();
+          }
+          setPendingOrders((prev) => prev.filter((o) => o.id !== newRow.id));
+          void refreshData(true);
+        } else if (
           newRow.status === "ACCEPTED" ||
           newRow.status === "PREPARING" ||
-          newRow.status === "READY" ||
           newRow.status === "SERVED" ||
           newRow.status === "COMPLETED" ||
           newRow.status === "CANCELLED" ||
           newRow.status === "REJECTED"
         ) {
           setPendingOrders((prev) => prev.filter((o) => o.id !== newRow.id));
+          void refreshData(true);
         } else {
           if (newRow.status === "PENDING_CONFIRMATION") {
             if (!playedChimeOrderIdsRef.current.has(newRow.id)) {
@@ -249,7 +268,19 @@ export const CashierDashboard: React.FC<CashierDashboardProps> = ({
         return;
       }
 
-      if (event.orderId && event.status && ["ACCEPTED", "PREPARING", "READY", "SERVED", "COMPLETED", "CANCELLED"].includes(event.status)) {
+      if (event.status === "READY") {
+        if (event.orderId && !playedDeliveryChimeOrderIdsRef.current.has(event.orderId)) {
+          playedDeliveryChimeOrderIdsRef.current.add(event.orderId);
+          soundManager.playOrderReadyChime();
+        }
+        if (event.orderId) {
+          setPendingOrders((prev) => prev.filter((o) => o.id !== event.orderId));
+        }
+        void refreshData(true);
+        return;
+      }
+
+      if (event.orderId && event.status && ["ACCEPTED", "PREPARING", "SERVED", "COMPLETED", "CANCELLED"].includes(event.status)) {
         setPendingOrders((prev) => prev.filter((o) => o.id !== event.orderId));
       } else {
         void refreshData(true);

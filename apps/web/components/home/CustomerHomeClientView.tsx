@@ -52,37 +52,57 @@ export const CustomerHomeClientView: React.FC<CustomerHomeClientProps> = ({
       id: "feed-me",
       title: "FEED ME",
       subtitle: "I’m hungry",
-      classes: "bg-[#FDF2F0] border-[#F3C5C5] dark:bg-[#1A1414] dark:border-[#421D20]",
-      lightImage: "/home_card_feedme_hd.png",
-      darkImage: "/home_card_feedme_dark.jpg",
+      classes: "bg-[#FCEAE1] border-[#F4C1B9] dark:bg-[#1A1212] dark:border-[#4A2024]",
+      innerBorder: "border-[#E8C2BA]/80 dark:border-[#52292E]/70",
+      titleColor: "text-[#7C1A22] dark:text-[#FFAAA6]",
+      subColor: "text-[#634838] dark:text-[#D5BCAD]",
+      imgClass: "max-w-[155px] sm:max-w-[175px]",
+      lightImage: "/sandwich-removebg-preview.png",
+      darkImage: "/sandwich-removebg-preview.png",
       href: "/smol-menu?category=All-Day+Bites",
+      isCustomGraphic: true,
     },
     {
       id: "coffee-first",
       title: "COFFEE FIRST",
       subtitle: "But make it strong",
       classes: "bg-[#EEF6F4] border-[#CCE3DE] dark:bg-[#131C1A] dark:border-[#1E3A34]",
-      lightImage: "/home_card_coffee_hd.png",
-      darkImage: "/home_card_coffee_dark.jpg",
+      innerBorder: "border-[#B8DBD2]/80 dark:border-[#1E3A34]/70",
+      titleColor: "text-[#154035] dark:text-[#A3E0D2]",
+      subColor: "text-[#3E544E] dark:text-[#BCE6DC]",
+      imgClass: "max-w-[138px] sm:max-w-[155px]",
+      lightImage: "/coffe-removebg-preview.png",
+      darkImage: "/coffe-removebg-preview.png",
       href: "/smol-menu?category=Signature+Coffees",
+      isCustomGraphic: true,
     },
     {
       id: "chai-scene",
       title: "CHAI SCENE",
       subtitle: "Spiced & soothing",
       classes: "bg-[#FDF7E7] border-[#F6E2B3] dark:bg-[#1C1510] dark:border-[#3E2B1A]",
-      lightImage: "/home_card_chai_hd.png",
-      darkImage: "/home_card_chai_dark.jpg",
+      innerBorder: "border-[#E5CCA0]/80 dark:border-[#3E2B1A]/70",
+      titleColor: "text-[#522A08] dark:text-[#F6D096]",
+      subColor: "text-[#5C3E28] dark:text-[#E2C79A]",
+      imgClass: "max-w-[126px] sm:max-w-[142px]",
+      lightImage: "/tea-removebg-preview.png",
+      darkImage: "/tea-removebg-preview.png",
       href: "/smol-menu?category=Chai+%26+Comfort",
+      isCustomGraphic: true,
     },
     {
       id: "something-light",
       title: "SOMETHING LIGHT",
       subtitle: "Fresh & easy",
       classes: "bg-[#F1F8F2] border-[#D3E5D4] dark:bg-[#121B14] dark:border-[#1F3324]",
-      lightImage: "/home_card_light_hd.png",
-      darkImage: "/home_card_light_dark.jpg",
+      innerBorder: "border-[#C2DFC4]/80 dark:border-[#1F3324]/70",
+      titleColor: "text-[#233E2B] dark:text-[#A7D9B1]",
+      subColor: "text-[#3C5441] dark:text-[#C5DEC9]",
+      imgClass: "max-w-[142px] sm:max-w-[160px]",
+      lightImage: "/salad-removebg-preview.png",
+      darkImage: "/salad-removebg-preview.png",
       href: "/smol-menu?category=Fresh+Bakes",
+      isCustomGraphic: true,
     },
   ];
 
@@ -138,54 +158,83 @@ export const CustomerHomeClientView: React.FC<CustomerHomeClientProps> = ({
       </header>
 
       {/* Main Home Container */}
-      <main className="mx-auto max-w-md px-4 pt-3.5 space-y-4">
+      <main className="mx-auto max-w-md px-3.5 sm:px-4 pt-2 space-y-2.5 sm:space-y-3 pb-6">
         {/* Editorial Greeting */}
-        <div className="text-center space-y-0.5 pt-1">
-          <div className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full bg-[#B72E35]/10 dark:bg-[#FF5B52]/15 text-[#B72E35] dark:text-[#FF5B52] text-[11px] font-mono font-bold tracking-wider mb-0.5">
+        <div className="text-center space-y-0.5 pt-0.5">
+          <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-[#B72E35]/10 dark:bg-[#FF5B52]/15 text-[#B72E35] dark:text-[#FF5B52] text-[10px] sm:text-[11px] font-mono font-bold tracking-wider mb-0.5">
             <span>🪑 {activeTable ? `Table ${activeTable}` : "Dine-in"}</span>
             <span className="opacity-40">•</span>
             <span>{locationName}</span>
           </div>
-          <h2 className="font-serif text-[22px] sm:text-2xl font-bold text-[#241F1C] dark:text-[#FAF4EB] tracking-tight">
+          <h2 className="font-serif text-lg sm:text-xl font-bold text-[#241F1C] dark:text-[#FAF4EB] tracking-tight leading-tight">
             {getGreeting()}{currentGuestName ? `, ${currentGuestName}` : ""}
           </h2>
-          <p className="font-serif italic text-sm text-[#725039] dark:text-[#C9AE8B]">
+          <p className="font-serif italic text-xs sm:text-sm text-[#725039] dark:text-[#C9AE8B]">
             What’re we feeling today?
           </p>
         </div>
 
-        {/* 2x2 Arched Mood Cards Grid */}
-        <div className="grid grid-cols-2 gap-3 pt-1">
+        {/* 2x2 Arched Mood Cards Grid (Compact first-fold layout) */}
+        <div className="grid grid-cols-2 gap-2 sm:gap-2.5 pt-0.5">
           {moodCards.map((card) => (
             <Link
               key={card.id}
               href={card.href}
-              className={`group relative flex flex-col items-center overflow-hidden rounded-t-[5.5rem] rounded-b-[1.75rem] border transition-all duration-300 hover:shadow-md hover:-translate-y-0.5 active:scale-[0.98] shadow-xs ${card.classes}`}
+              className={`group relative flex flex-col items-center justify-between overflow-hidden rounded-t-[3.75rem] sm:rounded-t-[4.5rem] rounded-b-[1.25rem] sm:rounded-b-[1.5rem] border transition-all duration-300 hover:shadow-md hover:-translate-y-0.5 active:scale-[0.98] shadow-xs ${card.classes}`}
             >
-              <div className="relative w-full aspect-[2/3] max-h-[220px]">
-                {/* Light Mode Card Image */}
-                <Image
-                  src={card.lightImage}
-                  alt={card.title}
-                  fill
-                  className="object-cover transition-transform duration-300 group-hover:scale-102 dark:hidden"
-                  priority
-                />
-                {/* Dark Mode Card Image */}
-                <Image
-                  src={card.darkImage}
-                  alt={card.title}
-                  fill
-                  className="object-cover transition-transform duration-300 group-hover:scale-102 hidden dark:block"
-                  priority
-                />
-              </div>
+              {"isCustomGraphic" in card && card.isCustomGraphic ? (
+                <div className="relative w-full aspect-[1/1.24] sm:aspect-[1/1.28] max-h-[185px] sm:max-h-[210px] p-0.5 sm:p-1 select-none">
+                  {/* Inner Decorative Arched Frame Border matching original design */}
+                  <div className={`w-full h-full rounded-t-[3.45rem] sm:rounded-t-[4.2rem] rounded-b-[1rem] sm:rounded-b-[1.25rem] border ${card.innerBorder} flex flex-col justify-between items-center pt-2 sm:pt-2.5 pb-1 sm:pb-1.5 px-1.5 bg-transparent`}>
+                    {/* Top Typography */}
+                    <div className="text-center pt-0.5">
+                      <h3 className={`font-serif font-bold text-[13.5px] sm:text-[15.5px] ${card.titleColor} tracking-wide uppercase leading-none`}>
+                        {card.title}
+                      </h3>
+                      <p className={`font-serif italic text-[11px] sm:text-[12.5px] ${card.subColor} mt-0.5 font-medium leading-tight`}>
+                        {card.subtitle}
+                      </p>
+                    </div>
+
+                    {/* Centered Illustration (Prominently Enlarged) */}
+                    <div className="relative w-full flex-1 flex items-center justify-center -mb-1 px-0.5">
+                      <Image
+                        src={card.lightImage}
+                        alt={card.title}
+                        width={240}
+                        height={170}
+                        className={`w-full ${card.imgClass || "max-w-[140px]"} max-h-[96px] sm:max-h-[115px] object-contain transition-transform duration-300 group-hover:scale-105 select-none pointer-events-none drop-shadow-[0_6px_12px_rgba(0,0,0,0.12)]`}
+                        priority
+                      />
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="relative w-full aspect-[1/1.24] sm:aspect-[1/1.28] max-h-[185px] sm:max-h-[210px]">
+                  {/* Light Mode Card Image */}
+                  <Image
+                    src={card.lightImage}
+                    alt={card.title}
+                    fill
+                    className="object-cover transition-transform duration-300 group-hover:scale-102 dark:hidden"
+                    priority
+                  />
+                  {/* Dark Mode Card Image */}
+                  <Image
+                    src={card.darkImage}
+                    alt={card.title}
+                    fill
+                    className="object-cover transition-transform duration-300 group-hover:scale-102 hidden dark:block"
+                    priority
+                  />
+                </div>
+              )}
             </Link>
           ))}
         </div>
 
         {/* Today's Blackboard Card (Pure Code Component) */}
-        <div className="pt-2 pb-6">
+        <div className="pt-1 pb-4">
           <TodayBlackboardCard
             title="Today's Blackboard"
             headline="Jaggery Sea-Salt Latte"

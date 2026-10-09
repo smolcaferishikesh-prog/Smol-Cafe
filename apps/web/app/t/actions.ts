@@ -9,8 +9,9 @@ import {
   getTableSessionCookie,
   type TableSessionData,
 } from "@/lib/session";
-import type { TableQrToken, DiningTable, TableSession } from "@smol-cafe/db";
 import { TABLE_ZONES_CONFIG } from "@/lib/table-tag";
+import { broadcastSyncEvent } from "@/lib/sync-events";
+import type { DiningTable, TableQrToken, TableSession } from "@smol-cafe/db";
 
 export interface ResolveQrResult {
   success: boolean;
@@ -24,6 +25,38 @@ export interface ResolveQrResult {
  */
 function hashToken(rawToken: string): string {
   return crypto.createHash("sha256").update(rawToken).digest("hex");
+}
+
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function isUuid(str?: string | null): boolean {
+  return Boolean(str && UUID_REGEX.test(str));
+}
+
+async function getDefaultLocationId(supabase: ReturnType<typeof createAdminClient>): Promise<string> {
+  let locationId: string | null = (globalThis as unknown as { __SMOL_DEFAULT_LOCATION_ID__?: string }).__SMOL_DEFAULT_LOCATION_ID__ || null;
+  if (locationId && isUuid(locationId)) {
+    return locationId;
+  }
+  try {
+    const { data: loc } = await supabase.from("locations").select("id").limit(1).maybeSingle();
+    if (loc?.id && isUuid(loc.id)) {
+      (globalThis as unknown as { __SMOL_DEFAULT_LOCATION_ID__?: string }).__SMOL_DEFAULT_LOCATION_ID__ = loc.id;
+      return loc.id;
+    }
+    const { data: newLoc } = await supabase
+      .from("locations")
+      .insert({ name: "Smol Café · Rishikesh", timezone: "Asia/Kolkata" })
+      .select("id")
+      .single();
+    if (newLoc?.id && isUuid(newLoc.id)) {
+      (globalThis as unknown as { __SMOL_DEFAULT_LOCATION_ID__?: string }).__SMOL_DEFAULT_LOCATION_ID__ = newLoc.id;
+      return newLoc.id;
+    }
+  } catch (e) {
+    console.warn("Could not resolve location UUID:", e);
+  }
+  return "00000000-0000-0000-0000-000000000001";
 }
 
 /**
@@ -112,16 +145,16 @@ export async function resolveQrToken(
       }
     }
 
-    // Fallback 1: match table number directly or resolve table by label (padded and unpadded) or id
+    // Fallback 1: match table number directly or resolve table by label (padded and unpadded)
     if (!diningTable && (standardTableLabel || plainToken)) {
       const targetLabel = standardTableLabel || plainToken;
-      const targetId = `tbl_${standardTableLabel || plainToken}`;
-      const { data: tableByLabel } = await supabase
-        .from("dining_tables")
-        .select("*")
-        .or(`label.eq.${targetLabel},label.eq.${rawNumberLabel || targetLabel},id.eq.${targetId}`)
-        .limit(1)
-        .maybeSingle();
+      let query = supabase.from("dining_tables").select("*");
+      if (rawNumberLabel && rawNumberLabel !== targetLabel) {
+        query = query.or(`label.eq.${targetLabel},label.eq.${rawNumberLabel}`);
+      } else {
+        query = query.eq("label", targetLabel);
+      }
+      const { data: tableByLabel } = await query.limit(1).maybeSingle();
 
       if (tableByLabel) {
         diningTable = tableByLabel as unknown as DiningTable;
@@ -134,22 +167,44 @@ export async function resolveQrToken(
         zone: "Café",
         capacity: 4,
       };
-      const now = new Date().toISOString();
-      const provisionedTable: DiningTable = {
-        id: `tbl_${standardTableLabel}`,
-        location_id: "loc_smol_main",
-        label: standardTableLabel,
-        seats: tableConfig.capacity,
-        active: true,
-        created_at: now,
-        updated_at: now,
-      };
+      const validLocationId = await getDefaultLocationId(supabase);
       try {
-        await supabase.from("dining_tables").upsert(provisionedTable);
+        const { data: insertedTable } = await supabase
+          .from("dining_tables")
+          .insert({
+            location_id: validLocationId,
+            label: standardTableLabel,
+            seats: tableConfig.capacity,
+            active: true,
+          })
+          .select()
+          .maybeSingle();
+
+        if (insertedTable) {
+          diningTable = insertedTable as unknown as DiningTable;
+          // Also create standard QR token
+          await supabase.from("table_qr_tokens").insert({
+            table_id: insertedTable.id,
+            token_hash: `table-${standardTableLabel}`,
+            version: 1,
+          });
+        }
       } catch (upsertErr) {
-        console.warn("Could not upsert dining table:", upsertErr);
+        console.warn("Could not insert dining table:", upsertErr);
       }
-      diningTable = provisionedTable;
+
+      if (!diningTable) {
+        const now = new Date().toISOString();
+        diningTable = {
+          id: `tbl_${standardTableLabel}`,
+          location_id: validLocationId,
+          label: standardTableLabel,
+          seats: tableConfig.capacity,
+          active: true,
+          created_at: now,
+          updated_at: now,
+        };
+      }
     }
 
     if (!diningTable) {
@@ -176,13 +231,25 @@ export async function resolveQrToken(
     }
 
     // Fetch location name
-    const { data: location } = await supabase
-      .from("locations")
-      .select("name")
-      .eq("id", diningTable.location_id)
-      .single();
+    const validLocationId = isUuid(diningTable.location_id)
+      ? diningTable.location_id
+      : await getDefaultLocationId(supabase);
 
-    const locationName = (location as { name: string } | null)?.name || "Smol Café";
+    let locationName = "Smol Café";
+    if (isUuid(validLocationId)) {
+      try {
+        const { data: location } = await supabase
+          .from("locations")
+          .select("name")
+          .eq("id", validLocationId)
+          .maybeSingle();
+        if (location?.name) {
+          locationName = location.name;
+        }
+      } catch (err) {
+        console.warn("Could not fetch location name:", err);
+      }
+    }
 
     // 3. Find existing OPEN table session
     let { data: existingSession } = await supabase
@@ -221,11 +288,29 @@ export async function resolveQrToken(
     } else {
       // Create new OPEN table session
       const now = new Date().toISOString();
+      const sessionLocationId = isUuid(diningTable.location_id)
+        ? diningTable.location_id
+        : await getDefaultLocationId(supabase);
+
+      let dbTableId = diningTable.id;
+      if (!isUuid(dbTableId)) {
+        const { data: realTable } = await supabase
+          .from("dining_tables")
+          .select("id")
+          .eq("label", diningTable.label)
+          .limit(1)
+          .maybeSingle();
+        if (realTable?.id && isUuid(realTable.id)) {
+          dbTableId = realTable.id;
+          diningTable.id = realTable.id;
+        }
+      }
+
       const { data: newSession, error: insertError } = await supabase
         .from("table_sessions")
         .insert({
-          location_id: diningTable.location_id,
-          table_id: diningTable.id,
+          location_id: sessionLocationId,
+          table_id: dbTableId,
           status: "OPEN",
           opened_at: now,
           last_activity_at: now,
@@ -460,6 +545,45 @@ export async function fetchActiveTablesAction(): Promise<ClientTableInfo[]> {
       const info = TABLE_ZONES_CONFIG[label] || { zone: "Café", capacity: 2 };
       return { label, zone: info.zone, capacity: info.capacity, active: true };
     });
+  }
+}
+
+/**
+ * Server Action: Guest requests staff assistance to their table.
+ * Broadcasts a real-time event to Cashier / Floor management.
+ */
+export async function requestStaffAssistanceAction(
+  tableLabel: string,
+  guestName?: string,
+  reason?: string
+): Promise<{ success: boolean; message: string }> {
+  try {
+    const cleanLabel = (tableLabel || "01").replace(/^(table|t)[-\s_]*/i, "").trim().padStart(2, "0");
+
+    // Broadcast instant sync event for cashier & staff dashboard
+    broadcastSyncEvent({
+      type: "SETTINGS_UPDATED",
+      tableLabel: cleanLabel,
+      timestamp: Date.now(),
+      metadata: {
+        type: "STAFF_HELP_REQUEST",
+        tableLabel: cleanLabel,
+        guestName: guestName || "Guest",
+        reason: reason || "General assistance",
+        requestedAt: new Date().toISOString(),
+      },
+    });
+
+    return {
+      success: true,
+      message: "Staff notified. Someone will come over.",
+    };
+  } catch (error) {
+    console.error("requestStaffAssistanceAction error:", error);
+    return {
+      success: false,
+      message: "We couldn't send the request. Please ask at the counter.",
+    };
   }
 }
 
