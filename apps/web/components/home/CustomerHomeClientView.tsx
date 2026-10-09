@@ -95,9 +95,14 @@ export const CustomerHomeClientView: React.FC<CustomerHomeClientProps> = ({
       title: "SOMETHING LIGHT",
       subtitle: "Fresh & easy",
       classes: "bg-[#F1F8F2] border-[#D3E5D4] dark:bg-[#121B14] dark:border-[#1F3324]",
-      lightImage: "/home_card_light_hd.png",
-      darkImage: "/home_card_light_dark.jpg",
+      innerBorder: "border-[#C2DFC4]/80 dark:border-[#1F3324]/70",
+      titleColor: "text-[#233E2B] dark:text-[#A7D9B1]",
+      subColor: "text-[#3C5441] dark:text-[#C5DEC9]",
+      imgClass: "max-w-[135px] sm:max-w-[150px]",
+      lightImage: "/salad-removebg-preview.png",
+      darkImage: "/salad-removebg-preview.png",
       href: "/smol-menu?category=Fresh+Bakes",
+      isCustomGraphic: true,
     },
   ];
 
