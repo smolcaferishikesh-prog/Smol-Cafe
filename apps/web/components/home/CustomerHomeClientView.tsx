@@ -53,6 +53,10 @@ export const CustomerHomeClientView: React.FC<CustomerHomeClientProps> = ({
       title: "FEED ME",
       subtitle: "I’m hungry",
       classes: "bg-[#FCEAE1] border-[#F4C1B9] dark:bg-[#1A1212] dark:border-[#4A2024]",
+      innerBorder: "border-[#E8C2BA]/80 dark:border-[#52292E]/70",
+      titleColor: "text-[#7C1A22] dark:text-[#FFAAA6]",
+      subColor: "text-[#634838] dark:text-[#D5BCAD]",
+      imgClass: "max-w-[150px] sm:max-w-[165px]",
       lightImage: "/sandwich-removebg-preview.png",
       darkImage: "/sandwich-removebg-preview.png",
       href: "/smol-menu?category=All-Day+Bites",
@@ -63,9 +67,14 @@ export const CustomerHomeClientView: React.FC<CustomerHomeClientProps> = ({
       title: "COFFEE FIRST",
       subtitle: "But make it strong",
       classes: "bg-[#EEF6F4] border-[#CCE3DE] dark:bg-[#131C1A] dark:border-[#1E3A34]",
-      lightImage: "/home_card_coffee_hd.png",
-      darkImage: "/home_card_coffee_dark.jpg",
+      innerBorder: "border-[#B8DBD2]/80 dark:border-[#1E3A34]/70",
+      titleColor: "text-[#154035] dark:text-[#A3E0D2]",
+      subColor: "text-[#3E544E] dark:text-[#BCE6DC]",
+      imgClass: "max-w-[130px] sm:max-w-[145px]",
+      lightImage: "/coffe-removebg-preview.png",
+      darkImage: "/coffe-removebg-preview.png",
       href: "/smol-menu?category=Signature+Coffees",
+      isCustomGraphic: true,
     },
     {
       id: "chai-scene",
@@ -166,25 +175,25 @@ export const CustomerHomeClientView: React.FC<CustomerHomeClientProps> = ({
               {"isCustomGraphic" in card && card.isCustomGraphic ? (
                 <div className="relative w-full aspect-[2/3] max-h-[220px] p-1 select-none">
                   {/* Inner Decorative Arched Frame Border matching original design */}
-                  <div className="w-full h-full rounded-t-[5.1rem] rounded-b-[1.45rem] border border-[#E8C2BA]/80 dark:border-[#52292E]/70 flex flex-col justify-between items-center pt-3.5 pb-2 px-2 bg-transparent">
+                  <div className={`w-full h-full rounded-t-[5.1rem] rounded-b-[1.45rem] border ${card.innerBorder} flex flex-col justify-between items-center pt-3.5 pb-2 px-2 bg-transparent`}>
                     {/* Top Typography */}
                     <div className="text-center pt-0.5">
-                      <h3 className="font-serif font-bold text-[18px] sm:text-[19px] text-[#7C1A22] dark:text-[#FFAAA6] tracking-wide uppercase leading-none">
+                      <h3 className={`font-serif font-bold text-[18px] sm:text-[19px] ${card.titleColor} tracking-wide uppercase leading-none`}>
                         {card.title}
                       </h3>
-                      <p className="font-serif italic text-[13.5px] sm:text-[14.5px] text-[#634838] dark:text-[#D5BCAD] mt-1 font-medium">
+                      <p className={`font-serif italic text-[13.5px] sm:text-[14.5px] ${card.subColor} mt-1 font-medium`}>
                         {card.subtitle}
                       </p>
                     </div>
 
-                    {/* Centered Sandwich Illustration on Plate */}
+                    {/* Centered Illustration */}
                     <div className="relative w-full flex-1 flex items-center justify-center -mb-0.5">
                       <Image
                         src={card.lightImage}
                         alt={card.title}
                         width={220}
                         height={150}
-                        className="w-full max-w-[150px] sm:max-w-[165px] h-auto object-contain transition-transform duration-300 group-hover:scale-105 select-none pointer-events-none drop-shadow-[0_4px_8px_rgba(0,0,0,0.08)]"
+                        className={`w-full ${card.imgClass || "max-w-[145px]"} h-auto object-contain transition-transform duration-300 group-hover:scale-105 select-none pointer-events-none drop-shadow-[0_4px_8px_rgba(0,0,0,0.08)]`}
                         priority
                       />
                     </div>
