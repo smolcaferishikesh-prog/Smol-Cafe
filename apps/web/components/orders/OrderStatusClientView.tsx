@@ -15,6 +15,7 @@ import { JsonTagInspectorModal } from "@/components/table/JsonTagInspectorModal"
 import { UpiPaymentDrawer } from "@/components/payment/UpiPaymentDrawer";
 import { ThemeToggle } from "@/components/common/ThemeToggle";
 import { PastBillsModal } from "./PastBillsModal";
+import { CallStaffHelpModal } from "@/components/common/CallStaffHelpModal";
 import { fetchActiveTablesAction } from "@/app/t/actions";
 import { soundManager } from "@/lib/sound";
 
@@ -63,6 +64,7 @@ export const OrderStatusClientView: React.FC<OrderStatusClientViewProps> = ({
   const [isJsonInspectorOpen, setIsJsonInspectorOpen] = useState(false);
   const [isUpiDrawerOpen, setIsUpiDrawerOpen] = useState(false);
   const [isPastBillsOpen, setIsPastBillsOpen] = useState(false);
+  const [isStaffHelpOpen, setIsStaffHelpOpen] = useState(false);
   const [isNotifyEnabled, setIsNotifyEnabled] = useState(false);
   const [showNotifyToast, setShowNotifyToast] = useState(false);
 
@@ -365,6 +367,16 @@ export const OrderStatusClientView: React.FC<OrderStatusClientViewProps> = ({
           </div>
 
           <div className="flex items-center gap-1.5 pt-1 shrink-0">
+            <button
+              type="button"
+              onClick={() => setIsStaffHelpOpen(true)}
+              className="inline-flex items-center gap-1 rounded-full bg-[#B72E35]/10 dark:bg-[#B72E35]/20 border border-[#B72E35]/30 px-2.5 py-1 text-[10px] font-mono font-bold text-[#B72E35] dark:text-[#FF6B6B] hover:bg-[#B72E35]/20 transition shadow-xs cursor-pointer"
+              title="Call Staff / Ask a human"
+            >
+              <Bell className="h-3 w-3 text-[#B72E35] dark:text-[#FF6B6B]" />
+              <span>Call Staff</span>
+            </button>
+
             {orders.length > 0 && (
               <button
                 type="button"
@@ -735,6 +747,13 @@ export const OrderStatusClientView: React.FC<OrderStatusClientViewProps> = ({
           }}
         />
       )}
+      {/* Call Staff / Help Modal */}
+      <CallStaffHelpModal
+        isOpen={isStaffHelpOpen}
+        onClose={() => setIsStaffHelpOpen(false)}
+        tableLabel={tableLabel}
+        guestName={currentGuestName}
+      />
     </div>
   );
 };

@@ -9,8 +9,9 @@ import {
   getTableSessionCookie,
   type TableSessionData,
 } from "@/lib/session";
-import type { TableQrToken, DiningTable, TableSession } from "@smol-cafe/db";
 import { TABLE_ZONES_CONFIG } from "@/lib/table-tag";
+import { broadcastSyncEvent } from "@/lib/sync-events";
+import type { DiningTable, TableQrToken, TableSession } from "@smol-cafe/db";
 
 export interface ResolveQrResult {
   success: boolean;
@@ -544,6 +545,45 @@ export async function fetchActiveTablesAction(): Promise<ClientTableInfo[]> {
       const info = TABLE_ZONES_CONFIG[label] || { zone: "Café", capacity: 2 };
       return { label, zone: info.zone, capacity: info.capacity, active: true };
     });
+  }
+}
+
+/**
+ * Server Action: Guest requests staff assistance to their table.
+ * Broadcasts a real-time event to Cashier / Floor management.
+ */
+export async function requestStaffAssistanceAction(
+  tableLabel: string,
+  guestName?: string,
+  reason?: string
+): Promise<{ success: boolean; message: string }> {
+  try {
+    const cleanLabel = (tableLabel || "01").replace(/^(table|t)[-\s_]*/i, "").trim().padStart(2, "0");
+
+    // Broadcast instant sync event for cashier & staff dashboard
+    broadcastSyncEvent({
+      type: "SETTINGS_UPDATED",
+      tableLabel: cleanLabel,
+      timestamp: Date.now(),
+      metadata: {
+        type: "STAFF_HELP_REQUEST",
+        tableLabel: cleanLabel,
+        guestName: guestName || "Guest",
+        reason: reason || "General assistance",
+        requestedAt: new Date().toISOString(),
+      },
+    });
+
+    return {
+      success: true,
+      message: "Staff notified. Someone will come over.",
+    };
+  } catch (error) {
+    console.error("requestStaffAssistanceAction error:", error);
+    return {
+      success: false,
+      message: "We couldn't send the request. Please ask at the counter.",
+    };
   }
 }
 
