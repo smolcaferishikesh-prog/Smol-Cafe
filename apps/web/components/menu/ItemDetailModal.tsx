@@ -205,7 +205,10 @@ export const ItemDetailModal: React.FC<ItemDetailModalProps> = ({
     tagBadge = "SINGLE ORIGIN";
   } else if (item.metadata?.subcategory) {
     tagBadge = item.metadata.subcategory.toUpperCase();
-  } else if (item.metadata?.spice) {
+  } else if (
+    item.metadata?.spice &&
+    !["none", "no", "0", "n/a", "mild", "—", "-"].includes(item.metadata.spice.toLowerCase().trim())
+  ) {
     tagBadge = `${item.metadata.spice.toUpperCase()} SPICE`;
   }
 

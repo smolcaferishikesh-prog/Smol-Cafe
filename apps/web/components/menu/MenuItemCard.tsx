@@ -25,7 +25,19 @@ export const MenuItemCard: React.FC<MenuItemCardProps> = ({ item, onOpenDetail }
       (item.metadata?.core_ingredients || "").toLowerCase().includes("egg"));
   const isVegan = dietary.includes("vegan");
   const isVeg = !isNonVeg && !isEgg && !isVegan;
-  const spiceLevel = item.metadata?.spice || "";
+  const rawSpice = (item.metadata?.spice || "").trim();
+  const spiceLower = rawSpice.toLowerCase();
+  const isMeaningfulSpice = Boolean(
+    rawSpice &&
+    spiceLower !== "none" &&
+    spiceLower !== "no" &&
+    spiceLower !== "0" &&
+    spiceLower !== "not spicy" &&
+    spiceLower !== "n/a" &&
+    spiceLower !== "mild" &&
+    spiceLower !== "—" &&
+    spiceLower !== "-"
+  );
   const pairing = item.metadata?.best_pairing || "";
   const foodImageUrl = getFoodImage(item.name, item.imageUrl);
   const hasImage = Boolean(SHOW_MENU_IMAGES && foodImageUrl && !imageError);
@@ -130,10 +142,10 @@ export const MenuItemCard: React.FC<MenuItemCardProps> = ({ item, onOpenDetail }
               <Sparkles className="h-2.5 w-2.5" /> Chef&apos;s Pick
             </span>
           )}
-          {spiceLevel && (
+          {isMeaningfulSpice && (
             <span className="flex items-center gap-0.5 font-serif italic text-[11px] text-[#725039] dark:text-[#C9AE8B]">
               <Flame className="h-3 w-3 text-red-500 fill-current" />
-              <span>{spiceLevel}</span>
+              <span>{rawSpice}</span>
             </span>
           )}
         </div>
