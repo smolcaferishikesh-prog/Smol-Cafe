@@ -158,40 +158,40 @@ export const CustomerHomeClientView: React.FC<CustomerHomeClientProps> = ({
       </header>
 
       {/* Main Home Container */}
-      <main className="mx-auto max-w-md px-4 pt-3.5 space-y-4">
+      <main className="mx-auto max-w-md px-3.5 sm:px-4 pt-2 space-y-2.5 sm:space-y-3 pb-6">
         {/* Editorial Greeting */}
-        <div className="text-center space-y-0.5 pt-1">
-          <div className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full bg-[#B72E35]/10 dark:bg-[#FF5B52]/15 text-[#B72E35] dark:text-[#FF5B52] text-[11px] font-mono font-bold tracking-wider mb-0.5">
+        <div className="text-center space-y-0.5 pt-0.5">
+          <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-[#B72E35]/10 dark:bg-[#FF5B52]/15 text-[#B72E35] dark:text-[#FF5B52] text-[10px] sm:text-[11px] font-mono font-bold tracking-wider mb-0.5">
             <span>🪑 {activeTable ? `Table ${activeTable}` : "Dine-in"}</span>
             <span className="opacity-40">•</span>
             <span>{locationName}</span>
           </div>
-          <h2 className="font-serif text-[22px] sm:text-2xl font-bold text-[#241F1C] dark:text-[#FAF4EB] tracking-tight">
+          <h2 className="font-serif text-lg sm:text-xl font-bold text-[#241F1C] dark:text-[#FAF4EB] tracking-tight leading-tight">
             {getGreeting()}{currentGuestName ? `, ${currentGuestName}` : ""}
           </h2>
-          <p className="font-serif italic text-sm text-[#725039] dark:text-[#C9AE8B]">
+          <p className="font-serif italic text-xs sm:text-sm text-[#725039] dark:text-[#C9AE8B]">
             What’re we feeling today?
           </p>
         </div>
 
-        {/* 2x2 Arched Mood Cards Grid */}
-        <div className="grid grid-cols-2 gap-3 pt-1">
+        {/* 2x2 Arched Mood Cards Grid (Compact first-fold layout) */}
+        <div className="grid grid-cols-2 gap-2 sm:gap-2.5 pt-0.5">
           {moodCards.map((card) => (
             <Link
               key={card.id}
               href={card.href}
-              className={`group relative flex flex-col items-center justify-between overflow-hidden rounded-t-[5.5rem] rounded-b-[1.75rem] border transition-all duration-300 hover:shadow-md hover:-translate-y-0.5 active:scale-[0.98] shadow-xs ${card.classes}`}
+              className={`group relative flex flex-col items-center justify-between overflow-hidden rounded-t-[3.5rem] sm:rounded-t-[4.5rem] rounded-b-[1.25rem] sm:rounded-b-[1.5rem] border transition-all duration-300 hover:shadow-md hover:-translate-y-0.5 active:scale-[0.98] shadow-xs ${card.classes}`}
             >
               {"isCustomGraphic" in card && card.isCustomGraphic ? (
-                <div className="relative w-full aspect-[2/3] max-h-[220px] p-1 select-none">
+                <div className="relative w-full aspect-[1/1.18] sm:aspect-[1/1.22] max-h-[160px] sm:max-h-[185px] p-0.5 sm:p-1 select-none">
                   {/* Inner Decorative Arched Frame Border matching original design */}
-                  <div className={`w-full h-full rounded-t-[5.1rem] rounded-b-[1.45rem] border ${card.innerBorder} flex flex-col justify-between items-center pt-3.5 pb-2 px-2 bg-transparent`}>
+                  <div className={`w-full h-full rounded-t-[3.25rem] sm:rounded-t-[4.2rem] rounded-b-[1rem] sm:rounded-b-[1.25rem] border ${card.innerBorder} flex flex-col justify-between items-center pt-2 sm:pt-2.5 pb-1 sm:pb-1.5 px-1.5 bg-transparent`}>
                     {/* Top Typography */}
                     <div className="text-center pt-0.5">
-                      <h3 className={`font-serif font-bold text-[18px] sm:text-[19px] ${card.titleColor} tracking-wide uppercase leading-none`}>
+                      <h3 className={`font-serif font-bold text-[13.5px] sm:text-[15.5px] ${card.titleColor} tracking-wide uppercase leading-none`}>
                         {card.title}
                       </h3>
-                      <p className={`font-serif italic text-[13.5px] sm:text-[14.5px] ${card.subColor} mt-1 font-medium`}>
+                      <p className={`font-serif italic text-[11px] sm:text-[12.5px] ${card.subColor} mt-0.5 font-medium leading-tight`}>
                         {card.subtitle}
                       </p>
                     </div>
@@ -201,16 +201,16 @@ export const CustomerHomeClientView: React.FC<CustomerHomeClientProps> = ({
                       <Image
                         src={card.lightImage}
                         alt={card.title}
-                        width={220}
-                        height={150}
-                        className={`w-full ${card.imgClass || "max-w-[145px]"} h-auto object-contain transition-transform duration-300 group-hover:scale-105 select-none pointer-events-none drop-shadow-[0_4px_8px_rgba(0,0,0,0.08)]`}
+                        width={180}
+                        height={120}
+                        className={`w-full max-w-[80px] sm:max-w-[105px] max-h-[64px] sm:max-h-[82px] object-contain transition-transform duration-300 group-hover:scale-105 select-none pointer-events-none drop-shadow-[0_4px_8px_rgba(0,0,0,0.08)]`}
                         priority
                       />
                     </div>
                   </div>
                 </div>
               ) : (
-                <div className="relative w-full aspect-[2/3] max-h-[220px]">
+                <div className="relative w-full aspect-[1/1.18] sm:aspect-[1/1.22] max-h-[160px] sm:max-h-[185px]">
                   {/* Light Mode Card Image */}
                   <Image
                     src={card.lightImage}
@@ -234,7 +234,7 @@ export const CustomerHomeClientView: React.FC<CustomerHomeClientProps> = ({
         </div>
 
         {/* Today's Blackboard Card (Pure Code Component) */}
-        <div className="pt-2 pb-6">
+        <div className="pt-1 pb-4">
           <TodayBlackboardCard
             title="Today's Blackboard"
             headline="Jaggery Sea-Salt Latte"
