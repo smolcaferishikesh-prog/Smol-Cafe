@@ -52,7 +52,7 @@ export const CustomerHomeClientView: React.FC<CustomerHomeClientProps> = ({
       id: "feed-me",
       title: "FEED ME",
       subtitle: "I’m hungry",
-      classes: "bg-[#FAF2ED] border-[#F3C5C5] dark:bg-[#1A1414] dark:border-[#421D20]",
+      classes: "bg-[#FDF2F0] border-[#F3C5C5] dark:bg-[#1A1414] dark:border-[#421D20]",
       lightImage: "/sandwich-removebg-preview.png",
       darkImage: "/sandwich-removebg-preview.png",
       href: "/smol-menu?category=All-Day+Bites",
