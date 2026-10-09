@@ -1024,105 +1024,41 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ tableLabel, guestName = 
                   ))}
                 </div>
 
-                {/* Smol Club Rewards Points Bar */}
-                <div className="px-3 pt-2 pb-1">
-                  <div className="rounded-[1.25rem] border border-[#B72E35]/30 dark:border-white/10 bg-[#FAF4EB] dark:bg-[#1A1513] p-3 shadow-xs">
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <div className="w-8 h-8 rounded-full bg-[#B72E35]/15 flex items-center justify-center shrink-0 text-[#B72E35] dark:text-[#F2C84B]">
-                          <Award className="w-4 h-4" />
-                        </div>
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-1.5">
-                            <span className="font-serif font-bold text-[13.5px] text-[#241F1C] dark:text-[#FAF4EB]">
-                              Smol Club Rewards
-                            </span>
-                            <span className="rounded-full bg-[#B72E35] text-white px-2 py-0.2 font-mono text-[9.5px] font-bold">
-                              Coming Soon 🚀
-                            </span>
-                          </div>
-                          <p className="font-mono text-[10.5px] text-[#725039] dark:text-[#C9AE8B] truncate">
-                            Patron Rewards &amp; Cashback launching soon
-                          </p>
-                        </div>
-                      </div>
+                {/* Itemized Bill Breakdown Section inside Arched Card */}
+                <div className="border-t border-[#C9AE8B]/40 dark:border-white/10 bg-[#FAF4EB]/70 dark:bg-[#1A1513]/70 px-4 py-3.5 mt-1">
+                  <div className="space-y-1.5 font-mono text-[13px] text-[#241F1C] dark:text-[#FAF4EB]">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[#725039] dark:text-[#C9AE8B]">Items Total</span>
+                      <span className="font-semibold">₹{itemsTotal}</span>
+                    </div>
 
-                      <span className="shrink-0 px-2.5 py-1.5 rounded-full font-serif text-[11px] font-bold bg-[#EFE7DC] dark:bg-stone-800 text-[#725039] dark:text-[#C9AE8B] border border-[#C9AE8B]/40">
-                        Coming Soon
+                    <div className="flex items-center justify-between text-[#725039] dark:text-[#C9AE8B]">
+                      <span className="flex items-center gap-1">
+                        <span>GST (5%)</span>
+                        <span className="text-[10.5px] text-[#725039]/70 dark:text-[#C9AE8B]/70 font-sans">
+                          (2.5% CGST + 2.5% SGST)
+                        </span>
+                      </span>
+                      <span>₹{taxesAndCharges}</span>
+                    </div>
+                  </div>
+
+                  {/* Dashed Separator */}
+                  <div className="border-t border-dashed border-[#C9AE8B]/60 dark:border-white/15 my-2.5" />
+
+                  {/* Grand Total Row */}
+                  <div className="flex items-baseline justify-between pt-0.5">
+                    <div>
+                      <span className="font-serif font-bold text-[16px] text-[#241F1C] dark:text-[#FAF4EB] block leading-tight">
+                        Total Payable
+                      </span>
+                      <span className="font-mono text-[10.5px] text-[#725039] dark:text-[#C9AE8B]">
+                        Incl. all taxes &amp; services
                       </span>
                     </div>
-
-                    {/* Happy Hour Bonus Notice */}
-                    {slowMultiplier > 1 && (
-                      <div className="mt-2 pt-1.5 border-t border-[#C9AE8B]/20 dark:border-white/5 flex items-center justify-between text-[10.5px] font-mono text-[#B72E35] dark:text-[#F2C84B]">
-                        <span className="flex items-center gap-1">
-                          <Sparkles className="w-3 h-3" />
-                          Slow Period active:
-                        </span>
-                        <span className="font-bold">2× points on this order!</span>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Upsell Card: "Make it a moment?" with Dusty Pool accent & Butter Taxi button */}
-                <div className="p-3">
-                  <div className="rounded-[1.4rem] border border-[#75AFA7]/50 dark:border-white/10 bg-gradient-to-br from-[#E2EBE8] via-[#DAE6E2] to-[#CEDDD8] dark:from-[#251E1B] dark:via-[#201A18] dark:to-[#1C1715] p-3 shadow-xs transition-all">
-                    <h3 className="font-serif font-semibold text-[16px] text-[#241F1C] dark:text-[#FAF4EB] mb-1.5">
-                      Make it a moment?
-                    </h3>
-
-                    <div className="flex items-center justify-between gap-2">
-                      {/* Left: Platter Illustration */}
-                      <div className="shrink-0 -ml-1 flex items-center justify-center">
-                        <Image
-                          src="/conversation_board_clean.png"
-                          alt="Conversation Board"
-                          width={100}
-                          height={64}
-                          className="w-[100px] h-[64px] object-contain select-none pointer-events-none"
-                        />
-                      </div>
-
-                      {/* Center: Title & Description */}
-                      <div className="flex-1 min-w-0 pr-1">
-                        <h4 className="font-serif font-bold text-[13.5px] text-[#241F1C] dark:text-[#FAF4EB] leading-snug truncate">
-                          Conversation Board
-                        </h4>
-                        <p className="font-mono text-[10.5px] text-[#374438] dark:text-[#C9AE8B] leading-tight mt-0.5 line-clamp-2">
-                          A changing sharing board with smashed chickpea dip, crispy chana, toast, potatoes, pickle &amp; seasonal dips.
-                        </p>
-                      </div>
-
-                      {/* Right: Price & Butter Taxi Button */}
-                      <div className="flex flex-col items-end gap-1.5 shrink-0 pl-1">
-                        <div className="flex items-center gap-1 font-serif text-right">
-                          <span className="line-through font-mono text-[11px] text-[#725039]/70 dark:text-[#C9AE8B]/60">
-                            ₹349
-                          </span>
-                          <span className="font-serif font-bold text-[13.5px] text-[#241F1C] dark:text-[#FAF4EB]">
-                            ₹329
-                          </span>
-                        </div>
-
-                        <button
-                          type="button"
-                          onClick={handleAddConversationBoard}
-                          className={`w-9 h-9 rounded-full border border-[#241F1C] dark:border-white/20 flex items-center justify-center transition-all duration-200 active:scale-90 shadow-xs cursor-pointer ${
-                            boardAdded || items.some((i) => i.item.id === "item_35" || i.item.name.toLowerCase().includes("conversation board"))
-                              ? "bg-[#2E5550] text-[#F3E7D3] border-[#241F1C]"
-                              : "bg-[#F2C84B] text-[#241F1C] hover:bg-[#DEB63E]"
-                          }`}
-                          aria-label="Add Conversation Board"
-                        >
-                          {boardAdded || items.some((i) => i.item.id === "item_35" || i.item.name.toLowerCase().includes("conversation board")) ? (
-                            <Check className="w-4 h-4 stroke-[2.5]" />
-                          ) : (
-                            <Plus className="w-4 h-4 stroke-[2.5]" />
-                          )}
-                        </button>
-                      </div>
-                    </div>
+                    <span className="font-serif font-extrabold text-[20px] text-[#B72E35] dark:text-[#F2C84B]">
+                      ₹{grandTotal}
+                    </span>
                   </div>
                 </div>
               </TableArchedCard>
