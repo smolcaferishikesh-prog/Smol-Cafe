@@ -21,7 +21,7 @@ export function TableActionBar({ tableNumber }: TableActionBarProps) {
   };
 
   return (
-    <div className="w-full max-w-sm pt-6 pb-2 text-center">
+    <div className="w-full max-w-sm pt-1 sm:pt-2 pb-1 text-center">
       {/* Toast Notification when Staff is called */}
       {staffNotified && (
         <div className="mb-4 inline-flex items-center gap-2 rounded-full bg-[#B72E35] text-[#F3E7D3] px-4 py-2 text-xs font-mono shadow-lg animate-bounce">
