@@ -387,7 +387,7 @@ export const OrderStatusClientView: React.FC<OrderStatusClientViewProps> = ({
       </header>
 
       {/* Main Content */}
-      <main className="mx-auto max-w-md px-4 pt-4 space-y-5">
+      <main className="mx-auto max-w-md px-4 pt-4 pb-[calc(8rem+env(safe-area-inset-bottom,0px))] space-y-5">
         {/* Arched Hero Status Card (Ultra-Frosted Glassmorphism) */}
         <div className="relative overflow-hidden rounded-t-[5.5rem] rounded-b-3xl border border-white/80 dark:border-white/15 bg-white/60 dark:bg-[#1A1412]/80 backdrop-blur-[24px] backdrop-saturate-[180%] p-6 text-center text-[#241F1C] dark:text-white shadow-[0_20px_45px_rgba(74,46,27,0.09),0_4px_12px_rgba(0,0,0,0.03),inset_0_1.5px_1.5px_rgba(255,255,255,0.95)] dark:shadow-[0_24px_55px_rgba(0,0,0,0.7),inset_0_1.5px_1px_rgba(255,255,255,0.15)] animate-scale-in transition-all duration-300">
           {/* Top Arch Luminous Accent Line */}

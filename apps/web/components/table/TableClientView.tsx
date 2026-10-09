@@ -132,7 +132,7 @@ export const TableClientView: React.FC<TableClientViewProps> = ({
   return (
     <div className="min-h-screen bg-[#F3E7D3] text-[#241F1C] font-sans antialiased flex flex-col justify-between selection:bg-[#B72E35]/20 selection:text-[#B72E35]">
       {/* Mobile-Proportioned Container */}
-      <div className="w-full max-w-[420px] mx-auto px-4 pt-[calc(0.5rem+env(safe-area-inset-top,0px))] pb-4 flex-1 flex flex-col justify-between">
+      <div className="w-full max-w-[420px] mx-auto px-4 pt-[calc(0.5rem+env(safe-area-inset-top,0px))] pb-[calc(7.5rem+env(safe-area-inset-bottom,0px))] flex-1 flex flex-col justify-between">
         {/* Top Header Bar */}
         <header className="flex items-center justify-between py-1 px-1 mb-1">
           {/* Hamburger Menu Icon */}

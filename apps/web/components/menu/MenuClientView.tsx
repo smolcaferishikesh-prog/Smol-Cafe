@@ -592,7 +592,7 @@ const MenuContentInner: React.FC<MenuClientViewProps> = ({
         )}
       </header>
       {/* Main Menu List */}
-      <main className="mx-auto max-w-md px-4 pt-4 space-y-6">
+      <main className="mx-auto max-w-md px-4 pt-4 pb-[calc(11rem+env(safe-area-inset-bottom,0px))] space-y-6">
         {filteredCategories.map((category) => (
           <section key={category.id} id={`category-${category.id}`} className="space-y-2.5">
             {/* Category Section Header */}
