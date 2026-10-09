@@ -56,7 +56,7 @@ export const CustomerHomeClientView: React.FC<CustomerHomeClientProps> = ({
       innerBorder: "border-[#E8C2BA]/80 dark:border-[#52292E]/70",
       titleColor: "text-[#7C1A22] dark:text-[#FFAAA6]",
       subColor: "text-[#634838] dark:text-[#D5BCAD]",
-      imgClass: "max-w-[130px] sm:max-w-[150px]",
+      imgClass: "max-w-[155px] sm:max-w-[175px]",
       lightImage: "/sandwich-removebg-preview.png",
       darkImage: "/sandwich-removebg-preview.png",
       href: "/smol-menu?category=All-Day+Bites",
@@ -70,7 +70,7 @@ export const CustomerHomeClientView: React.FC<CustomerHomeClientProps> = ({
       innerBorder: "border-[#B8DBD2]/80 dark:border-[#1E3A34]/70",
       titleColor: "text-[#154035] dark:text-[#A3E0D2]",
       subColor: "text-[#3E544E] dark:text-[#BCE6DC]",
-      imgClass: "max-w-[115px] sm:max-w-[130px]",
+      imgClass: "max-w-[138px] sm:max-w-[155px]",
       lightImage: "/coffe-removebg-preview.png",
       darkImage: "/coffe-removebg-preview.png",
       href: "/smol-menu?category=Signature+Coffees",
@@ -84,7 +84,7 @@ export const CustomerHomeClientView: React.FC<CustomerHomeClientProps> = ({
       innerBorder: "border-[#E5CCA0]/80 dark:border-[#3E2B1A]/70",
       titleColor: "text-[#522A08] dark:text-[#F6D096]",
       subColor: "text-[#5C3E28] dark:text-[#E2C79A]",
-      imgClass: "max-w-[105px] sm:max-w-[120px]",
+      imgClass: "max-w-[126px] sm:max-w-[142px]",
       lightImage: "/tea-removebg-preview.png",
       darkImage: "/tea-removebg-preview.png",
       href: "/smol-menu?category=Chai+%26+Comfort",
@@ -98,7 +98,7 @@ export const CustomerHomeClientView: React.FC<CustomerHomeClientProps> = ({
       innerBorder: "border-[#C2DFC4]/80 dark:border-[#1F3324]/70",
       titleColor: "text-[#233E2B] dark:text-[#A7D9B1]",
       subColor: "text-[#3C5441] dark:text-[#C5DEC9]",
-      imgClass: "max-w-[120px] sm:max-w-[138px]",
+      imgClass: "max-w-[142px] sm:max-w-[160px]",
       lightImage: "/salad-removebg-preview.png",
       darkImage: "/salad-removebg-preview.png",
       href: "/smol-menu?category=Fresh+Bakes",
@@ -183,9 +183,9 @@ export const CustomerHomeClientView: React.FC<CustomerHomeClientProps> = ({
               className={`group relative flex flex-col items-center justify-between overflow-hidden rounded-t-[3.75rem] sm:rounded-t-[4.5rem] rounded-b-[1.25rem] sm:rounded-b-[1.5rem] border transition-all duration-300 hover:shadow-md hover:-translate-y-0.5 active:scale-[0.98] shadow-xs ${card.classes}`}
             >
               {"isCustomGraphic" in card && card.isCustomGraphic ? (
-                <div className="relative w-full aspect-[1/1.24] sm:aspect-[1/1.28] max-h-[178px] sm:max-h-[200px] p-0.5 sm:p-1 select-none">
+                <div className="relative w-full aspect-[1/1.24] sm:aspect-[1/1.28] max-h-[185px] sm:max-h-[210px] p-0.5 sm:p-1 select-none">
                   {/* Inner Decorative Arched Frame Border matching original design */}
-                  <div className={`w-full h-full rounded-t-[3.45rem] sm:rounded-t-[4.2rem] rounded-b-[1rem] sm:rounded-b-[1.25rem] border ${card.innerBorder} flex flex-col justify-between items-center pt-2 sm:pt-2.5 pb-1.5 sm:pb-2 px-1.5 bg-transparent`}>
+                  <div className={`w-full h-full rounded-t-[3.45rem] sm:rounded-t-[4.2rem] rounded-b-[1rem] sm:rounded-b-[1.25rem] border ${card.innerBorder} flex flex-col justify-between items-center pt-2 sm:pt-2.5 pb-1 sm:pb-1.5 px-1.5 bg-transparent`}>
                     {/* Top Typography */}
                     <div className="text-center pt-0.5">
                       <h3 className={`font-serif font-bold text-[13.5px] sm:text-[15.5px] ${card.titleColor} tracking-wide uppercase leading-none`}>
@@ -196,21 +196,21 @@ export const CustomerHomeClientView: React.FC<CustomerHomeClientProps> = ({
                       </p>
                     </div>
 
-                    {/* Centered Illustration (Enlarged) */}
-                    <div className="relative w-full flex-1 flex items-center justify-center -mb-0.5 px-0.5">
+                    {/* Centered Illustration (Prominently Enlarged) */}
+                    <div className="relative w-full flex-1 flex items-center justify-center -mb-1 px-0.5">
                       <Image
                         src={card.lightImage}
                         alt={card.title}
-                        width={200}
-                        height={140}
-                        className={`w-full ${card.imgClass || "max-w-[120px]"} max-h-[85px] sm:max-h-[100px] object-contain transition-transform duration-300 group-hover:scale-105 select-none pointer-events-none drop-shadow-[0_4px_10px_rgba(0,0,0,0.1)]`}
+                        width={240}
+                        height={170}
+                        className={`w-full ${card.imgClass || "max-w-[140px]"} max-h-[96px] sm:max-h-[115px] object-contain transition-transform duration-300 group-hover:scale-105 select-none pointer-events-none drop-shadow-[0_6px_12px_rgba(0,0,0,0.12)]`}
                         priority
                       />
                     </div>
                   </div>
                 </div>
               ) : (
-                <div className="relative w-full aspect-[1/1.24] sm:aspect-[1/1.28] max-h-[178px] sm:max-h-[200px]">
+                <div className="relative w-full aspect-[1/1.24] sm:aspect-[1/1.28] max-h-[185px] sm:max-h-[210px]">
                   {/* Light Mode Card Image */}
                   <Image
                     src={card.lightImage}
