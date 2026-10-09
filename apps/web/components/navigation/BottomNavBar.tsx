@@ -34,7 +34,7 @@ export const BottomNavBar: React.FC = () => {
       label: "Home",
       href: "/home",
       icon: (
-        <svg className="h-[25px] w-[25px] shrink-0" viewBox="0 0 24 24">
+        <svg className="h-[21px] w-[21px] shrink-0" viewBox="0 0 24 24">
           <mask id="nav-dining-home-mask">
             <rect width="24" height="24" fill="white" />
             <path
@@ -76,7 +76,7 @@ export const BottomNavBar: React.FC = () => {
       label: "Menu",
       href: "/smol-menu",
       icon: (
-        <svg className="h-[25px] w-[25px] shrink-0" viewBox="0 0 24 24">
+        <svg className="h-[21px] w-[21px] shrink-0" viewBox="0 0 24 24">
           <mask id="nav-restaurant-menu-mask">
             <rect width="24" height="24" fill="white" />
             <line x1="14.2" y1="8.2" x2="18.8" y2="8.2" stroke="black" strokeWidth="1.2" strokeLinecap="round" />
@@ -113,7 +113,7 @@ export const BottomNavBar: React.FC = () => {
       label: "Drinks",
       href: "/drinks",
       icon: (
-        <svg className="h-[25px] w-[25px] shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round">
+        <svg className="h-[21px] w-[21px] shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round">
           {/* Steam waves */}
           <path d="M7.5 2.5v2.5M11 2v3M14.5 2.5v2.5" strokeWidth="1.6" />
           {/* Coffee cup */}
@@ -129,7 +129,7 @@ export const BottomNavBar: React.FC = () => {
       label: "Orders",
       href: "/orders",
       icon: (
-        <svg className="h-[25px] w-[25px] shrink-0" viewBox="0 0 24 24" fill="currentColor">
+        <svg className="h-[21px] w-[21px] shrink-0" viewBox="0 0 24 24" fill="currentColor">
           <path d="M12 2.5a1.75 1.75 0 0 1 1.75 1.75c0 .44-.16.84-.43 1.15.44.33.73.85.73 1.44v.36a9.5 9.5 0 0 0-4.1 0v-.36c0-.59.29-1.11.73-1.44A1.74 1.74 0 0 1 10.25 4.25 1.75 1.75 0 0 1 12 2.5Z" />
           <path
             fillRule="evenodd"
@@ -141,10 +141,10 @@ export const BottomNavBar: React.FC = () => {
       ),
     },
     {
-      label: "Account",
+      label: "Table",
       href: "/profile",
       icon: (
-        <svg className="h-[25px] w-[25px] shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round">
+        <svg className="h-[21px] w-[21px] shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round">
           <circle cx="12" cy="5.2" r="3.2" strokeWidth="1.7" />
           <path d="M4.6 15.8C4.6 11.6 7.8 9.8 12 9.8s7.4 1.8 7.4 6.0" strokeWidth="1.7" />
           <path d="M7.4 15.8v2.4M16.6 15.8v2.4" strokeWidth="1.7" />
@@ -161,18 +161,18 @@ export const BottomNavBar: React.FC = () => {
   return (
     <nav
       aria-label="Bottom Navigation"
-      className="fixed bottom-4 left-0 right-0 z-50 px-3 pb-[max(0.25rem,env(safe-area-inset-bottom))] pointer-events-none select-none"
+      className="fixed bottom-3 left-0 right-0 z-50 px-3 pb-[max(0.25rem,env(safe-area-inset-bottom))] pointer-events-none select-none"
     >
-      <div className="relative pointer-events-auto mx-auto w-full max-w-[375px]">
+      <div className="relative pointer-events-auto mx-auto w-full max-w-[420px]">
         {/* Ambient Backlight Glass Diffusion */}
-        <div className="absolute -inset-1.5 rounded-full bg-gradient-to-r from-amber-600/10 via-[#B72E35]/15 to-amber-500/10 dark:from-purple-600/20 dark:via-purple-800/30 dark:to-purple-600/20 blur-xl -z-10 opacity-80" />
+        <div className="absolute -inset-1 rounded-3xl bg-gradient-to-r from-amber-600/10 via-[#B72E35]/15 to-amber-500/10 dark:from-purple-600/20 dark:via-purple-800/30 dark:to-purple-600/20 blur-xl -z-10 opacity-80" />
 
         {/* Floating Ultra-Frosted Glassmorphic Container */}
         <div
-          className="relative h-[62px] rounded-full px-3 py-1.5 flex items-center justify-around gap-1
-            bg-white/45 dark:bg-[#1C1613]/55
+          className="relative h-[64px] rounded-2xl sm:rounded-3xl px-2 py-1 flex items-center justify-between gap-1
+            bg-white/70 dark:bg-[#1C1613]/80
             backdrop-blur-[28px] backdrop-saturate-[200%]
-            border border-white/70 dark:border-white/15
+            border border-white/80 dark:border-white/15
             shadow-[0_12px_40px_rgba(74,46,27,0.12),0_4px_12px_rgba(0,0,0,0.04),inset_0_1.5px_1.5px_rgba(255,255,255,0.9),inset_0_-1px_1.5px_rgba(0,0,0,0.05)]
             dark:shadow-[0_18px_48px_rgba(0,0,0,0.7),inset_0_1.5px_1px_rgba(255,255,255,0.16),inset_0_-1px_1px_rgba(0,0,0,0.5)]
             transition-all duration-300"
@@ -196,35 +196,34 @@ export const BottomNavBar: React.FC = () => {
                     router.prefetch(item.href);
                   } catch {}
                 }}
-                className={`group relative flex items-center justify-center rounded-full transition-all duration-[450ms] ease-[cubic-bezier(0.25,1,0.35,1)] active:scale-95 touch-manipulation focus:outline-none cursor-pointer ${
+                className={`group relative flex flex-1 flex-col items-center justify-center h-full rounded-xl transition-all duration-200 active:scale-95 touch-manipulation focus:outline-none cursor-pointer py-1 ${
                   active
-                    ? "relative bg-gradient-to-b from-[#E03A43]/65 via-[#B72E35]/75 to-[#7D1217]/85 dark:from-[#A855F7]/70 dark:via-[#7E22CE]/80 dark:to-[#4C1D95]/90 text-white px-4 h-[46px] backdrop-blur-[16px] border border-white/55 dark:border-purple-300/40 shadow-[0_8px_24px_rgba(183,46,53,0.42),inset_0_1.5px_1.5px_rgba(255,255,255,0.85),inset_0_-1.5px_2px_rgba(0,0,0,0.4),inset_0_0_14px_rgba(255,140,140,0.35)] dark:shadow-[0_8px_26px_rgba(126,34,206,0.5),inset_0_1.5px_1.5px_rgba(255,255,255,0.85),inset_0_-1.5px_2px_rgba(0,0,0,0.5),inset_0_0_16px_rgba(192,132,252,0.45)]"
-                    : "w-[46px] h-[46px] text-[#4A2E1B] dark:text-[#C9AE8B] hover:text-[#241F1C] dark:hover:text-[#FAF4EB] hover:bg-white/40 dark:hover:bg-white/[0.08] hover:shadow-[inset_0_1px_1px_rgba(255,255,255,0.6)] backdrop-blur-xs"
+                    ? "bg-[#B72E35]/10 dark:bg-[#B72E35]/20 text-[#B72E35] dark:text-[#F6AD55]"
+                    : "text-[#725039] dark:text-[#C9AE8B] hover:text-[#241F1C] dark:hover:text-[#FAF4EB] hover:bg-white/40 dark:hover:bg-white/[0.05]"
                 }`}
               >
-                {/* Curved Specular Glass Gloss Reflection */}
+                {/* Active Top Accent Indicator */}
                 {active && (
-                  <span className="absolute inset-x-2 top-1 h-[42%] rounded-full bg-gradient-to-b from-white/50 via-white/15 to-transparent pointer-events-none opacity-90" />
+                  <span className="absolute top-1 h-1 w-5 rounded-full bg-[#B72E35] dark:bg-[#F6AD55] animate-scale-in" />
                 )}
 
-                <div className="relative z-10 flex items-center justify-center">
-                  <div
-                    className={`shrink-0 flex items-center justify-center transition-all duration-[550ms] ease-[cubic-bezier(0.25,1,0.35,1)] ${
-                      active
-                        ? "text-white scale-105 drop-shadow-[0_1.5px_2.5px_rgba(0,0,0,0.35)]"
-                        : "group-hover:scale-110 group-active:scale-95"
-                    }`}
-                  >
-                    {item.icon}
-                  </div>
-                  {active && (
-                    <div className="overflow-hidden ml-2 animate-fade-in">
-                      <span className="text-[13.5px] font-sans font-bold tracking-tight text-white whitespace-nowrap block drop-shadow-[0_1.5px_2.5px_rgba(0,0,0,0.35)]">
-                        {item.label}
-                      </span>
-                    </div>
-                  )}
+                <div
+                  className={`flex items-center justify-center transition-transform duration-200 ${
+                    active ? "scale-105 text-[#B72E35] dark:text-[#F6AD55]" : "group-hover:scale-105"
+                  }`}
+                >
+                  {item.icon}
                 </div>
+
+                <span
+                  className={`text-[10px] sm:text-[11px] font-sans tracking-tight mt-1 leading-none transition-colors ${
+                    active
+                      ? "font-extrabold text-[#B72E35] dark:text-[#F6AD55]"
+                      : "font-semibold text-[#725039] dark:text-[#C9AE8B]"
+                  }`}
+                >
+                  {item.label}
+                </span>
               </Link>
             );
           })}
