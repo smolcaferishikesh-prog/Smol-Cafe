@@ -52,7 +52,7 @@ export const CustomerHomeClientView: React.FC<CustomerHomeClientProps> = ({
       id: "feed-me",
       title: "FEED ME",
       subtitle: "I’m hungry",
-      classes: "bg-[#FDF2F0] border-[#F3C5C5] dark:bg-[#1A1414] dark:border-[#421D20]",
+      classes: "bg-[#FCEAE1] border-[#F4C1B9] dark:bg-[#1A1212] dark:border-[#4A2024]",
       lightImage: "/sandwich-removebg-preview.png",
       darkImage: "/sandwich-removebg-preview.png",
       href: "/smol-menu?category=All-Day+Bites",
@@ -164,27 +164,30 @@ export const CustomerHomeClientView: React.FC<CustomerHomeClientProps> = ({
               className={`group relative flex flex-col items-center justify-between overflow-hidden rounded-t-[5.5rem] rounded-b-[1.75rem] border transition-all duration-300 hover:shadow-md hover:-translate-y-0.5 active:scale-[0.98] shadow-xs ${card.classes}`}
             >
               {"isCustomGraphic" in card && card.isCustomGraphic ? (
-                <div className="relative w-full aspect-[2/3] max-h-[220px] flex flex-col justify-between items-center pt-5 pb-3 px-2 select-none">
-                  {/* Top Typography */}
-                  <div className="text-center pt-1">
-                    <h3 className="font-serif font-bold text-[17px] sm:text-lg text-[#6B1B20] dark:text-[#FFAAA6] tracking-wider uppercase leading-none">
-                      {card.title}
-                    </h3>
-                    <p className="font-serif text-[13px] sm:text-sm text-[#725039] dark:text-[#C9AE8B] mt-1 font-medium">
-                      {card.subtitle}
-                    </p>
-                  </div>
+                <div className="relative w-full aspect-[2/3] max-h-[220px] p-1 select-none">
+                  {/* Inner Decorative Arched Frame Border matching original design */}
+                  <div className="w-full h-full rounded-t-[5.1rem] rounded-b-[1.45rem] border border-[#E8C2BA]/80 dark:border-[#52292E]/70 flex flex-col justify-between items-center pt-3.5 pb-2 px-2 bg-transparent">
+                    {/* Top Typography */}
+                    <div className="text-center pt-0.5">
+                      <h3 className="font-serif font-bold text-[18px] sm:text-[19px] text-[#7C1A22] dark:text-[#FFAAA6] tracking-wide uppercase leading-none">
+                        {card.title}
+                      </h3>
+                      <p className="font-serif italic text-[13.5px] sm:text-[14.5px] text-[#634838] dark:text-[#D5BCAD] mt-1 font-medium">
+                        {card.subtitle}
+                      </p>
+                    </div>
 
-                  {/* Centered Sandwich Illustration on Plate */}
-                  <div className="relative w-full flex-1 flex items-center justify-center -mb-1">
-                    <Image
-                      src={card.lightImage}
-                      alt={card.title}
-                      width={220}
-                      height={150}
-                      className="w-full max-w-[155px] sm:max-w-[170px] h-auto object-contain transition-transform duration-300 group-hover:scale-105 select-none pointer-events-none drop-shadow-[0_4px_8px_rgba(0,0,0,0.08)]"
-                      priority
-                    />
+                    {/* Centered Sandwich Illustration on Plate */}
+                    <div className="relative w-full flex-1 flex items-center justify-center -mb-0.5">
+                      <Image
+                        src={card.lightImage}
+                        alt={card.title}
+                        width={220}
+                        height={150}
+                        className="w-full max-w-[150px] sm:max-w-[165px] h-auto object-contain transition-transform duration-300 group-hover:scale-105 select-none pointer-events-none drop-shadow-[0_4px_8px_rgba(0,0,0,0.08)]"
+                        priority
+                      />
+                    </div>
                   </div>
                 </div>
               ) : (
