@@ -1130,7 +1130,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ tableLabel, guestName = 
           )}
         </div>
 
-        {/* Sticky Bottom Summary & "View Bill" CTA Button in Smol Cherry */}
+        {/* Sticky Bottom Summary & "Order Now" CTA Button in Smol Cherry */}
         {!orderSuccess && activeView === "table_order" && items.length > 0 && (
           <div className="sticky bottom-0 left-0 right-0 z-30 px-5 pt-2 pb-5 bg-gradient-to-t from-[#F3E7D3] via-[#F3E7D3]/95 to-transparent dark:from-[#1A1513] dark:via-[#1A1513]/95 dark:to-transparent">
             <p className="font-serif text-[15px] font-medium text-[#241F1C] dark:text-[#FAF4EB] text-center mb-2 tracking-wide">
@@ -1158,13 +1158,15 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ tableLabel, guestName = 
             ) : (
               <button
                 type="button"
-                onClick={() => setActiveView("bill")}
-                className="group relative overflow-hidden w-full block rounded-full bg-gradient-to-b from-[#E03A43]/70 via-[#B72E35]/80 to-[#7D1217]/90 dark:from-[#A855F7]/70 dark:via-[#7E22CE]/80 dark:to-[#4C1D95]/90 text-white font-serif text-[17.5px] font-medium py-3.5 backdrop-blur-[16px] border border-white/55 dark:border-purple-300/40 shadow-[0_8px_26px_rgba(183,46,53,0.42),inset_0_1.5px_1.5px_rgba(255,255,255,0.85),inset_0_-1.5px_2px_rgba(0,0,0,0.4),inset_0_0_14px_rgba(255,140,140,0.35)] dark:shadow-[0_8px_28px_rgba(126,34,206,0.5),inset_0_1.5px_1.5px_rgba(255,255,255,0.85),inset_0_-1.5px_2px_rgba(0,0,0,0.5),inset_0_0_16px_rgba(192,132,252,0.45)] active:scale-[0.99] transition duration-150 cursor-pointer text-center"
+                disabled={isBypassing}
+                onClick={handleSendOrderToCashier}
+                className="group relative overflow-hidden w-full block rounded-full bg-gradient-to-b from-[#E03A43]/70 via-[#B72E35]/80 to-[#7D1217]/90 dark:from-[#A855F7]/70 dark:via-[#7E22CE]/80 dark:to-[#4C1D95]/90 text-white font-serif text-[17.5px] font-medium py-3.5 backdrop-blur-[16px] border border-white/55 dark:border-purple-300/40 shadow-[0_8px_26px_rgba(183,46,53,0.42),inset_0_1.5px_1.5px_rgba(255,255,255,0.85),inset_0_-1.5px_2px_rgba(0,0,0,0.4),inset_0_0_14px_rgba(255,140,140,0.35)] dark:shadow-[0_8px_28px_rgba(126,34,206,0.5),inset_0_1.5px_1.5px_rgba(255,255,255,0.85),inset_0_-1.5px_2px_rgba(0,0,0,0.5),inset_0_0_16px_rgba(192,132,252,0.45)] active:scale-[0.99] transition duration-150 cursor-pointer text-center disabled:opacity-60"
               >
                 {/* Curved Specular Glass Gloss Reflection */}
                 <span className="absolute inset-x-4 top-1 h-[42%] rounded-full bg-gradient-to-b from-white/50 via-white/15 to-transparent pointer-events-none opacity-90" />
-                <span className="relative z-10 drop-shadow-[0_1.5px_2.5px_rgba(0,0,0,0.35)]">
-                  View Bill
+                <span className="relative z-10 flex items-center justify-center gap-2 drop-shadow-[0_1.5px_2.5px_rgba(0,0,0,0.35)]">
+                  {isBypassing && <Loader2 className="w-5 h-5 animate-spin" />}
+                  <span>{isBypassing ? "Placing Order..." : "Order Now"}</span>
                 </span>
               </button>
             )}
