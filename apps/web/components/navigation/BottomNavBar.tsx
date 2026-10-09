@@ -177,15 +177,15 @@ export const BottomNavBar: React.FC = () => {
             dark:shadow-[0_18px_48px_rgba(0,0,0,0.7),inset_0_1.5px_1px_rgba(255,255,255,0.16),inset_0_-1px_1px_rgba(0,0,0,0.5)]
             transition-all duration-300"
         >
-          {/* Smooth Sliding Active Pill Indicator & Top Accent Bar */}
+          {/* Smooth Sliding Active Pill Indicator & Bottom Accent Bar */}
           <div
-            className="absolute top-1 bottom-1 left-2 w-[calc((100%-1rem)/5)] rounded-xl bg-[#B72E35]/12 dark:bg-[#B72E35]/25 border border-[#B72E35]/20 dark:border-[#FF5B52]/25 shadow-[0_2px_10px_rgba(183,46,53,0.12)] pointer-events-none transition-transform duration-300 ease-[cubic-bezier(0.25,1,0.5,1)]"
+            className="absolute top-1 bottom-1 left-2 w-[calc((100%-1rem)/5)] rounded-xl bg-[#B72E35]/10 dark:bg-[#B72E35]/22 border border-[#B72E35]/15 dark:border-[#FF5B52]/20 shadow-[0_2px_8px_rgba(183,46,53,0.08)] pointer-events-none transition-transform duration-300 ease-[cubic-bezier(0.25,1,0.5,1)]"
             style={{
               transform: `translateX(${activeIndex * 100}%)`,
             }}
           >
-            {/* Sliding Top Accent Line */}
-            <span className="absolute top-0.5 left-1/2 -translate-x-1/2 h-1 w-5 rounded-full bg-[#B72E35] dark:bg-[#F6AD55] shadow-[0_1px_4px_rgba(183,46,53,0.5)] transition-colors" />
+            {/* Sliding Bottom Thin Accent Line */}
+            <span className="absolute bottom-1 left-1/2 -translate-x-1/2 h-[2px] w-4 rounded-full bg-[#B72E35] dark:bg-[#F6AD55] shadow-[0_1px_3px_rgba(183,46,53,0.35)] transition-colors" />
           </div>
 
           {navItems.map((item, index) => {
