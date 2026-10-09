@@ -126,7 +126,8 @@ export const OrderStatusClientView: React.FC<OrderStatusClientViewProps> = ({
         }
       }
     } catch (err) {
-      console.error("Failed to refresh active orders:", err);
+      // Polling network standby during hot-reloads / tab suspend
+      console.warn("Orders poll standby (retrying on next cycle):", (err as Error)?.message || err);
     } finally {
       isRefreshingRef.current = false;
     }
