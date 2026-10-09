@@ -482,27 +482,13 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ tableLabel, guestName = 
         return;
       }
 
-      // 2. Clear cart
+      // 2. Clear cart & close drawer
       clearCart();
+      closeCart();
 
-      // 3. Trigger order confirmation modal with PENDING payment status (no fake settlement)
-      setCelebrationData({
-        orderId: orderRes.orderId,
-        orderNo: orderRes.orderNo,
-        tableLabel: displayTable,
-        zone: (["07", "08", "09", "10"].includes(displayTable)) ? "smol-lounge" : (["11", "12", "13", "14"].includes(displayTable)) ? "smol-terrace" : "smol-cafe",
-        totalRupees: Math.round(orderRes.totalPaise / 100),
-        items: currentItemsSnapshot.length > 0 ? currentItemsSnapshot : [
-          { name: "Artisanal Table Order", qty: 1, priceRupees: Math.round(orderRes.totalPaise / 100), subtotalRupees: Math.round(orderRes.totalPaise / 100) }
-        ],
-        appName: "Cashier Desk (Pay at Counter)",
-        paymentStatus: "PENDING",
-        onClose: () => {
-          setCelebrationData(null);
-          closeCart();
-          router.push(`/orders/${orderRes.orderId}?t=${orderRes.orderNo}`);
-        },
-      });
+      // 3. Directly navigate to Orders page
+      router.push("/orders");
+      router.refresh();
     } catch (err) {
       console.error("Order dispatch to cashier failed:", err);
       setErrorMessage("Could not send order to cashier. Please try again.");
