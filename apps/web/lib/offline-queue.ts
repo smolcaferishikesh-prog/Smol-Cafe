@@ -6,6 +6,7 @@
 
 import { broadcastSyncEvent } from "./sync-events";
 import { placePaidOrderAction } from "@/app/menu/actions";
+import { generateSafeUuid } from "./uuid";
 
 export interface QueuedOfflineOrder {
   idempotencyKey: string;
@@ -89,7 +90,7 @@ export function enqueueOfflineOrder(orderData: {
   transactionId?: string;
 }): QueuedOfflineOrder {
   const queue = getQueuedOfflineOrders();
-  const idempotencyKey = crypto.randomUUID();
+  const idempotencyKey = generateSafeUuid();
   const tempOrderNo = Math.floor(100 + Math.random() * 900);
   const verificationCode = String(Math.floor(1000 + Math.random() * 9000));
 

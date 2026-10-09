@@ -27,6 +27,7 @@ import { useSupabaseRealtime } from "@/hooks/useSupabaseRealtime";
 import { broadcastSyncEvent, subscribeToSyncEvents } from "@/lib/sync-events";
 import { ThemeToggle } from "@/components/common/ThemeToggle";
 import { soundManager } from "@/lib/sound";
+import { generateSafeUuid } from "@/lib/uuid";
 
 interface BaristaBoardViewProps {
   initialOrders: BaristaTicket[];
@@ -355,7 +356,7 @@ export const BaristaBoardView: React.FC<BaristaBoardViewProps> = ({ initialOrder
               readyAt: null,
               instructions: ticketData.instructions || null,
               items: drinkItems.map((d) => ({
-                id: d.id || crypto.randomUUID(),
+                id: d.id || generateSafeUuid(),
                 name: d.name,
                 qty: d.qty || 1,
                 itemStatus: (d.itemStatus as BaristaOrderItem["itemStatus"]) || "PENDING",

@@ -18,6 +18,7 @@ import { fetchLiveMenuCatalogAction } from "@/app/admin/menu-actions";
 import MenuLoading from "@/app/menu/loading";
 
 import { useSupabaseRealtime } from "@/hooks/useSupabaseRealtime";
+import { generateSafeUuid } from "@/lib/uuid";
 
 interface MenuClientViewProps {
   categories: CategoryWithItems[];
@@ -61,7 +62,7 @@ const MenuContentInner: React.FC<MenuClientViewProps> = ({
           loadedCartItems.push({ item: catalogMatch, qty: ordItem.qty });
         } else {
           const fallbackItem: MenuItemWithDetails = {
-            id: ordItem.menuItemId || crypto.randomUUID(),
+            id: ordItem.menuItemId || generateSafeUuid(),
             name: ordItem.name,
             description: "Customer ordered item",
             pricePaise: ordItem.unitPricePaise,

@@ -24,6 +24,7 @@ import type { MenuItemWithDetails } from "@/lib/queries/menu";
 import { getLoyaltyAccountAction, redeemLoyaltyPointsAction, type LoyaltyAccountDetails } from "@/app/account/loyalty-actions";
 import { TableArchedCard } from "@/components/table/TableArchedCard";
 import { enqueueOfflineOrder } from "@/lib/offline-queue";
+import { generateSafeUuid } from "@/lib/uuid";
 import {
   CheckCircle2,
   CreditCard,
@@ -289,8 +290,8 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ tableLabel, guestName = 
     }
     const cleanPhone = normalizePhoneNumber(clientPhone);
     const idempotencyKey = cleanPhone
-      ? `smol_ord_${cleanPhone}_${crypto.randomUUID()}`
-      : `smol_ord_guest_${crypto.randomUUID()}`;
+      ? `smol_ord_${cleanPhone}_${generateSafeUuid()}`
+      : `smol_ord_guest_${generateSafeUuid()}`;
 
     if (!displayTable) {
       setErrorMessage("No active table session found. Please scan your table QR code.");
