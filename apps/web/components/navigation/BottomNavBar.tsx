@@ -169,7 +169,7 @@ export const BottomNavBar: React.FC = () => {
 
         {/* Floating Ultra-Frosted Glassmorphic Container */}
         <div
-          className="relative h-[64px] rounded-2xl sm:rounded-3xl px-2 py-1 flex items-center justify-between gap-1
+          className="relative h-[64px] rounded-2xl sm:rounded-3xl px-2 py-1 flex items-center justify-between
             bg-white/70 dark:bg-[#1C1613]/80
             backdrop-blur-[28px] backdrop-saturate-[200%]
             border border-white/80 dark:border-white/15
@@ -177,6 +177,17 @@ export const BottomNavBar: React.FC = () => {
             dark:shadow-[0_18px_48px_rgba(0,0,0,0.7),inset_0_1.5px_1px_rgba(255,255,255,0.16),inset_0_-1px_1px_rgba(0,0,0,0.5)]
             transition-all duration-300"
         >
+          {/* Smooth Sliding Active Pill Indicator & Top Accent Bar */}
+          <div
+            className="absolute top-1 bottom-1 left-2 w-[calc((100%-1rem)/5)] rounded-xl bg-[#B72E35]/12 dark:bg-[#B72E35]/25 border border-[#B72E35]/20 dark:border-[#FF5B52]/25 shadow-[0_2px_10px_rgba(183,46,53,0.12)] pointer-events-none transition-transform duration-300 ease-[cubic-bezier(0.25,1,0.5,1)]"
+            style={{
+              transform: `translateX(${activeIndex * 100}%)`,
+            }}
+          >
+            {/* Sliding Top Accent Line */}
+            <span className="absolute top-0.5 left-1/2 -translate-x-1/2 h-1 w-5 rounded-full bg-[#B72E35] dark:bg-[#F6AD55] shadow-[0_1px_4px_rgba(183,46,53,0.5)] transition-colors" />
+          </div>
+
           {navItems.map((item, index) => {
             const active = activeIndex === index;
 
@@ -196,30 +207,23 @@ export const BottomNavBar: React.FC = () => {
                     router.prefetch(item.href);
                   } catch {}
                 }}
-                className={`group relative flex flex-1 flex-col items-center justify-center h-full rounded-xl transition-all duration-200 active:scale-95 touch-manipulation focus:outline-none cursor-pointer py-1 ${
-                  active
-                    ? "bg-[#B72E35]/10 dark:bg-[#B72E35]/20 text-[#B72E35] dark:text-[#F6AD55]"
-                    : "text-[#725039] dark:text-[#C9AE8B] hover:text-[#241F1C] dark:hover:text-[#FAF4EB] hover:bg-white/40 dark:hover:bg-white/[0.05]"
-                }`}
+                className="group relative z-10 flex flex-1 flex-col items-center justify-center h-full rounded-xl transition-all duration-200 active:scale-95 touch-manipulation focus:outline-none cursor-pointer py-1"
               >
-                {/* Active Top Accent Indicator */}
-                {active && (
-                  <span className="absolute top-1 h-1 w-5 rounded-full bg-[#B72E35] dark:bg-[#F6AD55] animate-scale-in" />
-                )}
-
                 <div
-                  className={`flex items-center justify-center transition-transform duration-200 ${
-                    active ? "scale-105 text-[#B72E35] dark:text-[#F6AD55]" : "group-hover:scale-105"
+                  className={`flex items-center justify-center transition-all duration-300 ease-out ${
+                    active
+                      ? "scale-110 -translate-y-0.5 text-[#B72E35] dark:text-[#F6AD55]"
+                      : "text-[#725039] dark:text-[#C9AE8B] group-hover:scale-105 group-hover:text-[#241F1C] dark:group-hover:text-[#FAF4EB]"
                   }`}
                 >
                   {item.icon}
                 </div>
 
                 <span
-                  className={`text-[10px] sm:text-[11px] font-sans tracking-tight mt-1 leading-none transition-colors ${
+                  className={`text-[10px] sm:text-[11px] font-sans tracking-tight mt-1 leading-none transition-all duration-200 ${
                     active
                       ? "font-extrabold text-[#B72E35] dark:text-[#F6AD55]"
-                      : "font-semibold text-[#725039] dark:text-[#C9AE8B]"
+                      : "font-semibold text-[#725039] dark:text-[#C9AE8B] group-hover:text-[#241F1C] dark:group-hover:text-[#FAF4EB]"
                   }`}
                 >
                   {item.label}
