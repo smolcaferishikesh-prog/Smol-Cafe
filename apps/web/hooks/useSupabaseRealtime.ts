@@ -47,8 +47,18 @@ export function useSupabaseRealtime<T extends { [key: string]: unknown } = Recor
 
     function setupChannel() {
       if (!isMounted) return;
+      if (typeof navigator !== "undefined" && !navigator.onLine) {
+        return;
+      }
 
       try {
+        if (channel) {
+          try {
+            supabase.removeChannel(channel);
+          } catch {
+            // ignore
+          }
+        }
         channel = supabase.channel(channelId);
 
         channel
@@ -68,31 +78,41 @@ export function useSupabaseRealtime<T extends { [key: string]: unknown } = Recor
           )
           .subscribe((status: string) => {
             if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
-              if (isMounted && !reconnectTimeout) {
+              if (isMounted && !reconnectTimeout && (typeof navigator === "undefined" || navigator.onLine)) {
                 reconnectTimeout = setTimeout(() => {
                   reconnectTimeout = null;
                   if (!isMounted) return;
-                  if (channel) {
-                    try {
-                      supabase.removeChannel(channel);
-                    } catch {
-                      // ignore cleanup error
-                    }
-                  }
                   setupChannel();
-                }, 2000);
+                }, 3000);
               }
             }
           });
-      } catch (err) {
-        console.warn("[useSupabaseRealtime] Setup channel error:", err);
+      } catch {
+        // Silently handle setup error when offline
       }
+    }
+
+    const handleOnline = () => {
+      if (isMounted) {
+        if (reconnectTimeout) {
+          clearTimeout(reconnectTimeout);
+          reconnectTimeout = null;
+        }
+        setupChannel();
+      }
+    };
+
+    if (typeof window !== "undefined") {
+      window.addEventListener("online", handleOnline);
     }
 
     setupChannel();
 
     return () => {
       isMounted = false;
+      if (typeof window !== "undefined") {
+        window.removeEventListener("online", handleOnline);
+      }
       if (reconnectTimeout) {
         clearTimeout(reconnectTimeout);
       }

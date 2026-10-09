@@ -837,6 +837,7 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
   const refreshData = async (isBackground = false) => {
     const now = Date.now();
     if (isRefreshingRef.current) return;
+    if (typeof navigator !== "undefined" && !navigator.onLine && isBackground) return;
     if (isBackground && now - lastRefreshTimeRef.current < 2000) return;
 
     isRefreshingRef.current = true;
