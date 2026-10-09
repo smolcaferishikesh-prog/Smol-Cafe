@@ -12,11 +12,19 @@ export const MenuItemCard: React.FC<MenuItemCardProps> = ({ item, onOpenDetail }
   const [imageError, setImageError] = useState(false);
   const priceRupees = Math.round(item.pricePaise / 100);
   const dietary = (item.metadata?.dietary || "").toLowerCase();
+  const isNonVeg =
+    dietary.includes("non-veg") ||
+    dietary.includes("meat") ||
+    dietary.includes("chicken") ||
+    dietary.includes("fish");
   const isEgg =
-    dietary.includes("egg") ||
-    item.name.toLowerCase().includes("egg") ||
-    item.name.toLowerCase().includes("omelette") ||
-    (item.metadata?.core_ingredients || "").toLowerCase().includes("egg");
+    !isNonVeg &&
+    (dietary.includes("egg") ||
+      item.name.toLowerCase().includes("egg") ||
+      item.name.toLowerCase().includes("omelette") ||
+      (item.metadata?.core_ingredients || "").toLowerCase().includes("egg"));
+  const isVegan = dietary.includes("vegan");
+  const isVeg = !isNonVeg && !isEgg && !isVegan;
   const spiceLevel = item.metadata?.spice || "";
   const pairing = item.metadata?.best_pairing || "";
   const foodImageUrl = getFoodImage(item.name, item.imageUrl);
@@ -65,16 +73,42 @@ export const MenuItemCard: React.FC<MenuItemCardProps> = ({ item, onOpenDetail }
 
       {/* Details */}
       <div className="flex-1 min-w-0 pr-2">
-        {/* Title & Dietary Dot */}
-        <div className="flex items-center gap-2">
-          <span
-            className={`h-2 w-2 shrink-0 rounded-full ${
-              isEgg
-                ? "bg-[#F2C84B] shadow-[0_0_6px_rgba(242,200,75,0.4)]"
-                : "bg-[#75AFA7] dark:bg-[#5E9B93] shadow-[0_0_6px_rgba(117,175,167,0.4)]"
-            }`}
-            title={isEgg ? "Egg" : "Veg"}
-          />
+        {/* Title & Dietary Badge */}
+        <div className="flex items-center gap-2 flex-wrap">
+          {isEgg ? (
+            <span
+              className="inline-flex items-center gap-1 rounded-md border border-amber-400/80 dark:border-amber-600/60 bg-amber-100/70 dark:bg-amber-950/60 px-1.5 py-0.5 text-[9.5px] font-bold text-amber-900 dark:text-amber-200 shrink-0"
+              title="Contains Egg"
+            >
+              <span className="h-1.5 w-1.5 rounded-full bg-[#EAB308]" />
+              Egg
+            </span>
+          ) : isNonVeg ? (
+            <span
+              className="inline-flex items-center gap-1 rounded-md border border-rose-400/80 dark:border-rose-600/60 bg-rose-100/70 dark:bg-rose-950/60 px-1.5 py-0.5 text-[9.5px] font-bold text-rose-900 dark:text-rose-200 shrink-0"
+              title="Non-Vegetarian"
+            >
+              <span className="h-1.5 w-1.5 rounded-full bg-[#E11D48]" />
+              Non-Veg
+            </span>
+          ) : isVegan ? (
+            <span
+              className="inline-flex items-center gap-1 rounded-md border border-emerald-400/80 dark:border-emerald-600/60 bg-emerald-100/70 dark:bg-emerald-950/60 px-1.5 py-0.5 text-[9.5px] font-bold text-emerald-900 dark:text-emerald-200 shrink-0"
+              title="Vegan"
+            >
+              <span className="h-1.5 w-1.5 rounded-full bg-[#10B981]" />
+              Vegan
+            </span>
+          ) : (
+            <span
+              className="inline-flex items-center gap-1 rounded-md border border-emerald-400/80 dark:border-emerald-600/60 bg-emerald-100/70 dark:bg-emerald-950/60 px-1.5 py-0.5 text-[9.5px] font-bold text-emerald-900 dark:text-emerald-200 shrink-0"
+              title="Vegetarian"
+            >
+              <span className="h-1.5 w-1.5 rounded-full bg-[#10B981]" />
+              Veg
+            </span>
+          )}
+
           <h3 className={`text-[17px] sm:text-[18px] font-bold tracking-tight leading-snug transition-colors capitalize ${
             isSoldOut
               ? "text-stone-600 dark:text-stone-400"

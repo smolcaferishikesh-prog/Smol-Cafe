@@ -185,13 +185,19 @@ export const ItemDetailModal: React.FC<ItemDetailModalProps> = ({
   const totalPriceRupees = basePriceRupees + optionDelta;
 
   const dietary = (item.metadata?.dietary || "").toLowerCase();
+  const isNonVeg =
+    dietary.includes("non-veg") ||
+    dietary.includes("meat") ||
+    dietary.includes("chicken") ||
+    dietary.includes("fish");
   const isEgg =
-    dietary.includes("egg") ||
-    item.name.toLowerCase().includes("egg") ||
-    item.name.toLowerCase().includes("omelette") ||
-    (item.metadata?.core_ingredients || "").toLowerCase().includes("egg");
-  const isVegan = !isEgg && dietary.includes("vegan");
-  const isVeg = !isEgg && (dietary.includes("veg") || isVegan);
+    !isNonVeg &&
+    (dietary.includes("egg") ||
+      item.name.toLowerCase().includes("egg") ||
+      item.name.toLowerCase().includes("omelette") ||
+      (item.metadata?.core_ingredients || "").toLowerCase().includes("egg"));
+  const isVegan = !isNonVeg && !isEgg && dietary.includes("vegan");
+  const isVeg = !isNonVeg && !isEgg && !isVegan;
 
   // Determine tag badge
   let tagBadge = "SINGLE ORIGIN";
@@ -327,24 +333,27 @@ export const ItemDetailModal: React.FC<ItemDetailModalProps> = ({
               "Single-origin South Indian estate beans, light floral notes with a clean finish."}
           </p>
 
-          {/* Badges: Dietary & Origin (Using Dusty Pool #75AFA7 and Butter Taxi #F2C84B from brand kit) */}
+          {/* Badges: Dietary & Origin */}
           <div className="mt-3 flex flex-wrap items-center gap-2">
-            {isVeg && (
-              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full border border-[#C9AE8B]/60 bg-[#FAF4EB] dark:bg-[#2A231E] text-[10px] font-semibold tracking-wider text-[#241F1C] dark:text-[#F3E7D3] uppercase font-sans">
-                <span className="h-1.5 w-1.5 rounded-full bg-[#75AFA7]" />
-                Vegetarian
+            {isNonVeg ? (
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full border border-rose-300 dark:border-rose-900/60 bg-rose-50 dark:bg-rose-950/40 text-[10.5px] font-bold tracking-wider text-rose-800 dark:text-rose-300 uppercase font-sans">
+                <span className="h-1.5 w-1.5 rounded-full bg-[#E11D48]" />
+                Non-Vegetarian
               </span>
-            )}
-            {isVegan && (
-              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full border border-[#C9AE8B]/60 bg-[#FAF4EB] dark:bg-[#2A231E] text-[10px] font-semibold tracking-wider text-[#241F1C] dark:text-[#F3E7D3] uppercase font-sans">
-                <span className="h-1.5 w-1.5 rounded-full bg-[#75AFA7]" />
+            ) : isEgg ? (
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full border border-amber-300 dark:border-amber-900/60 bg-amber-50 dark:bg-amber-950/40 text-[10.5px] font-bold tracking-wider text-amber-800 dark:text-amber-300 uppercase font-sans">
+                <span className="h-1.5 w-1.5 rounded-full bg-[#EAB308]" />
+                Contains Egg
+              </span>
+            ) : isVegan ? (
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full border border-emerald-300 dark:border-emerald-900/60 bg-emerald-50 dark:bg-emerald-950/40 text-[10.5px] font-bold tracking-wider text-emerald-800 dark:text-emerald-300 uppercase font-sans">
+                <span className="h-1.5 w-1.5 rounded-full bg-[#10B981]" />
                 Vegan
               </span>
-            )}
-            {isEgg && (
-              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full border border-[#C9AE8B]/60 bg-[#FAF4EB] dark:bg-[#2A231E] text-[10px] font-semibold tracking-wider text-[#241F1C] dark:text-[#F3E7D3] uppercase font-sans">
-                <span className="h-1.5 w-1.5 rounded-full bg-[#F2C84B]" />
-                Contains Egg
+            ) : (
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full border border-emerald-300 dark:border-emerald-900/60 bg-emerald-50 dark:bg-emerald-950/40 text-[10.5px] font-bold tracking-wider text-emerald-800 dark:text-emerald-300 uppercase font-sans">
+                <span className="h-1.5 w-1.5 rounded-full bg-[#10B981]" />
+                Vegetarian
               </span>
             )}
             {tagBadge && (
