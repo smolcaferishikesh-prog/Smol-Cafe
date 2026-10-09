@@ -52,10 +52,11 @@ export const CustomerHomeClientView: React.FC<CustomerHomeClientProps> = ({
       id: "feed-me",
       title: "FEED ME",
       subtitle: "I’m hungry",
-      classes: "bg-[#FDF2F0] border-[#F3C5C5] dark:bg-[#1A1414] dark:border-[#421D20]",
-      lightImage: "/home_card_feedme_hd.png",
-      darkImage: "/home_card_feedme_dark.jpg",
+      classes: "bg-[#FAF2ED] border-[#F3C5C5] dark:bg-[#1A1414] dark:border-[#421D20]",
+      lightImage: "/sandwich-removebg-preview.png",
+      darkImage: "/sandwich-removebg-preview.png",
       href: "/smol-menu?category=All-Day+Bites",
+      isCustomGraphic: true,
     },
     {
       id: "coffee-first",
@@ -160,26 +161,52 @@ export const CustomerHomeClientView: React.FC<CustomerHomeClientProps> = ({
             <Link
               key={card.id}
               href={card.href}
-              className={`group relative flex flex-col items-center overflow-hidden rounded-t-[5.5rem] rounded-b-[1.75rem] border transition-all duration-300 hover:shadow-md hover:-translate-y-0.5 active:scale-[0.98] shadow-xs ${card.classes}`}
+              className={`group relative flex flex-col items-center justify-between overflow-hidden rounded-t-[5.5rem] rounded-b-[1.75rem] border transition-all duration-300 hover:shadow-md hover:-translate-y-0.5 active:scale-[0.98] shadow-xs ${card.classes}`}
             >
-              <div className="relative w-full aspect-[2/3] max-h-[220px]">
-                {/* Light Mode Card Image */}
-                <Image
-                  src={card.lightImage}
-                  alt={card.title}
-                  fill
-                  className="object-cover transition-transform duration-300 group-hover:scale-102 dark:hidden"
-                  priority
-                />
-                {/* Dark Mode Card Image */}
-                <Image
-                  src={card.darkImage}
-                  alt={card.title}
-                  fill
-                  className="object-cover transition-transform duration-300 group-hover:scale-102 hidden dark:block"
-                  priority
-                />
-              </div>
+              {"isCustomGraphic" in card && card.isCustomGraphic ? (
+                <div className="relative w-full aspect-[2/3] max-h-[220px] flex flex-col justify-between items-center pt-5 pb-3 px-2 select-none">
+                  {/* Top Typography */}
+                  <div className="text-center pt-1">
+                    <h3 className="font-serif font-bold text-[17px] sm:text-lg text-[#6B1B20] dark:text-[#FFAAA6] tracking-wider uppercase leading-none">
+                      {card.title}
+                    </h3>
+                    <p className="font-serif text-[13px] sm:text-sm text-[#725039] dark:text-[#C9AE8B] mt-1 font-medium">
+                      {card.subtitle}
+                    </p>
+                  </div>
+
+                  {/* Centered Sandwich Illustration on Plate */}
+                  <div className="relative w-full flex-1 flex items-center justify-center -mb-1">
+                    <Image
+                      src={card.lightImage}
+                      alt={card.title}
+                      width={220}
+                      height={150}
+                      className="w-full max-w-[155px] sm:max-w-[170px] h-auto object-contain transition-transform duration-300 group-hover:scale-105 select-none pointer-events-none drop-shadow-[0_4px_8px_rgba(0,0,0,0.08)]"
+                      priority
+                    />
+                  </div>
+                </div>
+              ) : (
+                <div className="relative w-full aspect-[2/3] max-h-[220px]">
+                  {/* Light Mode Card Image */}
+                  <Image
+                    src={card.lightImage}
+                    alt={card.title}
+                    fill
+                    className="object-cover transition-transform duration-300 group-hover:scale-102 dark:hidden"
+                    priority
+                  />
+                  {/* Dark Mode Card Image */}
+                  <Image
+                    src={card.darkImage}
+                    alt={card.title}
+                    fill
+                    className="object-cover transition-transform duration-300 group-hover:scale-102 hidden dark:block"
+                    priority
+                  />
+                </div>
+              )}
             </Link>
           ))}
         </div>
