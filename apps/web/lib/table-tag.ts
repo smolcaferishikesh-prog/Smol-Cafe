@@ -52,7 +52,7 @@ export function createTableJsonTag(
   sessionId?: string,
   guestCount: number = 2
 ): TableJsonTag {
-  const cleanLabel = tableLabel.padStart(2, "0");
+  const cleanLabel = (tableLabel || "01").replace(/^(table|t)[-\s_]*/i, "").trim().padStart(2, "0");
   const config = TABLE_ZONES_CONFIG[cleanLabel] || {
     zone: "smol-cafe" as TableZone,
     capacity: 2,
@@ -64,10 +64,10 @@ export function createTableJsonTag(
     zone: config.zone,
     capacity: config.capacity,
     guest_count: guestCount,
-    qr_hash: `smol-qr-t${cleanLabel}-${Math.random().toString(36).substring(2, 8)}`,
+    qr_hash: `smol-qr-t${cleanLabel}`,
     service_mode: "DINE_IN",
-    session_id: sessionId || generateSafeUuid(),
-    created_at: new Date().toISOString(),
+    session_id: sessionId || `sess_${cleanLabel}`,
+    created_at: "2026-01-01T00:00:00.000Z",
     device_fingerprint: "mobile-web-client",
   };
 }

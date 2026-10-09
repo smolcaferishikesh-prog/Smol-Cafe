@@ -94,12 +94,14 @@ function formatRelativeTime(dateStr: string | null): string {
 export const OrderCard: React.FC<OrderCardProps> = ({ order, tableLabel = "01", guestName }) => {
   const [showItems, setShowItems] = useState(true);
   const [showReceiptModal, setShowReceiptModal] = useState(false);
-  const [timeAgo, setTimeAgo] = useState<string>(() => formatRelativeTime(order.submittedAt));
+  const [mounted, setMounted] = useState(false);
+  const [timeAgo, setTimeAgo] = useState<string>("Just now");
   const copy = getStatusCopy(order.status);
   const totalRupees = Math.round(order.totalPaise / 100);
   const canEdit = order.status === "PENDING_CONFIRMATION" || order.status === "DRAFT";
 
   useEffect(() => {
+    setMounted(true);
     setTimeAgo(formatRelativeTime(order.submittedAt));
     const timer = setInterval(() => {
       setTimeAgo(formatRelativeTime(order.submittedAt));
@@ -141,7 +143,7 @@ export const OrderCard: React.FC<OrderCardProps> = ({ order, tableLabel = "01", 
                 suppressHydrationWarning
                 className="text-xs text-[#725039] dark:text-[#C9AE8B] font-medium"
               >
-                {timeAgo}
+                {mounted ? timeAgo : "Just now"}
               </span>
             </div>
             <h3 className="mt-1 font-serif text-lg font-bold tracking-tight text-[#241F1C] dark:text-[#FAF4EB] drop-shadow-2xs">
