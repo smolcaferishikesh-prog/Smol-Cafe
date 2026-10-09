@@ -20,6 +20,42 @@ interface TableGuestOnboardingFormProps {
   initialGuestPhone?: string;
 }
 
+function extractLocalPhoneAndCountry(rawPhone: string): { code: string; localDigits: string } {
+  if (!rawPhone) return { code: "+91", localDigits: "" };
+  const trimmed = rawPhone.trim();
+  for (const c of COUNTRY_CODES) {
+    if (trimmed.startsWith(c.code)) {
+      return {
+        code: c.code,
+        localDigits: trimmed.slice(c.code.length).replace(/\D/g, "").slice(0, 10),
+      };
+    }
+  }
+  const digitsOnly = trimmed.replace(/\D/g, "");
+  for (const c of COUNTRY_CODES) {
+    const codeDigits = c.code.replace("+", "");
+    if (digitsOnly.startsWith(codeDigits) && digitsOnly.length > 10) {
+      return {
+        code: c.code,
+        localDigits: digitsOnly.slice(codeDigits.length).slice(0, 10),
+      };
+    }
+  }
+  return {
+    code: "+91",
+    localDigits: digitsOnly.slice(0, 10),
+  };
+}
+
+function sanitizePhoneDigits(val: string, currentCountryCode: string): string {
+  let digits = val.replace(/\D/g, "");
+  const codeDigits = currentCountryCode.replace(/\D/g, "");
+  if (digits.startsWith(codeDigits) && digits.length > 10) {
+    digits = digits.slice(codeDigits.length);
+  }
+  return digits.slice(0, 10);
+}
+
 export function TableGuestOnboardingForm({
   tableToken,
   tableLabel,
@@ -29,9 +65,10 @@ export function TableGuestOnboardingForm({
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
 
+  const initialParsed = extractLocalPhoneAndCountry(initialGuestPhone);
   const [name, setName] = useState(initialGuestName);
-  const [phone, setPhone] = useState(initialGuestPhone);
-  const [countryCode, setCountryCode] = useState("+91");
+  const [phone, setPhone] = useState(initialParsed.localDigits);
+  const [countryCode, setCountryCode] = useState(initialParsed.code);
   const [error, setError] = useState<string | null>(null);
 
   // Pre-fill from localStorage or initial props if available
@@ -40,14 +77,11 @@ export function TableGuestOnboardingForm({
       const savedName = localStorage.getItem("smol_guest_name");
       const savedPhone = localStorage.getItem("smol_guest_phone");
       if (savedName && !name) setName(savedName);
-      if (savedPhone && !phone) {
-        const matched = COUNTRY_CODES.find((c) => savedPhone.startsWith(c.code));
-        if (matched) {
-          setCountryCode(matched.code);
-          const rawLocal = savedPhone.slice(matched.code.length).replace(/\D/g, "").slice(0, 10);
-          setPhone(rawLocal);
-        } else {
-          setPhone(savedPhone.replace(/\D/g, "").slice(0, 10));
+      if (savedPhone) {
+        const parsed = extractLocalPhoneAndCountry(savedPhone);
+        if (!phone) {
+          setPhone(parsed.localDigits);
+          setCountryCode(parsed.code);
         }
       }
     }
@@ -58,7 +92,7 @@ export function TableGuestOnboardingForm({
     setError(null);
 
     const trimmedName = name.trim();
-    const cleanDigits = phone.replace(/\D/g, "").slice(0, 10);
+    const cleanDigits = sanitizePhoneDigits(phone, countryCode);
     const normalizedPhone = normalizePhoneNumber(cleanDigits, countryCode);
 
     if (!trimmedName || trimmedName.length < 2) {
@@ -182,21 +216,54 @@ export function TableGuestOnboardingForm({
           <ChevronDown className="absolute right-1 h-3 w-3 text-[#725039] dark:text-[#C9AE8B] pointer-events-none opacity-60" />
         </div>
 
-        {/* Local Mobile Number Input */}
+        {/* Local Mobile Number Input: Strictly 10 numeric digits, no special chars */}
         <input
           type="tel"
           inputMode="numeric"
-          pattern="[0-9]*"
+          pattern="[0-9]{10}"
           name="guestPhone"
           value={phone}
           onChange={(e) => {
-            const digits = e.target.value.replace(/\D/g, "").slice(0, 10);
-            setPhone(digits);
+            const clean = sanitizePhoneDigits(e.target.value, countryCode);
+            setPhone(clean);
           }}
-          placeholder={selectedCountry.example}
+          onPaste={(e) => {
+            e.preventDefault();
+            const pastedText = e.clipboardData.getData("text");
+            const clean = sanitizePhoneDigits(pastedText, countryCode);
+            setPhone(clean);
+          }}
+          onKeyDown={(e) => {
+            const allowedKeys = [
+              "Backspace",
+              "Delete",
+              "Tab",
+              "Escape",
+              "Enter",
+              "ArrowLeft",
+              "ArrowRight",
+              "ArrowUp",
+              "ArrowDown",
+              "Home",
+              "End",
+            ];
+            if (allowedKeys.includes(e.key) || e.ctrlKey || e.metaKey) {
+              return;
+            }
+            if (!/^[0-9]$/.test(e.key)) {
+              e.preventDefault();
+              return;
+            }
+            const target = e.target as HTMLInputElement;
+            const selectedLength = (target.selectionEnd ?? 0) - (target.selectionStart ?? 0);
+            if (phone.length >= 10 && selectedLength === 0) {
+              e.preventDefault();
+            }
+          }}
+          placeholder={selectedCountry.example.replace(/\D/g, "").slice(0, 10) || "9876543210"}
           required
           maxLength={10}
-          autoComplete="tel"
+          autoComplete="tel-national"
           className="flex-1 px-2.5 py-2 sm:py-2.5 bg-transparent text-[#241F1C] dark:text-[#FAF4EB] placeholder-[#725039]/60 dark:placeholder-[#C9AE8B]/50 font-mono text-xs focus:outline-none"
         />
       </div>
