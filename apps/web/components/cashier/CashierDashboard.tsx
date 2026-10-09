@@ -165,7 +165,8 @@ export const CashierDashboard: React.FC<CashierDashboardProps> = ({
         setPaidHistory(paidData.records);
       }
     } catch (err) {
-      console.error("Failed to refresh cashier data:", err);
+      // Cashier polling standby during hot-reloads / tab suspend
+      console.warn("Cashier poll standby (retrying on next cycle):", (err as Error)?.message || err);
     } finally {
       isRefreshingRef.current = false;
       if (!isBackground) {
