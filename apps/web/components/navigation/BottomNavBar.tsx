@@ -179,13 +179,13 @@ export const BottomNavBar: React.FC = () => {
         >
           {/* Smooth Sliding Active Pill Indicator & Bottom Accent Bar */}
           <div
-            className="absolute top-1 bottom-1 left-2 w-[calc((100%-1rem)/5)] rounded-xl bg-[#B72E35]/10 dark:bg-[#B72E35]/22 border border-[#B72E35]/15 dark:border-[#FF5B52]/20 shadow-[0_2px_8px_rgba(183,46,53,0.08)] pointer-events-none transition-transform duration-300 ease-[cubic-bezier(0.25,1,0.5,1)]"
+            className="absolute top-1 bottom-1 left-2 w-[calc((100%-1rem)/5)] rounded-xl bg-[#B72E35]/10 dark:bg-purple-600/25 border border-[#B72E35]/15 dark:border-purple-500/35 shadow-[0_2px_8px_rgba(183,46,53,0.08)] dark:shadow-[0_2px_12px_rgba(168,85,247,0.25)] pointer-events-none transition-transform duration-300 ease-[cubic-bezier(0.25,1,0.5,1)]"
             style={{
               transform: `translateX(${activeIndex * 100}%)`,
             }}
           >
             {/* Sliding Bottom Thin Accent Line */}
-            <span className="absolute bottom-1 left-1/2 -translate-x-1/2 h-[2px] w-4 rounded-full bg-[#B72E35] dark:bg-[#F6AD55] shadow-[0_1px_3px_rgba(183,46,53,0.35)] transition-colors" />
+            <span className="absolute bottom-1 left-1/2 -translate-x-1/2 h-[2px] w-4 rounded-full bg-[#B72E35] dark:bg-purple-400 shadow-[0_1px_3px_rgba(183,46,53,0.35)] dark:shadow-[0_1px_6px_rgba(192,132,252,0.7)] transition-colors" />
           </div>
 
           {navItems.map((item, index) => {
@@ -212,7 +212,7 @@ export const BottomNavBar: React.FC = () => {
                 <div
                   className={`flex items-center justify-center transition-all duration-300 ease-out ${
                     active
-                      ? "scale-110 -translate-y-0.5 text-[#B72E35] dark:text-[#F6AD55]"
+                      ? "scale-110 -translate-y-0.5 text-[#B72E35] dark:text-purple-400"
                       : "text-[#725039] dark:text-[#C9AE8B] group-hover:scale-105 group-hover:text-[#241F1C] dark:group-hover:text-[#FAF4EB]"
                   }`}
                 >
@@ -222,7 +222,7 @@ export const BottomNavBar: React.FC = () => {
                 <span
                   className={`text-[10px] sm:text-[11px] font-sans tracking-tight mt-1 leading-none transition-all duration-200 ${
                     active
-                      ? "font-extrabold text-[#B72E35] dark:text-[#F6AD55]"
+                      ? "font-extrabold text-[#B72E35] dark:text-purple-300"
                       : "font-semibold text-[#725039] dark:text-[#C9AE8B] group-hover:text-[#241F1C] dark:group-hover:text-[#FAF4EB]"
                   }`}
                 >
