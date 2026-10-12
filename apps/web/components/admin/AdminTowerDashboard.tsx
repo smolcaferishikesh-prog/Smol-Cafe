@@ -426,7 +426,7 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
       paymentMethod: t.mode.toLowerCase().includes("cash") ? "CASH" : "UPI",
       paymentStatus: "PAID",
       transactionId: t.txn,
-      paidAt: t.time ? `Today, ${t.time}` : new Date().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }),
+      paidAt: (matchedOrder as any)?.rawCreatedAt || new Date().toISOString(),
       guestName: (matchedOrder as unknown as { customerName?: string })?.customerName || "Smol Patron",
     };
     setActiveReceipt(receipt);

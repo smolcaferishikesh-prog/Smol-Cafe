@@ -56,6 +56,9 @@ export const OfflineSyncBanner: React.FC = () => {
     }
   };
 
+  // Disabled by user request — do not show offline banner
+  return null;
+
   // Only render if mounted on client AND (offline OR has queued orders waiting to sync OR active sync notice)
   if (!isMounted || (isOnline && queuedOrders.length === 0 && !syncNotice)) {
     return null;

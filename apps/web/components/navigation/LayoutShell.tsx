@@ -99,7 +99,8 @@ export const LayoutShell: React.FC<LayoutShellProps> = ({ children }) => {
   return (
     <>
       <AppSplashScreen />
-      <OfflineSyncBanner />
+      {/* Offline sync banner disabled as requested */}
+      {/* <OfflineSyncBanner /> */}
       {showRoleSwitcher && <RoleSwitcherBar />}
       {children}
       {showBottomNavBar && <BottomNavBar />}
