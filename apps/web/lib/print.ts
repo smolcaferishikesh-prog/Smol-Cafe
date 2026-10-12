@@ -28,6 +28,7 @@ export interface InvoiceReceiptData {
   gstin?: string;
   fssaiLic?: string;
   orderStatus?: string;
+  logoUrl?: string;
 }
 
 export function printHtmlContent(htmlContent: string, title: string = "smol caf√© Invoice") {
@@ -49,12 +50,15 @@ export function printHtmlContent(htmlContent: string, title: string = "smol caf√
     return;
   }
 
+  const origin = window.location.origin;
+
   doc.open();
   doc.write(`
     <!DOCTYPE html>
     <html>
       <head>
         <meta charset="utf-8" />
+        <base href="${origin}/" />
         <title>${title}</title>
         <link rel="preconnect" href="https://fonts.googleapis.com">
         <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -89,17 +93,51 @@ export function printHtmlContent(htmlContent: string, title: string = "smol caf√
           .font-mono {
             font-family: 'Noto Sans Mono', monospace, Courier, monospace;
           }
+          img {
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+          }
         </style>
       </head>
       <body>
         ${htmlContent}
         <script>
-          window.onload = function() {
-            setTimeout(function() {
+          function triggerPrint() {
+            var images = Array.from(document.images);
+            var pending = images.filter(function(img) { return !img.complete; });
+            if (pending.length === 0) {
               window.focus();
               window.print();
-            }, 250);
-          };
+            } else {
+              var loaded = 0;
+              var done = false;
+              var onDone = function() {
+                if (done) return;
+                done = true;
+                window.focus();
+                window.print();
+              };
+              pending.forEach(function(img) {
+                img.addEventListener('load', function() {
+                  loaded++;
+                  if (loaded >= pending.length) onDone();
+                });
+                img.addEventListener('error', function() {
+                  loaded++;
+                  if (loaded >= pending.length) onDone();
+                });
+              });
+              setTimeout(onDone, 800);
+            }
+          }
+
+          if (document.readyState === 'complete') {
+            setTimeout(triggerPrint, 50);
+          } else {
+            window.addEventListener('load', function() {
+              setTimeout(triggerPrint, 50);
+            });
+          }
         </script>
       </body>
     </html>
@@ -119,14 +157,34 @@ export function printHtmlContent(htmlContent: string, title: string = "smol caf√
 
 export function generateThermalReceiptHtml(receipt: InvoiceReceiptData): string {
   const orderNumStr = receipt.orderNo ? `#SMOL ${receipt.orderNo.toString().padStart(4, "0")}` : `#${receipt.orderId.slice(0, 8).toUpperCase()}`;
-  const dateStr = new Date(receipt.paidAt).toLocaleString("en-IN", {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-    hour12: true,
-  });
+  
+  let dateStr = "";
+  try {
+    const d = new Date(receipt.paidAt);
+    if (!isNaN(d.getTime())) {
+      dateStr = d.toLocaleString("en-IN", {
+        day: "numeric",
+        month: "short",
+        year: "numeric",
+        hour: "numeric",
+        minute: "2-digit",
+        hour12: true,
+      });
+    } else {
+      dateStr = receipt.paidAt || new Date().toLocaleString("en-IN", {
+        day: "numeric",
+        month: "short",
+        year: "numeric",
+        hour: "numeric",
+        minute: "2-digit",
+        hour12: true,
+      });
+    }
+  } catch {
+    dateStr = receipt.paidAt || "";
+  }
+
+  const logoSrc = receipt.logoUrl || "/logo-transparent.png";
 
   const itemsHtml = receipt.items.map((item) => `
     <tr style="border-bottom: 1px dashed #e2d7c7;">
@@ -144,6 +202,13 @@ export function generateThermalReceiptHtml(receipt: InvoiceReceiptData): string 
     <div style="max-width: 320px; margin: 0 auto; font-family: 'Noto Sans Mono', monospace; font-size: 11px; color: #241F1C; line-height: 1.4;">
       <!-- Cafe Header -->
       <div style="text-align: center; margin-bottom: 12px; padding-bottom: 8px; border-bottom: 2px dashed #241F1C;">
+        <div style="margin-bottom: 6px; display: flex; justify-content: center; align-items: center;">
+          <img
+            src="${logoSrc}"
+            alt="smol caf√© logo"
+            style="height: 56px; width: auto; max-width: 120px; object-fit: contain; display: block; margin: 0 auto; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important;"
+          />
+        </div>
         <div style="font-family: 'EB Garamond', Georgia, serif; font-size: 24px; font-weight: 900; letter-spacing: -0.5px; color: #B72E35;">smol caf√©</div>
         <div style="font-size: 11px; font-weight: 600; color: #725039; margin-top: 2px;">artisanal coffee &amp; slow bakes</div>
         <div style="font-size: 10px; color: #555; margin-top: 4px;">Tapovan, Rishikesh, Uttarakhand 249192</div>

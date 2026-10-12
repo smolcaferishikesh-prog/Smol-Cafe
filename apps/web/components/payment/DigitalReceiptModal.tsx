@@ -84,6 +84,7 @@ export const DigitalReceiptModal: React.FC<DigitalReceiptModalProps> = ({ receip
       transactionId: receipt.transactionId,
       paidAt: receipt.paidAt,
       gstin: receipt.gstin,
+      logoUrl: "/logo-transparent.png",
     });
     printHtmlContent(html, `Receipt_${receipt.orderNo || receipt.orderId.slice(0, 8)}`);
   };
@@ -140,7 +141,7 @@ export const DigitalReceiptModal: React.FC<DigitalReceiptModalProps> = ({ receip
                 alt="smol café logo"
                 width={60}
                 height={88}
-                className="h-16 w-auto object-contain drop-shadow-xs dark:hidden print:block"
+                className="h-16 w-auto object-contain drop-shadow-xs dark:hidden print:!block"
                 priority
               />
               {/* Dark Mode Neon Logo */}
@@ -149,7 +150,7 @@ export const DigitalReceiptModal: React.FC<DigitalReceiptModalProps> = ({ receip
                 alt="smol café dark logo"
                 width={60}
                 height={88}
-                className="h-16 w-auto object-contain hidden dark:block print:hidden drop-shadow-[0_0_12px_rgba(168,85,247,0.35)]"
+                className="h-16 w-auto object-contain hidden dark:block print:!hidden drop-shadow-[0_0_12px_rgba(168,85,247,0.35)]"
                 priority
               />
             </div>
@@ -176,7 +177,16 @@ export const DigitalReceiptModal: React.FC<DigitalReceiptModalProps> = ({ receip
             <div className="flex justify-between">
               <span className="text-stone-500 dark:text-stone-400">Date &amp; Time:</span>
               <span className="text-[#241F1C] dark:text-stone-300">
-                {new Date(receipt.paidAt).toLocaleString("en-IN", { hour12: true })}
+                {(() => {
+                  try {
+                    const d = new Date(receipt.paidAt);
+                    return !isNaN(d.getTime())
+                      ? d.toLocaleString("en-IN", { hour12: true })
+                      : receipt.paidAt;
+                  } catch {
+                    return receipt.paidAt;
+                  }
+                })()}
               </span>
             </div>
             {receipt.transactionId ? (
