@@ -316,47 +316,48 @@ export async function fetchProcurementDataAction(): Promise<ProcurementData> {
   try {
     const supabase = createAdminClient();
 
-    // 1. Fetch Vendors
-    const { data: dbVendors } = await supabase
-      .from("vendors")
-      .select("*")
-      .order("name", { ascending: true });
-
-    // 2. Fetch Ingredients with Unit
-    const { data: dbIngredients } = await supabase
-      .from("ingredients")
-      .select("*, units(*)")
-      .order("name", { ascending: true });
-
-    // 3. Fetch Purchase Orders with lines
-    const { data: pos } = await supabase
-      .from("purchase_orders")
-      .select(
-        `
-        *,
-        vendors(name),
-        purchase_order_lines(
+    // 1-4. Fetch Vendors, Ingredients, Purchase Orders, and Goods Receipts concurrently in parallel
+    const [
+      { data: dbVendors },
+      { data: dbIngredients },
+      { data: pos },
+      { data: grns },
+    ] = await Promise.all([
+      supabase
+        .from("vendors")
+        .select("*")
+        .order("name", { ascending: true }),
+      supabase
+        .from("ingredients")
+        .select("*, units(*)")
+        .order("name", { ascending: true }),
+      supabase
+        .from("purchase_orders")
+        .select(
+          `
           *,
-          ingredients(name, units(symbol))
-        )
-      `
-      )
-      .order("created_at", { ascending: false });
-
-    // 4. Fetch Goods Receipts with lines
-    const { data: grns } = await supabase
-      .from("goods_receipts")
-      .select(
+          vendors(name),
+          purchase_order_lines(
+            *,
+            ingredients(name, units(symbol))
+          )
         `
-        *,
-        vendors(name),
-        goods_receipt_lines(
-          *,
-          ingredients(name)
         )
-      `
-      )
-      .order("received_at", { ascending: false });
+        .order("created_at", { ascending: false }),
+      supabase
+        .from("goods_receipts")
+        .select(
+          `
+          *,
+          vendors(name),
+          goods_receipt_lines(
+            *,
+            ingredients(name)
+          )
+        `
+        )
+        .order("received_at", { ascending: false }),
+    ]);
 
     const enrichedPOs: EnrichedPO[] = ((pos as unknown[]) || []).map((rawItem) => {
       const raw = rawItem as Record<string, unknown>;

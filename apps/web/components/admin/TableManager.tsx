@@ -441,6 +441,10 @@ export const TableManager: React.FC<TableManagerProps> = ({
   const [tableSeats, setTableSeats] = useState<number>(4);
   const [tableActive, setTableActive] = useState<boolean>(true);
   const [newSectionName, setNewSectionName] = useState<string>("");
+  const [sectionModalFeedback, setSectionModalFeedback] = useState<{
+    type: "success" | "error";
+    text: string;
+  } | null>(null);
 
   // Feedback banner
   const [feedback, setFeedback] = useState<{ type: "success" | "error"; text: string } | null>(null);
@@ -819,15 +823,16 @@ export const TableManager: React.FC<TableManagerProps> = ({
     }
   };
 
-  // Toggle Table Active inline
+  // Toggle Table Active inline (0ms instant optimistic update)
   const handleToggleActive = async (t: DiningTableRecord) => {
     const newStatus = !t.active;
+    // 1. Instant 0ms Optimistic UI update
+    setTables((prev) =>
+      prev.map((item) => (item.id === t.id ? { ...item, active: newStatus } : item))
+    );
     try {
       const res = await updateTableAction(t.id, { active: newStatus });
       if (res.success) {
-        setTables((prev) =>
-          prev.map((item) => (item.id === t.id ? { ...item, active: newStatus } : item))
-        );
         broadcastSyncEvent({
           type: "TABLE_RENAMED",
           tableLabel: t.label,
@@ -840,9 +845,19 @@ export const TableManager: React.FC<TableManagerProps> = ({
             seats: t.seats,
           },
         });
+      } else {
+        // Rollback on failure
+        setTables((prev) =>
+          prev.map((item) => (item.id === t.id ? { ...item, active: !newStatus } : item))
+        );
+        setFeedback({ type: "error", text: res.message || "Failed to update table." });
       }
     } catch {
-      // ignore
+      // Rollback on error
+      setTables((prev) =>
+        prev.map((item) => (item.id === t.id ? { ...item, active: !newStatus } : item))
+      );
+      setFeedback({ type: "error", text: "Error updating table." });
     }
   };
 
@@ -875,10 +890,21 @@ export const TableManager: React.FC<TableManagerProps> = ({
   // Add Section
   const handleAddSection = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newSectionName.trim()) return;
+    const trimmed = newSectionName.trim();
+    if (!trimmed) return;
+
+    if (sections.some((s) => s.toLowerCase() === trimmed.toLowerCase())) {
+      setSectionModalFeedback({
+        type: "error",
+        text: `Zone "${trimmed}" already exists in the list below.`,
+      });
+      return;
+    }
+
     setIsLoading(true);
+    setSectionModalFeedback(null);
     try {
-      const res = await createSectionAction(newSectionName.trim());
+      const res = await createSectionAction(trimmed);
       if (res.success && res.sections) {
         setSections(res.sections);
         setNewSectionName("");
@@ -886,12 +912,19 @@ export const TableManager: React.FC<TableManagerProps> = ({
           type: "SETTINGS_UPDATED",
           metadata: { action: "SECTIONS_UPDATED", sections: res.sections },
         });
-        setFeedback({ type: "success", text: res.message || "Section added!" });
+        setSectionModalFeedback({
+          type: "success",
+          text: res.message || `Zone "${trimmed}" added!`,
+        });
+        setFeedback({ type: "success", text: res.message || `Zone "${trimmed}" added!` });
       } else {
-        setFeedback({ type: "error", text: res.message || "Failed to add section." });
+        setSectionModalFeedback({
+          type: "error",
+          text: res.message || "Failed to add zone.",
+        });
       }
     } catch {
-      setFeedback({ type: "error", text: "Error creating section." });
+      setSectionModalFeedback({ type: "error", text: "Error creating zone." });
     } finally {
       setIsLoading(false);
     }
@@ -900,6 +933,7 @@ export const TableManager: React.FC<TableManagerProps> = ({
   // Delete Section
   const handleDeleteSection = async (name: string) => {
     setIsLoading(true);
+    setSectionModalFeedback(null);
     try {
       const res = await deleteSectionAction(name);
       if (res.success && res.sections) {
@@ -909,12 +943,19 @@ export const TableManager: React.FC<TableManagerProps> = ({
           type: "SETTINGS_UPDATED",
           metadata: { action: "SECTIONS_UPDATED", sections: res.sections },
         });
-        setFeedback({ type: "success", text: res.message || "Section removed." });
+        setSectionModalFeedback({
+          type: "success",
+          text: res.message || "Zone removed.",
+        });
+        setFeedback({ type: "success", text: res.message || "Zone removed." });
       } else {
-        setFeedback({ type: "error", text: res.message || "Cannot remove section." });
+        setSectionModalFeedback({
+          type: "error",
+          text: res.message || "Cannot remove zone.",
+        });
       }
     } catch {
-      setFeedback({ type: "error", text: "Error removing section." });
+      setSectionModalFeedback({ type: "error", text: "Error removing zone." });
     } finally {
       setIsLoading(false);
     }
@@ -976,7 +1017,11 @@ export const TableManager: React.FC<TableManagerProps> = ({
             </button>
 
             <button
-              onClick={() => setIsSectionsModalOpen(true)}
+              onClick={() => {
+                setNewSectionName("");
+                setSectionModalFeedback(null);
+                setIsSectionsModalOpen(true);
+              }}
               className="flex items-center gap-1.5 rounded-2xl border border-[#C9AE8B]/50 dark:border-stone-700 bg-[#FAF4EB] dark:bg-stone-900 px-3 sm:px-3.5 py-1.5 sm:py-2 text-xs font-mono font-bold text-[#241F1C] dark:text-white hover:bg-[#F3E7D3] dark:hover:bg-stone-800 transition shadow-xs whitespace-nowrap cursor-pointer"
             >
               <Layers className="h-3.5 w-3.5 text-[#754CFF] dark:text-[#C4B5FD]" />
@@ -1722,29 +1767,64 @@ export const TableManager: React.FC<TableManagerProps> = ({
                 </div>
               </div>
               <button
-                onClick={() => setIsSectionsModalOpen(false)}
+                onClick={() => {
+                  setNewSectionName("");
+                  setSectionModalFeedback(null);
+                  setIsSectionsModalOpen(false);
+                }}
                 className="text-stone-400 hover:text-stone-600 dark:hover:text-white"
               >
                 <X className="h-5 w-5" />
               </button>
             </div>
 
-            {/* Add Section Form */}
-            <form onSubmit={handleAddSection} className="flex items-center gap-2">
-              <input
-                type="text"
-                value={newSectionName}
-                onChange={(e) => setNewSectionName(e.target.value)}
-                placeholder="New section name (e.g. Rooftop Deck)"
-                className="flex-1 rounded-xl border border-[#C9AE8B]/50 dark:border-stone-700 bg-white dark:bg-stone-900 px-3 py-2 text-xs font-mono text-[#241F1C] dark:text-white focus:outline-none focus:ring-2 focus:ring-[#B72E35]"
-              />
-              <button
-                type="submit"
-                disabled={isLoading || !newSectionName.trim()}
-                className="rounded-xl bg-[#B72E35] hover:bg-[#9B252B] px-3.5 py-2 text-xs font-mono font-bold text-white shadow-xs disabled:opacity-50 shrink-0"
+            {/* In-Modal Feedback Alert */}
+            {sectionModalFeedback && (
+              <div
+                className={`flex items-center justify-between rounded-xl px-3 py-2 text-xs font-mono border ${
+                  sectionModalFeedback.type === "success"
+                    ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/30"
+                    : "bg-rose-500/10 text-rose-700 dark:text-rose-300 border-rose-500/30"
+                }`}
               >
-                Add
-              </button>
+                <span>{sectionModalFeedback.text}</span>
+                <button
+                  type="button"
+                  onClick={() => setSectionModalFeedback(null)}
+                  className="text-stone-400 hover:text-stone-600 dark:hover:text-stone-200 ml-2"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            )}
+
+            {/* Add Section Form */}
+            <form onSubmit={handleAddSection} className="space-y-1.5">
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={newSectionName}
+                  onChange={(e) => {
+                    setNewSectionName(e.target.value);
+                    if (sectionModalFeedback) setSectionModalFeedback(null);
+                  }}
+                  placeholder="New zone name (e.g. smol-room)"
+                  className="flex-1 rounded-xl border border-[#C9AE8B]/50 dark:border-stone-700 bg-white dark:bg-stone-900 px-3 py-2 text-xs font-mono text-[#241F1C] dark:text-white placeholder:text-stone-400 dark:placeholder:text-stone-600 focus:outline-none focus:ring-2 focus:ring-[#B72E35]"
+                />
+                <button
+                  type="submit"
+                  disabled={isLoading || !newSectionName.trim()}
+                  className="flex items-center justify-center gap-1.5 rounded-xl bg-[#B72E35] hover:bg-[#9B252B] active:scale-95 px-4 py-2 text-xs font-mono font-bold text-white shadow-xs disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer shrink-0 transition"
+                >
+                  {isLoading && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                  <span>{isLoading ? "Adding..." : "Add"}</span>
+                </button>
+              </div>
+              {newSectionName.trim() && sections.some((s) => s.toLowerCase() === newSectionName.trim().toLowerCase()) && (
+                <p className="text-[10px] font-mono text-amber-600 dark:text-amber-400 pl-1">
+                  ⚠ Zone &quot;{newSectionName.trim()}&quot; already exists in the list below.
+                </p>
+              )}
             </form>
 
             {/* Existing Sections List */}
@@ -1782,8 +1862,12 @@ export const TableManager: React.FC<TableManagerProps> = ({
 
             <div className="flex items-center justify-end pt-3 border-t border-[#C9AE8B]/20 dark:border-stone-800">
               <button
-                onClick={() => setIsSectionsModalOpen(false)}
-                className="rounded-xl bg-[#241F1C] dark:bg-white text-white dark:text-[#241F1C] px-4 py-2 text-xs font-mono font-bold"
+                onClick={() => {
+                  setNewSectionName("");
+                  setSectionModalFeedback(null);
+                  setIsSectionsModalOpen(false);
+                }}
+                className="rounded-xl bg-[#241F1C] dark:bg-white text-white dark:text-[#241F1C] hover:opacity-90 active:scale-95 px-4 py-2 text-xs font-mono font-bold transition cursor-pointer"
               >
                 Done
               </button>

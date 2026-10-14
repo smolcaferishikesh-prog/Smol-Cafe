@@ -403,20 +403,20 @@ export const AdminMenuManager: React.FC<AdminMenuManagerProps> = ({ onItemChange
     try {
       const stockStatusStr = targetStatus === "SOLD_OUT" ? "SOLD_OUT" : "IN_STOCK";
 
-      // 2. Persist in Admin actions
-      const res = await saveMenuItemAction({
-        id: item.id,
-        name: item.name,
-        categoryId: item.categoryId,
-        priceRupees: item.priceRupees,
-        description: item.description,
-        dietary: item.dietary as "veg" | "non-veg" | "vegan" | "egg" | "beverage",
-        status: targetStatus,
-        imageUrl: item.imageUrl,
-      });
-
-      // 3. Persist in Kitchen actions
-      await updateMenuItemStockAction(item.id, stockStatusStr);
+      // 2 & 3. Persist in parallel to save time
+      const [res] = await Promise.all([
+        saveMenuItemAction({
+          id: item.id,
+          name: item.name,
+          categoryId: item.categoryId,
+          priceRupees: item.priceRupees,
+          description: item.description,
+          dietary: item.dietary as "veg" | "non-veg" | "vegan" | "egg" | "beverage",
+          status: targetStatus,
+          imageUrl: item.imageUrl,
+        }),
+        updateMenuItemStockAction(item.id, stockStatusStr),
+      ]);
 
       if (res.success) {
         broadcastSyncEvent({
