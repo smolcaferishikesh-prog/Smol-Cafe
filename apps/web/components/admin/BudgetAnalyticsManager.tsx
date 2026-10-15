@@ -51,34 +51,53 @@ export const BudgetAnalyticsManager: React.FC<BudgetAnalyticsManagerProps> = ({ 
     setBudgetNotes("");
   };
 
+  // Edit Category Budget (0ms instant optimistic update)
   const handleSaveBudget = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingCategory) return;
 
-    setIsSavingBudget(true);
-    setFeedback(null);
+    const targetCategory = editingCategory.category;
+    const newBudgetPaise = Math.round(budgetInputRupees * 100);
+    const notes = budgetNotes;
+    const prevData = data;
 
+    // 1. Instant 0ms Optimistic UI update & immediate modal close
+    setData((prev) => ({
+      ...prev,
+      categories: prev.categories.map((c) =>
+        c.category === targetCategory
+          ? {
+              ...c,
+              budgetedPaise: newBudgetPaise,
+              variancePaise: newBudgetPaise - c.actualSpendPaise,
+              percentUsed: newBudgetPaise > 0 ? Math.round((c.actualSpendPaise / newBudgetPaise) * 100) : 0,
+            }
+          : c
+      ),
+    }));
+
+    setEditingCategory(null);
+    setFeedback({ type: "success", text: "Budget updated!" });
+
+    // 2. Background database persistence
     try {
       const res = await upsertBudgetAction(
-        String(editingCategory.category),
+        String(targetCategory),
         selectedMonth,
-        Math.round(budgetInputRupees * 100),
-        budgetNotes
+        newBudgetPaise,
+        notes
       );
 
-      if (res.success) {
-        setFeedback({ type: "success", text: res.message || "Budget updated!" });
-        setEditingCategory(null);
-        // Refresh data
+      if (!res.success) {
+        setData(prevData);
+        setFeedback({ type: "error", text: res.message || "Failed to update budget." });
+      } else {
         const fresh = await fetchBudgetVsActualAction(selectedMonth);
         if (fresh.success) setData(fresh);
-      } else {
-        setFeedback({ type: "error", text: res.message || "Failed to update budget." });
       }
     } catch {
+      setData(prevData);
       setFeedback({ type: "error", text: "An error occurred." });
-    } finally {
-      setIsSavingBudget(false);
     }
   };
 

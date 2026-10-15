@@ -3,6 +3,7 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { revalidatePath } from "next/cache";
 import { broadcastSyncEvent } from "@/lib/sync-events";
+import { invalidateAdminOverviewCache } from "@/app/admin/actions";
 
 export interface DiningTableRecord {
   id: string;
@@ -98,22 +99,25 @@ export async function fetchTablesAndSectionsAction(): Promise<{
   try {
     const supabase = createAdminClient();
 
-    // 1. Fetch tables
-    const { data: tablesData, error: tablesError } = await supabase
-      .from("dining_tables")
-      .select("*")
-      .order("label", { ascending: true });
+    // 1. Fetch tables and active sessions concurrently in parallel
+    const [tablesRes, sessionsRes] = await Promise.all([
+      supabase
+        .from("dining_tables")
+        .select("*")
+        .order("label", { ascending: true }),
+      supabase
+        .from("table_sessions")
+        .select("table_id, status")
+        .eq("status", "OPEN"),
+    ]);
 
-    if (tablesError) {
-      console.error("fetchTables error:", tablesError);
-      return { success: false, tables: [], sections: DEFAULT_SECTIONS, message: tablesError.message };
+    if (tablesRes.error) {
+      console.error("fetchTables error:", tablesRes.error);
+      return { success: false, tables: [], sections: DEFAULT_SECTIONS, message: tablesRes.error.message };
     }
 
-    // 2. Fetch active sessions to determine live occupancy
-    const { data: sessionsData } = await supabase
-      .from("table_sessions")
-      .select("table_id, status")
-      .eq("status", "OPEN");
+    const tablesData = tablesRes.data;
+    const sessionsData = sessionsRes.data;
 
     const occupiedTableIds = new Set((sessionsData || []).map((s: { table_id: string }) => s.table_id));
 
@@ -265,13 +269,12 @@ export async function createTableAction(input: CreateTableInput): Promise<{
     }
 
     try {
-      revalidatePath("/admin");
-      revalidatePath("/admin/tables");
       revalidatePath("/");
-      revalidatePath("/home");
     } catch {
       // Non-fatal if revalidation context is absent
     }
+
+    invalidateAdminOverviewCache();
 
     const newTable: DiningTableRecord = {
       id: tableId,
@@ -380,13 +383,12 @@ export async function updateTableAction(
       "Café";
 
     try {
-      revalidatePath("/admin");
-      revalidatePath("/admin/tables");
       revalidatePath("/");
-      revalidatePath("/home");
     } catch {
       // Non-fatal if revalidation context is absent
     }
+
+    invalidateAdminOverviewCache();
 
     const updatedTable: DiningTableRecord = {
       id: (updated?.id as string) || tableId,
@@ -464,11 +466,13 @@ export async function deleteTableAction(tableId: string): Promise<{
       delete globalThis.__SMOL_TABLE_SECTIONS_MAP__[tableId];
     }
 
-    revalidatePath("/admin");
-    revalidatePath("/admin/tables");
-    revalidatePath("/smol-backdoor/admin");
-    revalidatePath("/");
-    revalidatePath("/home");
+    try {
+      revalidatePath("/");
+    } catch {
+      // Non-fatal if context is absent
+    }
+
+    invalidateAdminOverviewCache();
 
     broadcastSyncEvent({
       type: "TABLE_DELETED",
@@ -502,28 +506,38 @@ export async function createSectionAction(name: string): Promise<{
       globalThis.__SMOL_CUSTOM_SECTIONS__ = [];
     }
 
-    if (
-      DEFAULT_SECTIONS.includes(trimmed) ||
-      globalThis.__SMOL_CUSTOM_SECTIONS__.includes(trimmed)
-    ) {
+    const isDuplicate =
+      DEFAULT_SECTIONS.some((s) => s.toLowerCase() === trimmed.toLowerCase()) ||
+      globalThis.__SMOL_CUSTOM_SECTIONS__.some((s) => s.toLowerCase() === trimmed.toLowerCase());
+
+    if (isDuplicate) {
       return { success: false, message: `Section "${trimmed}" already exists.` };
     }
 
     globalThis.__SMOL_CUSTOM_SECTIONS__.push(trimmed);
 
-    revalidatePath("/admin");
-    revalidatePath("/admin/tables");
+    try {
+      revalidatePath("/admin");
+      revalidatePath("/admin/tables");
+      revalidatePath("/smol-backdoor/admin");
+    } catch {
+      // Non-fatal if revalidation context is absent
+    }
 
     const allSections = Array.from(new Set([...DEFAULT_SECTIONS, ...globalThis.__SMOL_CUSTOM_SECTIONS__]));
 
-    broadcastSyncEvent({
-      type: "SETTINGS_UPDATED",
-      metadata: {
-        action: "SECTIONS_UPDATED",
-        sections: allSections,
-      },
-      timestamp: Date.now(),
-    });
+    try {
+      await broadcastSyncEvent({
+        type: "SETTINGS_UPDATED",
+        metadata: {
+          action: "SECTIONS_UPDATED",
+          sections: allSections,
+        },
+        timestamp: Date.now(),
+      });
+    } catch {
+      // Non-fatal broadcast
+    }
 
     return {
       success: true,
@@ -548,7 +562,7 @@ export async function deleteSectionAction(name: string): Promise<{
     const trimmed = name.trim();
     if (!trimmed) return { success: false, message: "Invalid section name." };
 
-    if (DEFAULT_SECTIONS.includes(trimmed)) {
+    if (DEFAULT_SECTIONS.some((s) => s.toLowerCase() === trimmed.toLowerCase())) {
       return {
         success: false,
         message: `Default section "${trimmed}" cannot be deleted, but you can rename or move tables away from it.`,
@@ -556,7 +570,7 @@ export async function deleteSectionAction(name: string): Promise<{
     }
 
     const assignedCount = Object.values(globalThis.__SMOL_TABLE_SECTIONS_MAP__ || {}).filter(
-      (s) => s === trimmed
+      (s) => s?.toLowerCase() === trimmed.toLowerCase()
     ).length;
 
     if (assignedCount > 0) {
@@ -568,23 +582,32 @@ export async function deleteSectionAction(name: string): Promise<{
 
     if (globalThis.__SMOL_CUSTOM_SECTIONS__) {
       globalThis.__SMOL_CUSTOM_SECTIONS__ = globalThis.__SMOL_CUSTOM_SECTIONS__.filter(
-        (s) => s !== trimmed
+        (s) => s.toLowerCase() !== trimmed.toLowerCase()
       );
     }
 
-    revalidatePath("/admin");
-    revalidatePath("/admin/tables");
+    try {
+      revalidatePath("/admin");
+      revalidatePath("/admin/tables");
+      revalidatePath("/smol-backdoor/admin");
+    } catch {
+      // Non-fatal if revalidation context is absent
+    }
 
     const allSections = Array.from(new Set([...DEFAULT_SECTIONS, ...(globalThis.__SMOL_CUSTOM_SECTIONS__ || [])]));
 
-    broadcastSyncEvent({
-      type: "SETTINGS_UPDATED",
-      metadata: {
-        action: "SECTIONS_UPDATED",
-        sections: allSections,
-      },
-      timestamp: Date.now(),
-    });
+    try {
+      await broadcastSyncEvent({
+        type: "SETTINGS_UPDATED",
+        metadata: {
+          action: "SECTIONS_UPDATED",
+          sections: allSections,
+        },
+        timestamp: Date.now(),
+      });
+    } catch {
+      // Non-fatal broadcast
+    }
 
     return {
       success: true,

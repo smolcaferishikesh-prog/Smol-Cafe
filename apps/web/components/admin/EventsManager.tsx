@@ -66,6 +66,7 @@ export const EventsManager: React.FC<EventsManagerProps> = ({ initialEvents }) =
   const [capacity, setCapacity] = useState("20");
   const [joinUrlOrNote, setJoinUrlOrNote] = useState("");
 
+  // Create Event (0ms instant optimistic update)
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     setFeedback(null);
@@ -90,25 +91,48 @@ export const EventsManager: React.FC<EventsManagerProps> = ({ initialEvents }) =
       active: true,
     };
 
-    setIsCreating(true);
+    const tempId = `temp_ev_${Date.now()}`;
+    const optimisticEvent: AdminEventWithRsvps = {
+      id: tempId,
+      title: title.trim(),
+      description: description.trim(),
+      starts_at: payload.startsAt,
+      ends_at: null,
+      capacity: numericCap,
+      join_url_or_note: payload.joinUrlOrNote || null,
+      active: true,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      rsvps: [],
+    };
+
+    const prevEvents = events;
+
+    // 1. Instant 0ms Optimistic UI update & form reset
+    setEvents((prev) => [optimisticEvent, ...prev]);
+    setTitle("");
+    setDescription("");
+    setStartsAt("");
+    setCapacity("20");
+    setJoinUrlOrNote("");
+    setFeedback({ type: "success", text: "Event created!" });
+    broadcastSyncEvent({ type: "SETTINGS_UPDATED", timestamp: Date.now() });
+
+    // 2. Background database persistence
     try {
       const res = await createCafeEventAction(payload);
       if (res.success && res.event) {
-        setEvents((prev) => [{ ...res.event!, rsvps: [] }, ...prev]);
-        setTitle("");
-        setDescription("");
-        setStartsAt("");
-        setCapacity("20");
-        setJoinUrlOrNote("");
-        setFeedback({ type: "success", text: res.message || "Event created!" });
-        broadcastSyncEvent({ type: "SETTINGS_UPDATED", timestamp: Date.now() });
+        setEvents((prev) =>
+          prev.map((e) => (e.id === tempId ? { ...res.event!, rsvps: [] } : e))
+        );
       } else {
+        // Rollback
+        setEvents(prevEvents);
         setFeedback({ type: "error", text: res.message || "Failed to create event." });
       }
     } catch {
+      setEvents(prevEvents);
       setFeedback({ type: "error", text: "An error occurred." });
-    } finally {
-      setIsCreating(false);
     }
   };
 
@@ -143,16 +167,24 @@ export const EventsManager: React.FC<EventsManagerProps> = ({ initialEvents }) =
     }
   };
 
+  // Delete Event (0ms instant optimistic update)
   const handleDelete = async (id: string) => {
     if (!confirm("Are you sure you want to delete this event?")) return;
 
+    const prevEvents = events;
+    // 1. Instant 0ms Optimistic removal
+    setEvents((prev) => prev.filter((e) => e.id !== id));
+    broadcastSyncEvent({ type: "SETTINGS_UPDATED", timestamp: Date.now() });
+
+    // 2. Background database deletion
     try {
       const res = await deleteCafeEventAction(id);
-      if (res.success) {
-        setEvents((prev) => prev.filter((e) => e.id !== id));
-        broadcastSyncEvent({ type: "SETTINGS_UPDATED", timestamp: Date.now() });
+      if (!res.success) {
+        setEvents(prevEvents);
+        setFeedback({ type: "error", text: res.message || "Failed to delete event." });
       }
     } catch {
+      setEvents(prevEvents);
       setFeedback({ type: "error", text: "Failed to delete event." });
     }
   };

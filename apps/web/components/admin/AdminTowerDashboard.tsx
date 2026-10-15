@@ -50,6 +50,8 @@ import {
   UserPlus,
   HeartHandshake,
   FileSpreadsheet,
+  AlertTriangle,
+  Info,
 } from "lucide-react";
 import { downloadCsv } from "@/lib/export-utils";
 import { DigitalReceiptModal, type ReceiptData } from "@/components/payment/DigitalReceiptModal";
@@ -78,9 +80,14 @@ import { OrderDetailsInspectorModal } from "@/components/admin/OrderDetailsInspe
 import { ThemeToggle } from "@/components/common/ThemeToggle";
 import { TableManager } from "@/components/admin/TableManager";
 import { AdminMenuManager } from "@/components/admin/AdminMenuManager";
+import { EditOrderModal } from "@/components/admin/EditOrderModal";
 import {
   fetchAdminOverviewAction,
   updateAdminOrderStatusAction,
+  deleteAdminOrderAction,
+  deleteMultipleAdminOrdersAction,
+  updateAdminPaymentAction,
+  deleteAdminPaymentAction,
   type AdminOverviewData,
   type AdminOrderRecord,
   type AdminPaymentRecord,
@@ -120,6 +127,17 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
 
   const [inspectingTag, setInspectingTag] = useState<TableJsonTag | null>(null);
   const [inspectingOrder, setInspectingOrder] = useState<AdminOrderRecord | null>(null);
+  const [editingOrder, setEditingOrder] = useState<AdminOrderRecord | null>(null);
+  const [orderToDelete, setOrderToDelete] = useState<AdminOrderRecord | null>(null);
+  const [selectedOrderIds, setSelectedOrderIds] = useState<string[]>([]);
+  const [actionModal, setActionModal] = useState<{
+    type: "info" | "warning" | "danger";
+    title: string;
+    description: string;
+    confirmLabel?: string;
+    cancelLabel?: string;
+    onConfirm?: () => Promise<void> | void;
+  } | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [menuSearchQuery, setMenuSearchQuery] = useState("");
   const [selectedMenuCategory, setSelectedMenuCategory] = useState("ALL");
@@ -221,27 +239,40 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
   const handleSaveRolePin = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingRole) return;
-    setPinUpdating(true);
-    setPinFeedback(null);
 
+    const targetRole = editingRole.role;
+    const prevCredentials = roleCredentials;
+
+    // 1. Instant 0ms Optimistic UI update & immediate modal close
+    if (roleCredentials) {
+      setRoleCredentials({
+        ...roleCredentials,
+        [targetRole]: {
+          ...roleCredentials[targetRole],
+          pin: editPinValue,
+          password: targetRole === "admin" ? editPasswordValue : roleCredentials[targetRole].password,
+        },
+      });
+    }
+
+    setEditingRole(null);
+    setPinFeedback({ type: "success", text: "PIN updated successfully!" });
+
+    // 2. Background database persistence
     try {
       const res = await updateRoleCredentialAction(
-        editingRole.role,
+        targetRole,
         editPinValue,
-        editingRole.role === "admin" ? editPasswordValue : undefined
+        targetRole === "admin" ? editPasswordValue : undefined
       );
 
-      if (res.success && res.credentials) {
-        setRoleCredentials(res.credentials);
-        setPinFeedback({ type: "success", text: res.message });
-        setEditingRole(null);
-      } else {
+      if (!res.success) {
+        setRoleCredentials(prevCredentials);
         setPinFeedback({ type: "error", text: res.message || "Failed to update PIN." });
       }
     } catch {
+      setRoleCredentials(prevCredentials);
       setPinFeedback({ type: "error", text: "An error occurred while updating PIN." });
-    } finally {
-      setPinUpdating(false);
     }
   };
 
@@ -463,38 +494,51 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
     }
   };
 
+  // Grant / Adjust Points (0ms instant optimistic update)
   const handleGrantPointsSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!adjustPointsModal) return;
-    setAdjustSubmitting(true);
+
+    const modalData = adjustPointsModal;
+    const prevMembers = loyaltyMembers;
+
+    // 1. Instant 0ms Optimistic UI update & immediate modal close
+    setLoyaltyMembers((prev) =>
+      prev.map((m) =>
+        m.id === modalData.member.id
+          ? {
+              ...m,
+              currentBalance: Math.max(0, m.currentBalance + modalData.pointsDelta),
+              totalEarned:
+                modalData.pointsDelta > 0
+                  ? m.totalEarned + modalData.pointsDelta
+                  : m.totalEarned,
+            }
+          : m
+      )
+    );
+    setLoyaltySaveNotice(`Adjusted ${modalData.pointsDelta > 0 ? "+" : ""}${modalData.pointsDelta} points for ${modalData.member.displayName}`);
+    broadcastSyncEvent({ type: "LOYALTY_UPDATED", timestamp: Date.now() });
+    setTimeout(() => setLoyaltySaveNotice(null), 4000);
+    setAdjustPointsModal(null);
+
+    // 2. Background database persistence
     try {
       await grantLoyaltyPointsManualAction(
-        adjustPointsModal.member.id,
-        adjustPointsModal.pointsDelta,
-        adjustPointsModal.reason || "Manual admin adjustment"
+        modalData.member.id,
+        modalData.pointsDelta,
+        modalData.reason || "Manual admin adjustment"
       );
-      setLoyaltyMembers((prev) =>
-        prev.map((m) =>
-          m.id === adjustPointsModal.member.id
-            ? {
-                ...m,
-                currentBalance: Math.max(0, m.currentBalance + adjustPointsModal.pointsDelta),
-                totalEarned:
-                  adjustPointsModal.pointsDelta > 0
-                    ? m.totalEarned + adjustPointsModal.pointsDelta
-                    : m.totalEarned,
-              }
-            : m
-        )
-      );
-      setLoyaltySaveNotice(`Adjusted ${adjustPointsModal.pointsDelta > 0 ? "+" : ""}${adjustPointsModal.pointsDelta} points for ${adjustPointsModal.member.displayName}`);
-      broadcastSyncEvent({ type: "LOYALTY_UPDATED", timestamp: Date.now() });
-      setTimeout(() => setLoyaltySaveNotice(null), 4000);
-      setAdjustPointsModal(null);
     } catch {
-      alert("Failed to adjust points");
-    } finally {
-      setAdjustSubmitting(false);
+      // Rollback on network error
+      setLoyaltyMembers(prevMembers);
+      setActionModal({
+        type: "danger",
+        title: "Points Adjustment Failed",
+        description: "Unable to update loyalty balance right now. Please check network and retry.",
+        confirmLabel: "Understood",
+        onConfirm: () => setActionModal(null),
+      });
     }
   };
 
@@ -867,6 +911,124 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
     }
   };
 
+  // Handler: Delete single order with optimistic update
+  const handleDeleteSingleOrder = async (orderId: string) => {
+    setOrders((prev) => prev.filter((o) => o.id !== orderId));
+    setSelectedOrderIds((prev) => prev.filter((id) => id !== orderId));
+    try {
+      const res = await deleteAdminOrderAction(orderId);
+      if (res.success) {
+        void refreshData(true);
+      }
+    } catch (err) {
+      console.error("Error deleting order:", err);
+      void refreshData(true);
+    }
+  };
+
+  // Handler: Bulk delete selected orders with custom modal
+  const handleDeleteSelectedOrders = () => {
+    if (selectedOrderIds.length === 0) return;
+
+    setActionModal({
+      type: "danger",
+      title: `Delete ${selectedOrderIds.length} Selected Orders?`,
+      description: `Are you sure you want to permanently delete the ${selectedOrderIds.length} selected orders? All child line items and table bills will be adjusted.`,
+      confirmLabel: `Delete ${selectedOrderIds.length} Orders`,
+      cancelLabel: "Cancel",
+      onConfirm: async () => {
+        setActionModal(null);
+        const toDelete = [...selectedOrderIds];
+        setSelectedOrderIds([]);
+        setOrders((prev) => prev.filter((o) => !toDelete.includes(o.id)));
+        try {
+          await deleteMultipleAdminOrdersAction(toDelete);
+          void refreshData(true);
+        } catch (err) {
+          console.error("Error deleting selected orders:", err);
+          void refreshData(true);
+        }
+      },
+    });
+  };
+
+  // Handler: Clear completed/delivered/cancelled orders safely with custom modal
+  const handleClearCompletedOrders = () => {
+    const completedOrders = orders.filter(
+      (o) => o.status === "SERVED" || o.status === "COMPLETED" || o.status === "CANCELLED"
+    );
+
+    if (completedOrders.length === 0) {
+      setActionModal({
+        type: "info",
+        title: "No Orders to Clear",
+        description: "There are currently no completed, delivered, or cancelled orders in the database to clear. All active dining tables and in-progress kitchen tickets remain intact.",
+        confirmLabel: "Understood",
+        onConfirm: () => setActionModal(null),
+      });
+      return;
+    }
+
+    setActionModal({
+      type: "warning",
+      title: `Clear ${completedOrders.length} Completed Order(s)?`,
+      description: `This will permanently remove ${completedOrders.length} completed and cancelled orders from the database. Ongoing active tables and preparation tickets will NOT be affected.`,
+      confirmLabel: `Yes, Clear ${completedOrders.length} Orders`,
+      cancelLabel: "Cancel",
+      onConfirm: async () => {
+        setActionModal(null);
+        const completedIds = completedOrders.map((o) => o.id);
+        setOrders((prev) => prev.filter((o) => !completedIds.includes(o.id)));
+        setSelectedOrderIds((prev) => prev.filter((id) => !completedIds.includes(id)));
+        try {
+          await deleteMultipleAdminOrdersAction(completedIds);
+          void refreshData(true);
+        } catch (err) {
+          console.error("Error clearing completed orders:", err);
+          void refreshData(true);
+        }
+      },
+    });
+  };
+
+  // Handler: Update payment status from Admin
+  const handleUpdatePaymentStatus = async (orderIdOrTxn: string, newStatus: string) => {
+    setPayments((prev) =>
+      prev.map((p) =>
+        p.txn === orderIdOrTxn || p.ord?.includes(orderIdOrTxn) ? { ...p, st: newStatus } : p
+      )
+    );
+    try {
+      await updateAdminPaymentAction(orderIdOrTxn, newStatus);
+      void refreshData(true);
+    } catch (err) {
+      console.error("Error updating payment status:", err);
+    }
+  };
+
+  // Handler: Void/delete payment from Admin with custom modal
+  const handleDeletePayment = (orderIdOrTxn: string) => {
+    setActionModal({
+      type: "danger",
+      title: "Void Payment Record?",
+      description: `Are you sure you want to void and remove payment transaction "${orderIdOrTxn}" from the reconciliation ledger?`,
+      confirmLabel: "Void Transaction",
+      cancelLabel: "Cancel",
+      onConfirm: async () => {
+        setActionModal(null);
+        setPayments((prev) =>
+          prev.filter((p) => p.txn !== orderIdOrTxn && !p.ord?.includes(orderIdOrTxn))
+        );
+        try {
+          await deleteAdminPaymentAction(orderIdOrTxn);
+          void refreshData(true);
+        } catch (err) {
+          console.error("Error voiding payment:", err);
+        }
+      },
+    });
+  };
+
   // Real-Time Sync Subscription & Background Safety Polling
   useEffect(() => {
     let isMounted = true;
@@ -923,14 +1085,21 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
   }, []);
 
   const handleStatusChange = async (orderId: string, newStatus: OrderStatus) => {
-    await updateAdminOrderStatusAction(orderId, newStatus);
-    broadcastSyncEvent({
-      type: "STATUS_CHANGED",
-      orderId,
-      status: newStatus,
-      timestamp: Date.now(),
-    });
-    await refreshData();
+    // 1. Instant 0ms Optimistic UI update
+    const prevOrders = orders;
+    setOrders((prev) =>
+      prev.map((o) => (o.id === orderId ? { ...o, status: newStatus } : o))
+    );
+    try {
+      const res = await updateAdminOrderStatusAction(orderId, newStatus);
+      if (!res.success) {
+        setOrders(prevOrders);
+      } else {
+        void refreshData(true);
+      }
+    } catch {
+      setOrders(prevOrders);
+    }
   };
 
   const navItems: Array<{
@@ -1703,64 +1872,148 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
         )}
 
         {/* Tab 2: ORDERS MANAGEMENT */}
-        {activeTab === "orders" && (
-          <div className="p-6 space-y-4 max-w-7xl">
-            {/* Filter & Search Toolbar */}
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="flex items-center gap-2">
-                {["ALL", "SUBMITTED", "PREPARING", "READY", "SERVED"].map((st) => (
+        {activeTab === "orders" && (() => {
+          const filteredOrders = orders
+            .filter((o) => orderStatusFilter === "ALL" || o.status === orderStatusFilter)
+            .filter(
+              (o) =>
+                searchQuery === "" ||
+                o.orderNo.toString().includes(searchQuery) ||
+                o.tableLabel.includes(searchQuery) ||
+                o.items.some((it) => it.toLowerCase().includes(searchQuery.toLowerCase()))
+            );
+
+          const isAllSelected =
+            filteredOrders.length > 0 &&
+            filteredOrders.every((o) => selectedOrderIds.includes(o.id));
+
+          const handleToggleSelectAll = () => {
+            if (isAllSelected) {
+              setSelectedOrderIds([]);
+            } else {
+              setSelectedOrderIds(filteredOrders.map((o) => o.id));
+            }
+          };
+
+          const handleToggleSelectOne = (id: string) => {
+            setSelectedOrderIds((prev) =>
+              prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
+            );
+          };
+
+          return (
+            <div className="p-4 sm:p-6 space-y-4 max-w-7xl animate-fade-in">
+              {/* Header Title & Info Strip */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                <div>
+                  <h2 className="text-lg sm:text-xl font-bold font-serif text-[#241F1C] dark:text-white">
+                    Live Orders Pipeline &amp; Data Editor
+                  </h2>
+                  <p className="font-serif italic text-xs text-[#725039] dark:text-[#C9AE8B]">
+                    Full granular control: Edit items, tables, and statuses, or safely delete individual orders
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="rounded-full bg-[#B72E35]/15 dark:bg-[#F2C84B]/20 text-[#B72E35] dark:text-[#F2C84B] px-3 py-1 text-xs font-mono font-bold shadow-xs">
+                    {filteredOrders.length} Order(s)
+                  </span>
+                </div>
+              </div>
+
+              {/* Filter, Bulk Actions & Search Toolbar */}
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+                  {["ALL", "SUBMITTED", "ACCEPTED", "PREPARING", "READY", "SERVED", "CANCELLED"].map((st) => (
+                    <button
+                      key={st}
+                      onClick={() => setOrderStatusFilter(st)}
+                      className={`rounded-xl px-2.5 sm:px-3 py-1.5 text-xs font-bold transition cursor-pointer ${
+                        orderStatusFilter === st
+                          ? "bg-[#B72E35] text-white shadow-xs"
+                          : "bg-[#FAF4EB] dark:bg-stone-900 border border-[#C9AE8B]/40 dark:border-stone-800 text-[#725039] dark:text-stone-400 hover:bg-[#F3E7D3] dark:hover:bg-stone-800"
+                      }`}
+                    >
+                      {st}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  {selectedOrderIds.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={handleDeleteSelectedOrders}
+                      className="inline-flex items-center gap-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white px-3 py-2 text-xs font-mono font-bold shadow-xs transition cursor-pointer active:scale-95 animate-fade-in"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                      <span>Delete Selected ({selectedOrderIds.length})</span>
+                    </button>
+                  )}
+
                   <button
-                    key={st}
-                    onClick={() => setOrderStatusFilter(st)}
-                    className={`rounded-xl px-3 py-1.5 text-xs font-bold transition cursor-pointer ${
-                      orderStatusFilter === st
-                        ? "bg-[#B72E35] text-white shadow-xs"
-                        : "bg-[#FAF4EB] dark:bg-stone-900 border border-[#C9AE8B]/40 dark:border-stone-800 text-[#725039] dark:text-stone-400 hover:bg-[#F3E7D3] dark:hover:bg-stone-800"
-                    }`}
+                    type="button"
+                    onClick={handleClearCompletedOrders}
+                    className="inline-flex items-center gap-1.5 rounded-xl border border-rose-300 dark:border-rose-900/60 bg-rose-50/60 dark:bg-rose-950/30 text-rose-700 dark:text-rose-400 hover:bg-rose-600 hover:text-white px-3 py-2 text-xs font-mono font-bold shadow-xs transition cursor-pointer active:scale-95"
+                    title="Clear delivered, completed, and cancelled orders"
                   >
-                    {st}
+                    <Trash2 className="h-3.5 w-3.5" />
+                    <span>Clear Completed</span>
                   </button>
-                ))}
+
+                  <div className="relative">
+                    <Search className="absolute left-3 top-2.5 h-4 w-4 text-[#8C6D53] dark:text-stone-500" />
+                    <input
+                      type="text"
+                      placeholder="Search order #, table, dish..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="rounded-xl border border-[#C9AE8B]/40 dark:border-stone-800 bg-[#FAF4EB] dark:bg-stone-900 pl-9 pr-4 py-2 text-xs text-[#241F1C] dark:text-white placeholder:text-[#8C6D53] dark:placeholder:text-stone-500 focus:border-[#B72E35] focus:outline-none"
+                    />
+                  </div>
+                </div>
               </div>
 
-              <div className="relative">
-                <Search className="absolute left-3 top-2.5 h-4 w-4 text-[#8C6D53] dark:text-stone-500" />
-                <input
-                  type="text"
-                  placeholder="Search order # or table..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="rounded-xl border border-[#C9AE8B]/40 dark:border-stone-800 bg-[#FAF4EB] dark:bg-stone-900 pl-9 pr-4 py-2 text-xs text-[#241F1C] dark:text-white placeholder:text-[#8C6D53] dark:placeholder:text-stone-500 focus:border-[#B72E35] focus:outline-none"
-                />
-              </div>
-            </div>
-
-            {/* Orders Table */}
-            <div className="rounded-3xl border border-[#C9AE8B]/40 dark:border-stone-800 bg-[#FAF4EB] dark:bg-[#1A1715] overflow-hidden shadow-xs transition-colors">
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs min-w-[650px] sm:min-w-0">
-                  <thead className="bg-[#F3E7D3] dark:bg-stone-900 text-[10px] uppercase tracking-wider font-mono text-[#725039] dark:text-stone-400 border-b border-[#C9AE8B]/30 dark:border-stone-800">
-                    <tr>
-                      <th className="p-3.5">Order No</th>
-                      <th className="p-3.5">Table &amp; Zone</th>
-                      <th className="p-3.5">Items Summary</th>
-                      <th className="p-3.5">Status</th>
-                      <th className="p-3.5">Total</th>
-                      <th className="p-3.5">Payment</th>
-                      <th className="p-3.5 text-right">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-[#C9AE8B]/20 dark:divide-stone-800 font-mono">
-                    {orders
-                      .filter((o) => orderStatusFilter === "ALL" || o.status === orderStatusFilter)
-                      .filter(
-                        (o) =>
-                          searchQuery === "" ||
-                          o.orderNo.toString().includes(searchQuery) ||
-                          o.tableLabel.includes(searchQuery)
-                      )
-                      .map((o) => (
-                        <tr key={o.id} className="hover:bg-[#F3E7D3]/60 dark:hover:bg-stone-900/50 transition">
+              {/* Orders Table */}
+              <div className="rounded-3xl border border-[#C9AE8B]/40 dark:border-stone-800 bg-[#FAF4EB] dark:bg-[#1A1715] overflow-hidden shadow-xs transition-colors">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs min-w-[700px] sm:min-w-0">
+                    <thead className="bg-[#F3E7D3] dark:bg-stone-900 text-[10px] uppercase tracking-wider font-mono text-[#725039] dark:text-stone-400 border-b border-[#C9AE8B]/30 dark:border-stone-800">
+                      <tr>
+                        <th className="p-3.5 w-10 text-center">
+                          <input
+                            type="checkbox"
+                            checked={isAllSelected}
+                            onChange={handleToggleSelectAll}
+                            className="rounded border-[#C9AE8B]/40 text-[#B72E35] focus:ring-[#B72E35] cursor-pointer"
+                            aria-label="Select all orders"
+                          />
+                        </th>
+                        <th className="p-3.5">Order No</th>
+                        <th className="p-3.5">Table &amp; Zone</th>
+                        <th className="p-3.5">Items Summary</th>
+                        <th className="p-3.5">Status</th>
+                        <th className="p-3.5">Total</th>
+                        <th className="p-3.5">Payment</th>
+                        <th className="p-3.5 text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[#C9AE8B]/20 dark:divide-stone-800 font-mono">
+                      {filteredOrders.map((o) => (
+                        <tr
+                          key={o.id}
+                          className={`hover:bg-[#F3E7D3]/60 dark:hover:bg-stone-900/50 transition ${
+                            selectedOrderIds.includes(o.id) ? "bg-[#F3E7D3]/40 dark:bg-stone-800/40" : ""
+                          }`}
+                        >
+                          <td className="p-3.5 text-center">
+                            <input
+                              type="checkbox"
+                              checked={selectedOrderIds.includes(o.id)}
+                              onChange={() => handleToggleSelectOne(o.id)}
+                              className="rounded border-[#C9AE8B]/40 text-[#B72E35] focus:ring-[#B72E35] cursor-pointer"
+                              aria-label={`Select order #${o.orderNo}`}
+                            />
+                          </td>
                           <td className="p-3.5 font-bold text-[#241F1C] dark:text-white">#{o.orderNo}</td>
                           <td className="p-3.5">
                             <span className="text-[#8C6207] dark:text-[#F2C84B] font-bold">Table {o.tableLabel}</span>
@@ -1775,8 +2028,10 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
                                 o.status === "READY"
                                   ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800"
                                   : o.status === "PREPARING"
-                                    ? "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 border border-amber-300 dark:border-amber-800"
-                                    : "bg-[#F3E7D3] text-[#725039] dark:bg-stone-800 dark:text-stone-300 border border-[#C9AE8B]/30 dark:border-stone-700"
+                                  ? "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 border border-amber-300 dark:border-amber-800"
+                                  : o.status === "CANCELLED"
+                                  ? "bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300 border border-rose-300 dark:border-rose-800"
+                                  : "bg-[#F3E7D3] text-[#725039] dark:bg-stone-800 dark:text-stone-300 border border-[#C9AE8B]/30 dark:border-stone-700"
                               }`}
                             >
                               {o.status}
@@ -1827,22 +2082,57 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
                             )}
                           </td>
                           <td className="p-3.5 text-right">
-                            <button
-                              onClick={() => setInspectingOrder(o)}
-                              className="inline-flex items-center gap-1.5 rounded-xl border border-[#C9AE8B]/40 dark:border-stone-700 bg-[#FAF4EB] dark:bg-stone-800 px-3 py-1.5 text-xs font-serif font-bold text-[#725039] dark:text-[#F3E7D3] hover:border-[#B72E35] dark:hover:border-[#F2C84B] hover:text-[#B72E35] dark:hover:text-[#F2C84B] transition shadow-xs cursor-pointer active:scale-95"
-                            >
-                              <Receipt className="h-3.5 w-3.5 text-[#B72E35] dark:text-[#F2C84B]" />
-                              <span>View Details</span>
-                            </button>
+                            <div className="inline-flex items-center justify-end gap-1.5">
+                              {/* Edit Order Button */}
+                              <button
+                                type="button"
+                                onClick={() => setEditingOrder(o)}
+                                className="inline-flex items-center gap-1 rounded-xl border border-[#C9AE8B]/50 dark:border-stone-700 bg-white dark:bg-stone-800 px-2.5 py-1.5 text-xs font-mono font-bold text-[#725039] dark:text-[#F3E7D3] hover:border-[#B72E35] hover:text-[#B72E35] dark:hover:text-[#F2C84B] transition shadow-2xs cursor-pointer active:scale-95"
+                                title="Edit items, table, status or payment"
+                              >
+                                <Edit2 className="h-3.5 w-3.5 text-[#B72E35] dark:text-[#F2C84B]" />
+                                <span>Edit</span>
+                              </button>
+
+                              {/* Delete Order Button */}
+                              <button
+                                type="button"
+                                onClick={() => setOrderToDelete(o)}
+                                className="p-1.5 rounded-xl border border-rose-200 dark:border-rose-900/60 bg-rose-50/50 dark:bg-rose-950/30 text-rose-600 dark:text-rose-400 hover:bg-rose-600 hover:text-white dark:hover:bg-rose-700 dark:hover:text-white transition shadow-2xs cursor-pointer active:scale-95"
+                                title="Delete this order"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </button>
+
+                              {/* Details Button */}
+                              <button
+                                type="button"
+                                onClick={() => setInspectingOrder(o)}
+                                className="inline-flex items-center gap-1 rounded-xl border border-[#C9AE8B]/40 dark:border-stone-700 bg-[#FAF4EB] dark:bg-stone-800 px-2.5 py-1.5 text-xs font-serif font-bold text-[#725039] dark:text-[#F3E7D3] hover:border-[#B72E35] dark:hover:border-[#F2C84B] hover:text-[#B72E35] dark:hover:text-[#F2C84B] transition shadow-xs cursor-pointer active:scale-95"
+                                title="View full receipt & JSON metadata"
+                              >
+                                <Receipt className="h-3.5 w-3.5 text-[#B72E35] dark:text-[#F2C84B]" />
+                                <span>Details</span>
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       ))}
-                  </tbody>
-                </table>
+
+                      {filteredOrders.length === 0 && (
+                        <tr>
+                          <td colSpan={8} className="py-12 text-center text-xs font-mono text-[#725039] dark:text-stone-400">
+                            No orders found matching the filter or search query.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </div>
-          </div>
-        )}
+          );
+        })()}
 
         {/* Tab 3: TABLES & SECTIONS MANAGEMENT */}
         {activeTab === "tables" && <TableManager />}
@@ -1850,7 +2140,7 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
         {/* Tab 4: MENU MANAGEMENT & DISH EDITOR */}
         {activeTab === "menu" && (
           <div className="p-3 sm:p-6 pb-32 max-w-7xl animate-fade-in">
-            <AdminMenuManager onItemChange={refreshData} />
+            <AdminMenuManager onItemChange={() => void refreshData(true)} />
           </div>
         )}
 
@@ -2603,6 +2893,14 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
                         <Printer className="w-2.5 h-2.5" />
                         Receipt
                       </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDeletePayment(t.ord || t.txn)}
+                        className="p-1 rounded-lg border border-rose-200 dark:border-rose-900/60 text-rose-600 hover:bg-rose-600 hover:text-white transition cursor-pointer shadow-2xs"
+                        title="Void and remove transaction from ledger"
+                      >
+                        <Trash2 className="w-2.5 h-2.5" />
+                      </button>
                       <span className={`rounded-md border px-2 py-0.5 text-[10px] font-mono font-bold ${
                         t.st === "PENDING" || t.st === "UNPAID"
                           ? "bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-950 dark:text-amber-400 dark:border-amber-800"
@@ -2626,7 +2924,7 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
             {/* Desktop View: Wide Data Table (hidden md:block) */}
             <div className="hidden md:block rounded-3xl border border-[#C9AE8B]/40 dark:border-stone-800 bg-[#FAF4EB] dark:bg-[#1A1715] overflow-hidden shadow-xs transition-colors">
               <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs min-w-[650px] sm:min-w-0">
+                <table className="w-full text-left text-xs min-w-[700px] sm:min-w-0">
                   <thead className="bg-[#F3E7D3] dark:bg-stone-900 text-[10px] uppercase tracking-wider font-mono text-[#725039] dark:text-stone-400 border-b border-[#C9AE8B]/30 dark:border-stone-800">
                     <tr>
                       <th className="p-3.5">Transaction ID</th>
@@ -2635,7 +2933,8 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
                       <th className="p-3.5">Order Ref</th>
                       <th className="p-3.5">Status</th>
                       <th className="p-3.5">Receipt</th>
-                      <th className="p-3.5 text-right">Time</th>
+                      <th className="p-3.5">Time</th>
+                      <th className="p-3.5 text-right">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-[#C9AE8B]/20 dark:divide-stone-800 font-mono">
@@ -2670,7 +2969,32 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
                             Print / View
                           </button>
                         </td>
-                        <td className="p-3.5 text-right text-[#725039] dark:text-stone-400 text-[11px]">{t.time}</td>
+                        <td className="p-3.5 text-[#725039] dark:text-stone-400 text-[11px]">{t.time}</td>
+                        <td className="p-3.5 text-right">
+                          <div className="inline-flex items-center justify-end gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                handleUpdatePaymentStatus(
+                                  t.ord || t.txn,
+                                  t.st === "SETTLED" ? "REFUNDED" : "SETTLED"
+                                )
+                              }
+                              className="rounded-lg border border-[#C9AE8B]/40 dark:border-stone-700 bg-white dark:bg-stone-800 hover:bg-[#F3E7D3] dark:hover:bg-stone-700 px-2 py-0.5 text-[10px] font-mono font-bold text-[#725039] dark:text-stone-300 transition cursor-pointer"
+                              title="Toggle status"
+                            >
+                              {t.st === "SETTLED" ? "Refund" : "Settle"}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeletePayment(t.ord || t.txn)}
+                              className="p-1 rounded-lg border border-rose-200 dark:border-rose-900/60 text-rose-600 hover:bg-rose-600 hover:text-white transition cursor-pointer shadow-2xs"
+                              title="Void and remove from ledger"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </button>
+                          </div>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -3682,7 +4006,163 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
             setInspectingTag(null);
           }}
           onUpdateStatus={handleStatusChange}
+          onEditOrder={(ord) => {
+            setInspectingOrder(null);
+            setEditingOrder(ord);
+          }}
+          onDeleteOrder={async (ordId) => {
+            await handleDeleteSingleOrder(ordId);
+            setInspectingOrder(null);
+          }}
         />
+      )}
+
+      {/* Admin Order Editor Modal */}
+      {editingOrder && (
+        <EditOrderModal
+          order={editingOrder}
+          availableMenuItems={overviewData?.menuItems || []}
+          allTables={overviewData?.tables || []}
+          onClose={() => setEditingOrder(null)}
+          onOrderUpdated={(updated) => {
+            if (updated) {
+              setOrders((prev) => prev.map((o) => (o.id === updated.id ? updated : o)));
+            }
+            void refreshData(true);
+          }}
+          onOrderDeleted={(ordId) => {
+            setOrders((prev) => prev.filter((o) => o.id !== ordId));
+            void refreshData(true);
+          }}
+        />
+      )}
+
+      {/* Delete Order Confirmation Dialog */}
+      {orderToDelete && (
+        <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/80 backdrop-blur-md p-4 animate-fade-in">
+          <div className="w-full max-w-sm rounded-3xl border border-rose-300 dark:border-rose-900 bg-[#FAF4EB] dark:bg-[#1A1715] p-6 shadow-2xl space-y-4 text-[#241F1C] dark:text-[#FDFBF7]">
+            <div className="flex items-center gap-3">
+              <div className="h-10 w-10 rounded-2xl bg-rose-100 dark:bg-rose-950 flex items-center justify-center text-rose-600">
+                <Trash2 className="h-5 w-5" />
+              </div>
+              <div>
+                <h4 className="font-serif font-bold text-base text-[#241F1C] dark:text-white">
+                  Delete Order #{orderToDelete.orderNo}?
+                </h4>
+                <p className="text-xs text-[#725039] dark:text-stone-400">
+                  Table {orderToDelete.tableLabel} • ₹{orderToDelete.totalRupees}
+                </p>
+              </div>
+            </div>
+            <p className="text-xs text-[#5C4533] dark:text-stone-300 leading-relaxed">
+              Are you sure you want to permanently delete this order? All line items and table running bills will be adjusted and synchronized across all staff screens.
+            </p>
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#C9AE8B]/30 dark:border-stone-800">
+              <button
+                type="button"
+                onClick={() => setOrderToDelete(null)}
+                className="px-3.5 py-1.5 rounded-xl border border-stone-300 dark:border-stone-700 text-xs font-mono text-[#725039] dark:text-stone-300 hover:bg-stone-100 dark:hover:bg-stone-800 transition cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  const targetId = orderToDelete.id;
+                  setOrderToDelete(null);
+                  await handleDeleteSingleOrder(targetId);
+                }}
+                className="px-4 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-mono font-bold shadow-xs transition cursor-pointer active:scale-95"
+              >
+                Delete Order
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Custom Confirmation / Alert Modal (Replaces browser popups) */}
+      {actionModal && (
+        <div
+          className="fixed inset-0 z-[10001] flex items-center justify-center bg-black/80 dark:bg-black/85 backdrop-blur-md p-4 animate-fade-in"
+          onClick={() => setActionModal(null)}
+        >
+          <div
+            className="w-full max-w-md rounded-3xl border border-[#C9AE8B]/50 dark:border-stone-700 bg-[#FAF4EB] dark:bg-[#1A1715] p-6 shadow-2xl space-y-4 text-[#241F1C] dark:text-[#FDFBF7] animate-scale-in"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start gap-3.5">
+              <div
+                className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl shadow-sm ${
+                  actionModal.type === "danger"
+                    ? "bg-rose-100 text-rose-600 dark:bg-rose-950/80 dark:text-rose-400 border border-rose-200 dark:border-rose-900/50"
+                    : actionModal.type === "warning"
+                    ? "bg-amber-100 text-amber-700 dark:bg-amber-950/80 dark:text-amber-400 border border-amber-200 dark:border-amber-900/50"
+                    : "bg-[#F3E7D3] text-[#B72E35] dark:bg-stone-800 dark:text-[#F2C84B] border border-[#C9AE8B]/40 dark:border-stone-700"
+                }`}
+              >
+                {actionModal.type === "danger" ? (
+                  <Trash2 className="h-5 w-5" />
+                ) : actionModal.type === "warning" ? (
+                  <AlertTriangle className="h-5 w-5" />
+                ) : (
+                  <Info className="h-5 w-5" />
+                )}
+              </div>
+              <div className="flex-1 min-w-0">
+                <h3 className="font-serif text-lg font-bold text-[#241F1C] dark:text-white">
+                  {actionModal.title}
+                </h3>
+                <p className="font-serif italic text-xs text-[#725039] dark:text-[#C9AE8B] mt-0.5">
+                  Smol Café Admin Notice
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setActionModal(null)}
+                className="h-8 w-8 rounded-full flex items-center justify-center text-[#725039] dark:text-stone-400 hover:bg-[#F3E7D3] dark:hover:bg-stone-800 transition cursor-pointer"
+                aria-label="Close"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <p className="text-xs text-[#5C4533] dark:text-stone-300 leading-relaxed font-sans pt-1">
+              {actionModal.description}
+            </p>
+
+            <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-[#C9AE8B]/30 dark:border-stone-800">
+              {actionModal.cancelLabel && (
+                <button
+                  type="button"
+                  onClick={() => setActionModal(null)}
+                  className="px-4 py-2 rounded-xl border border-[#C9AE8B]/40 dark:border-stone-700 bg-white dark:bg-stone-800 text-xs font-mono font-bold text-[#725039] dark:text-stone-300 hover:bg-[#F3E7D3] dark:hover:bg-stone-700 transition cursor-pointer"
+                >
+                  {actionModal.cancelLabel}
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={async () => {
+                  if (actionModal.onConfirm) {
+                    await actionModal.onConfirm();
+                  } else {
+                    setActionModal(null);
+                  }
+                }}
+                className={`px-5 py-2 rounded-xl text-xs font-mono font-bold text-white transition shadow-sm cursor-pointer active:scale-95 ${
+                  actionModal.type === "danger"
+                    ? "bg-rose-600 hover:bg-rose-700"
+                    : actionModal.type === "warning"
+                    ? "bg-[#B72E35] hover:bg-[#8C1D23]"
+                    : "bg-[#241F1C] dark:bg-white dark:text-[#241F1C] hover:bg-[#3D3530]"
+                }`}
+              >
+                {actionModal.confirmLabel || "OK"}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Role PIN / Password Edit Modal */}

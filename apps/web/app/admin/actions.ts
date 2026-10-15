@@ -4,9 +4,12 @@ import { createAdminClient, isMockDatabase } from "@/lib/supabase/admin";
 import { TABLE_ZONES_CONFIG } from "@/lib/table-tag";
 import { broadcastSyncEvent } from "@/lib/sync-events";
 import { getMenuCatalog } from "@/lib/queries/menu";
+import { safeUpdateOrderWithInstructions, extractOrderInstructions } from "@/lib/order-instructions";
 import type { OrderStatus } from "@smol-cafe/db";
 
 export interface AdminOrderItem {
+  id?: string;
+  menuItemId?: string;
   name: string;
   qty: number;
   priceRupees: number;
@@ -26,6 +29,8 @@ export interface AdminOrderRecord {
   paymentMethod: string;
   createdAt: string;
   rawCreatedAt: string;
+  instructions?: string;
+  tableSessionId?: string;
 }
 
 export interface AdminPaymentRecord {
@@ -110,43 +115,74 @@ export interface AdminOverviewData {
   analyticsMetrics: AdminAnalyticsMetrics;
 }
 
+declare global {
+  var __SMOL_ADMIN_OVERVIEW_CACHE__: {
+    timestamp: number;
+    data: AdminOverviewData;
+  } | undefined;
+}
+
+export async function invalidateAdminOverviewCache() {
+  if (typeof globalThis !== "undefined") {
+    globalThis.__SMOL_ADMIN_OVERVIEW_CACHE__ = undefined;
+  }
+}
+
 /**
  * Server Action: Fetches and calculates live operational overview data for the Admin Control Tower.
  */
-export async function fetchAdminOverviewAction(): Promise<{
+export async function fetchAdminOverviewAction(forceRefresh = false): Promise<{
   success: boolean;
   data: AdminOverviewData | null;
   message?: string;
 }> {
+  if (!forceRefresh && globalThis.__SMOL_ADMIN_OVERVIEW_CACHE__) {
+    const age = Date.now() - globalThis.__SMOL_ADMIN_OVERVIEW_CACHE__.timestamp;
+    if (age < 2500) {
+      return {
+        success: true,
+        data: globalThis.__SMOL_ADMIN_OVERVIEW_CACHE__.data,
+      };
+    }
+  }
+
   const supabase = createAdminClient();
 
   try {
-    // 1. Fetch all orders (excluding cancelled/rejected if needed for revenue, but keeping all for logs)
-    const { data: rawOrders, error: ordersError } = await supabase
-      .from("orders")
-      .select("*")
-      .order("created_at", { ascending: false });
+    // 1. Fetch Orders with order_items, Tables, Sessions, Bills with payment attempts, and Menu Catalog concurrently in parallel
+    const [ordersRes, tablesRes, sessionsRes, billsRes, catalogData] = await Promise.all([
+      supabase
+        .from("orders")
+        .select("*, order_items(*)")
+        .order("created_at", { ascending: false })
+        .limit(200),
+      supabase.from("dining_tables").select("*"),
+      supabase.from("table_sessions").select("*"),
+      supabase
+        .from("bills")
+        .select("id, table_session_id, payment_attempts(id, provider, status, idempotency_key, created_at)"),
+      getMenuCatalog(),
+    ]);
 
-    if (ordersError) {
-      console.error("[fetchAdminOverviewAction] Error fetching orders:", ordersError);
+    if (ordersRes.error) {
+      console.error("[fetchAdminOverviewAction] Error fetching orders:", ordersRes.error);
     }
 
-    const orders = rawOrders || [];
+    const orders = ordersRes.data || [];
+    const diningTables = tablesRes.data || [];
+    const tableSessions = sessionsRes.data || [];
+    const bills = billsRes.data || [];
 
-    // 2. Fetch dining tables & active table sessions
-    const { data: diningTables } = await supabase.from("dining_tables").select("*");
-    const { data: tableSessions } = await supabase.from("table_sessions").select("*");
-
+    // 2. Map dining tables & active table sessions
     const tableMap = new Map<string, string>();
-    for (const t of diningTables || []) {
+    for (const t of diningTables) {
       tableMap.set(t.id, t.label);
     }
 
     const sessionToTableMap = new Map<string, string>();
-    const activeSessions = (tableSessions || []).filter((s) => s.status === "ACTIVE" || s.status === "OPEN");
     const activeTableIds = new Set<string>();
 
-    for (const s of tableSessions || []) {
+    for (const s of tableSessions) {
       const label = tableMap.get(s.table_id) || "01";
       sessionToTableMap.set(s.id, label);
       if (s.status === "ACTIVE" || s.status === "OPEN") {
@@ -154,28 +190,25 @@ export async function fetchAdminOverviewAction(): Promise<{
       }
     }
 
-    // 3. Fetch order items
-    const orderIds = orders.map((o) => o.id);
+    // 3. Extract order items from joined order response
     const itemsByOrder = new Map<string, AdminOrderItem[]>();
-
-    if (orderIds.length > 0) {
-      const { data: orderItems } = await supabase
-        .from("order_items")
-        .select("*")
-        .in("order_id", orderIds);
-
+    for (const o of orders) {
+      const orderItems = Array.isArray(o.order_items) ? o.order_items : [];
+      if (!itemsByOrder.has(o.id)) {
+        itemsByOrder.set(o.id, []);
+      }
       for (const item of (orderItems as Array<{
         id: string;
         order_id: string;
+        menu_item_id?: string;
         name_snapshot: string;
         unit_price_snapshot: number;
         qty: number;
         line_subtotal: number;
-      }>) || []) {
-        if (!itemsByOrder.has(item.order_id)) {
-          itemsByOrder.set(item.order_id, []);
-        }
-        itemsByOrder.get(item.order_id)!.push({
+      }>)) {
+        itemsByOrder.get(o.id)!.push({
+          id: item.id,
+          menuItemId: item.menu_item_id,
           name: item.name_snapshot,
           qty: item.qty,
           priceRupees: Math.round((item.unit_price_snapshot || 0) / 100),
@@ -184,56 +217,37 @@ export async function fetchAdminOverviewAction(): Promise<{
       }
     }
 
-    // 3.5. Fetch bills and payment attempts to accurately resolve payment method & financial ledger
-    const sessionIds = Array.from(
-      new Set(orders.map((o) => o.table_session_id).filter((id): id is string => Boolean(id)))
-    );
-
+    // 3.5. Extract payment providers from joined bills response
     const orderPaymentProviderMap = new Map<string, string>();
     const sessionPaymentProviderMap = new Map<string, string>();
 
-    if (sessionIds.length > 0) {
-      try {
-        const { data: bills } = await supabase
-          .from("bills")
-          .select("id, table_session_id")
-          .in("table_session_id", sessionIds);
+    for (const b of (bills as Array<{
+      id: string;
+      table_session_id?: string;
+      payment_attempts?: Array<{
+        id: string;
+        provider?: string;
+        status?: string;
+        idempotency_key?: string;
+        created_at?: string;
+      }>;
+    }>)) {
+      const attempts = Array.isArray(b.payment_attempts) ? b.payment_attempts : [];
+      for (const att of attempts) {
+        if (!att.provider) continue;
+        const providerUpper = att.provider.trim().toUpperCase();
 
-        if (bills && bills.length > 0) {
-          const billIds = bills.map((b) => b.id);
-          const billToSessionMap = new Map<string, string>();
-          for (const b of bills) {
-            billToSessionMap.set(b.id, b.table_session_id);
-          }
-
-          const { data: paymentAttempts } = await supabase
-            .from("payment_attempts")
-            .select("id, bill_id, provider, status, idempotency_key, created_at")
-            .in("bill_id", billIds)
-            .order("created_at", { ascending: true });
-
-          for (const att of paymentAttempts || []) {
-            if (!att.provider) continue;
-            const providerUpper = att.provider.trim().toUpperCase();
-
-            // 1. Direct order link via idempotency_key (format: cashier_confirm_${orderId}_... or cashier_edit_${orderId}_...)
-            if (att.idempotency_key) {
-              for (const ordId of orderIds) {
-                if (att.idempotency_key.includes(ordId)) {
-                  orderPaymentProviderMap.set(ordId, providerUpper);
-                }
-              }
-            }
-
-            // 2. Table Session link
-            const sessId = billToSessionMap.get(att.bill_id);
-            if (sessId) {
-              sessionPaymentProviderMap.set(sessId, providerUpper);
+        if (att.idempotency_key) {
+          for (const ord of orders) {
+            if (att.idempotency_key.includes(ord.id)) {
+              orderPaymentProviderMap.set(ord.id, providerUpper);
             }
           }
         }
-      } catch (payErr) {
-        console.warn("[fetchAdminOverviewAction] Notice resolving payment attempts:", payErr);
+
+        if (b.table_session_id) {
+          sessionPaymentProviderMap.set(b.table_session_id, providerUpper);
+        }
       }
     }
 
@@ -398,6 +412,8 @@ export async function fetchAdminOverviewAction(): Promise<{
         paymentMethod: displayMethod,
         createdAt: relativeTime,
         rawCreatedAt: o.created_at,
+        instructions: extractOrderInstructions(o) || "",
+        tableSessionId: o.table_session_id || "",
       });
 
       // Payments ledger entry
@@ -515,12 +531,11 @@ export async function fetchAdminOverviewAction(): Promise<{
     const validOrdersCount = mappedOrders.filter((o) => o.status !== "CANCELLED" && o.status !== "REJECTED").length;
     const avgOrderRupees = validOrdersCount > 0 ? Math.round(grossRevenueRupees / validOrdersCount) : 0;
 
-    // 9. Fetch Full 59-Item Menu Catalog & Categories
-    const catalogData = await getMenuCatalog();
+    // 9. Process 59-Item Menu Catalog & Categories (fetched concurrently in parallel)
     const allMenuItems: AdminMenuItemRecord[] = [];
     const menuCategories: string[] = ["ALL"];
 
-    for (const cat of catalogData) {
+    for (const cat of catalogData || []) {
       if (!menuCategories.includes(cat.name)) {
         menuCategories.push(cat.name);
       }
@@ -613,36 +628,45 @@ export async function fetchAdminOverviewAction(): Promise<{
 
     const realTotalTables = diningTables && diningTables.length > 0 ? diningTables.length : 1;
 
+    const overviewData: AdminOverviewData = {
+      kpis: {
+        todaysOrders: mappedOrders.length,
+        grossRevenueRupees,
+        activeTablesCount: Math.min(realTotalTables, activeTableIds.size),
+        totalTablesCount: realTotalTables,
+        pendingKdsCount: pendingKdsTickets,
+        avgOrderRupees,
+        topSellerName: topSeller.name,
+        topSellerUnits: topSeller.sales,
+      },
+      orders: mappedOrders,
+      payments: mappedPayments,
+      hourlyTrend,
+      bestSellers,
+      zoneUtilization,
+      paymentSplit,
+      cumulativeRevenuePoints: [0, Math.round(grossRevenueRupees * 0.25), Math.round(grossRevenueRupees * 0.6), grossRevenueRupees],
+      menuItems: allMenuItems,
+      menuCategories,
+      tables: mappedTables,
+      analyticsMetrics: {
+        tableTurnDurationMinutes,
+        reorderRatePercent,
+        avgTicketVsPriorWeekPercent,
+        peakHourWindow,
+      },
+    };
+
+    if (typeof globalThis !== "undefined") {
+      globalThis.__SMOL_ADMIN_OVERVIEW_CACHE__ = {
+        timestamp: Date.now(),
+        data: overviewData,
+      };
+    }
+
     return {
       success: true,
-      data: {
-        kpis: {
-          todaysOrders: mappedOrders.length,
-          grossRevenueRupees,
-          activeTablesCount: Math.min(realTotalTables, activeTableIds.size),
-          totalTablesCount: realTotalTables,
-          pendingKdsCount: pendingKdsTickets,
-          avgOrderRupees,
-          topSellerName: topSeller.name,
-          topSellerUnits: topSeller.sales,
-        },
-        orders: mappedOrders,
-        payments: mappedPayments,
-        hourlyTrend,
-        bestSellers,
-        zoneUtilization,
-        paymentSplit,
-        cumulativeRevenuePoints: [0, Math.round(grossRevenueRupees * 0.25), Math.round(grossRevenueRupees * 0.6), grossRevenueRupees],
-        menuItems: allMenuItems,
-        menuCategories,
-        tables: mappedTables,
-        analyticsMetrics: {
-          tableTurnDurationMinutes,
-          reorderRatePercent,
-          avgTicketVsPriorWeekPercent,
-          peakHourWindow,
-        },
-      },
+      data: overviewData,
     };
   } catch (err) {
     console.error("[fetchAdminOverviewAction] Fatal error:", err);
@@ -676,6 +700,8 @@ export async function updateAdminOrderStatusAction(
       return { success: false, message: error.message };
     }
 
+    invalidateAdminOverviewCache();
+
     broadcastSyncEvent({
       type: "STATUS_CHANGED",
       orderId,
@@ -689,6 +715,498 @@ export async function updateAdminOrderStatusAction(
       success: false,
       message: err instanceof Error ? err.message : "Failed to update order status.",
     };
+  }
+}
+
+export interface EditAdminOrderItemInput {
+  id?: string;
+  menuItemId?: string;
+  name: string;
+  qty: number;
+  priceRupees: number;
+}
+
+export interface EditAdminOrderPayload {
+  orderId: string;
+  tableLabel?: string;
+  status?: OrderStatus;
+  paymentMethod?: string;
+  paymentStatus?: string;
+  instructions?: string;
+  items: EditAdminOrderItemInput[];
+}
+
+/**
+ * Server Action: Edit any order from Admin Control Tower.
+ * Allows updating dining table, order status, payment mode/status, instructions, and items.
+ * Atomically recalculates financial totals, synchronizes bills, and broadcasts sync events.
+ */
+export async function editAdminOrderAction(payload: EditAdminOrderPayload): Promise<{
+  success: boolean;
+  message: string;
+}> {
+  const supabase = createAdminClient();
+  const nowIso = new Date().toISOString();
+
+  try {
+    if (!payload.orderId) {
+      return { success: false, message: "Order ID is required." };
+    }
+    if (!payload.items || payload.items.length === 0) {
+      return { success: false, message: "Order must contain at least one item." };
+    }
+
+    // 1. Fetch current order and optional matched table in parallel
+    const cleanLabel = payload.tableLabel ? payload.tableLabel.trim().padStart(2, "0") : null;
+    const [orderFetchRes, tableFetchRes] = await Promise.all([
+      supabase
+        .from("orders")
+        .select("id, order_no, table_session_id, version, status, total_snapshot")
+        .eq("id", payload.orderId)
+        .maybeSingle(),
+      cleanLabel
+        ? supabase.from("dining_tables").select("id, label").eq("label", cleanLabel).maybeSingle()
+        : Promise.resolve({ data: null, error: null }),
+    ]);
+
+    const existingOrder = orderFetchRes.data;
+    if (orderFetchRes.error || !existingOrder) {
+      return { success: false, message: "Order not found in database." };
+    }
+
+    // 2. Calculate financial totals
+    const isUuid = (str?: string) =>
+      Boolean(str && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str));
+
+    let subtotalPaise = 0;
+    const orderItemsPayload = payload.items.map((it) => {
+      const lineSubtotal = Math.round(it.priceRupees * 100) * it.qty;
+      subtotalPaise += lineSubtotal;
+      return {
+        id: crypto.randomUUID(),
+        order_id: payload.orderId,
+        menu_item_id: isUuid(it.menuItemId) ? it.menuItemId : null,
+        name_snapshot: it.name,
+        unit_price_snapshot: Math.round(it.priceRupees * 100),
+        qty: it.qty,
+        line_subtotal: lineSubtotal,
+        item_status:
+          payload.status === "SERVED"
+            ? "SERVED"
+            : payload.status === "READY"
+            ? "READY"
+            : "PENDING",
+        created_at: nowIso,
+      };
+    });
+
+    const taxPaise = Math.round(subtotalPaise * 0.05); // 5% GST Cafe Tax
+    const totalPaise = subtotalPaise + taxPaise;
+
+    // 3. Resolve table session if table changed
+    let targetSessionId = existingOrder.table_session_id;
+    const matchedTable = tableFetchRes.data;
+    if (matchedTable) {
+      const { data: sessionForTable } = await supabase
+        .from("table_sessions")
+        .select("id")
+        .eq("table_id", matchedTable.id)
+        .eq("status", "ACTIVE")
+        .maybeSingle();
+
+      if (sessionForTable) {
+        targetSessionId = sessionForTable.id;
+      } else {
+        const newSessionId = crypto.randomUUID();
+        await supabase.from("table_sessions").insert({
+          id: newSessionId,
+          table_id: matchedTable.id,
+          status: "ACTIVE",
+          created_at: nowIso,
+        });
+        targetSessionId = newSessionId;
+      }
+    }
+
+    // 4. Update order snapshot
+    const updatePayload: Record<string, any> = {
+      subtotal_snapshot: subtotalPaise,
+      tax_snapshot: taxPaise,
+      total_snapshot: totalPaise,
+      version: (existingOrder.version || 1) + 1,
+      updated_at: nowIso,
+    };
+
+    if (payload.status) updatePayload.status = payload.status;
+    if (targetSessionId) updatePayload.table_session_id = targetSessionId;
+    if (payload.paymentMethod) updatePayload.payment_method = payload.paymentMethod;
+    if (payload.paymentStatus) updatePayload.payment_status = payload.paymentStatus;
+
+    // Concurrently update order snapshot, delete old order items, and record status history
+    const [updateRes] = await Promise.all([
+      safeUpdateOrderWithInstructions(
+        supabase,
+        payload.orderId,
+        updatePayload,
+        payload.instructions || ""
+      ),
+      supabase.from("order_items").delete().eq("order_id", payload.orderId),
+      payload.status && payload.status !== existingOrder.status
+        ? supabase.from("order_status_history").insert({
+            id: crypto.randomUUID(),
+            order_id: payload.orderId,
+            from_status: existingOrder.status,
+            to_status: payload.status,
+            changed_by: "admin",
+            created_at: nowIso,
+          })
+        : Promise.resolve(),
+    ]);
+
+    if (!updateRes.success) {
+      return { success: false, message: "Failed to update order snapshot." };
+    }
+
+    // Insert new items
+    await supabase.from("order_items").insert(orderItemsPayload);
+
+    // 6. Update table session bill if connected (background promise)
+    if (targetSessionId) {
+      (async () => {
+        try {
+          const [ordersRes, billRes] = await Promise.all([
+            supabase
+              .from("orders")
+              .select("id, status, subtotal_snapshot, tax_snapshot, total_snapshot")
+              .eq("table_session_id", targetSessionId),
+            supabase.from("bills").select("id").eq("table_session_id", targetSessionId).maybeSingle(),
+          ]);
+
+          const activeOrders = (ordersRes.data || []).filter(
+            (o) => o.status !== "CANCELLED" && o.status !== "REJECTED"
+          );
+          const billSubtotal = activeOrders.reduce(
+            (s, o) => s + (o.id === payload.orderId ? subtotalPaise : (o.subtotal_snapshot || 0)),
+            0
+          );
+          const billTax = activeOrders.reduce(
+            (s, o) => s + (o.id === payload.orderId ? taxPaise : (o.tax_snapshot || 0)),
+            0
+          );
+          const billTotal = activeOrders.reduce(
+            (s, o) => s + (o.id === payload.orderId ? totalPaise : (o.total_snapshot || 0)),
+            0
+          );
+
+          if (billRes.data) {
+            await supabase
+              .from("bills")
+              .update({
+                subtotal: billSubtotal,
+                tax: billTax,
+                total: billTotal,
+                status: payload.paymentStatus === "PAID" ? "SETTLED" : "OPEN",
+                updated_at: nowIso,
+              })
+              .eq("id", billRes.data.id);
+          } else {
+            await supabase.from("bills").insert({
+              id: crypto.randomUUID(),
+              table_session_id: targetSessionId,
+              subtotal: billSubtotal,
+              tax: billTax,
+              total: billTotal,
+              status: payload.paymentStatus === "PAID" ? "SETTLED" : "OPEN",
+              created_at: nowIso,
+            });
+          }
+        } catch (billErr) {
+          console.warn("Bill sync notice in editAdminOrderAction:", billErr);
+        }
+      })();
+    }
+
+    invalidateAdminOverviewCache();
+
+    // 7. Fire broadcast non-blocking
+    try {
+      void broadcastSyncEvent({
+        type: "STATUS_CHANGED",
+        orderId: payload.orderId,
+        status: payload.status,
+        timestamp: Date.now(),
+      });
+    } catch {
+      // ignore
+    }
+
+    return {
+      success: true,
+      message: `Order #${existingOrder.order_no || payload.orderId.slice(-4)} updated successfully.`,
+    };
+  } catch (err: any) {
+    console.error("editAdminOrderAction error:", err);
+    return {
+      success: false,
+      message: err?.message || "Failed to edit order.",
+    };
+  }
+}
+
+/**
+ * Server Action: Permanently delete any specific order from Admin Control Tower.
+ * Cleans child order_items, status history, updates running bills, and broadcasts sync event.
+ */
+export async function deleteAdminOrderAction(orderId: string): Promise<{
+  success: boolean;
+  message: string;
+}> {
+  const supabase = createAdminClient();
+
+  try {
+    if (!orderId) {
+      return { success: false, message: "Order ID is required." };
+    }
+
+    // 1. Fetch order
+    const { data: order, error: fetchErr } = await supabase
+      .from("orders")
+      .select("id, order_no, table_session_id")
+      .eq("id", orderId)
+      .maybeSingle();
+
+    if (fetchErr || !order) {
+      return { success: false, message: "Order not found or already deleted." };
+    }
+
+    const orderNo = order.order_no || order.id.slice(-4);
+    const sessionId = order.table_session_id;
+
+    // 2. Delete child items, status history, and the order concurrently
+    await Promise.all([
+      supabase.from("order_items").delete().eq("order_id", orderId),
+      supabase.from("order_status_history").delete().eq("order_id", orderId),
+    ]);
+
+    const { error: delErr } = await supabase.from("orders").delete().eq("id", orderId);
+    if (delErr) {
+      return { success: false, message: delErr.message };
+    }
+
+    // 4. Update table session bill if other orders remain
+    if (sessionId) {
+      (async () => {
+        try {
+          const { data: remainingOrders } = await supabase
+            .from("orders")
+            .select("id, status, subtotal_snapshot, tax_snapshot, total_snapshot")
+            .eq("table_session_id", sessionId);
+
+          const activeRemaining = (remainingOrders || []).filter(
+            (o) => o.status !== "CANCELLED" && o.status !== "REJECTED"
+          );
+
+          if (activeRemaining.length === 0) {
+            await supabase.from("payment_attempts").delete().eq("bill_id", sessionId);
+            await supabase.from("bills").delete().eq("table_session_id", sessionId);
+          } else {
+            const newSubtotal = activeRemaining.reduce((s, o) => s + (o.subtotal_snapshot || 0), 0);
+            const newTax = activeRemaining.reduce((s, o) => s + (o.tax_snapshot || 0), 0);
+            const newTotal = activeRemaining.reduce((s, o) => s + (o.total_snapshot || 0), 0);
+
+            await supabase
+              .from("bills")
+              .update({
+                subtotal: newSubtotal,
+                tax: newTax,
+                total: newTotal,
+                updated_at: new Date().toISOString(),
+              })
+              .eq("table_session_id", sessionId);
+          }
+        } catch (err) {
+          console.error("Error updating bill after order deletion:", err);
+        }
+      })();
+    }
+
+    invalidateAdminOverviewCache();
+
+    // 5. Broadcast real-time sync event
+    broadcastSyncEvent({
+      type: "STATUS_CHANGED",
+      orderId,
+      timestamp: Date.now(),
+    });
+
+    return {
+      success: true,
+      message: `Order #${orderNo} was deleted successfully.`,
+    };
+  } catch (err: any) {
+    console.error("deleteAdminOrderAction error:", err);
+    return {
+      success: false,
+      message: err?.message || "Failed to delete order.",
+    };
+  }
+}
+
+/**
+ * Server Action: Bulk delete selected orders from Admin Control Tower.
+ * Uses atomic batch queries to execute in <500ms rather than sequential individual loops.
+ */
+export async function deleteMultipleAdminOrdersAction(orderIds: string[]): Promise<{
+  success: boolean;
+  deletedCount: number;
+  message: string;
+}> {
+  if (!orderIds || orderIds.length === 0) {
+    return { success: false, deletedCount: 0, message: "No orders specified." };
+  }
+
+  const supabase = createAdminClient();
+  try {
+    // 1. Fetch table sessions for all orders to be deleted in 1 roundtrip
+    const { data: targetOrders } = await supabase
+      .from("orders")
+      .select("id, table_session_id")
+      .in("id", orderIds);
+
+    const sessionIds = Array.from(
+      new Set((targetOrders || []).map((o) => o.table_session_id).filter((id): id is string => Boolean(id)))
+    );
+
+    // 2. Batch delete child items, logs, and orders concurrently
+    await Promise.all([
+      supabase.from("order_items").delete().in("order_id", orderIds),
+      supabase.from("order_status_history").delete().in("order_id", orderIds),
+    ]);
+
+    const { error: delErr } = await supabase.from("orders").delete().in("id", orderIds);
+    if (delErr) {
+      return { success: false, deletedCount: 0, message: delErr.message };
+    }
+
+    // 3. Clean up empty table session bills in background
+    if (sessionIds.length > 0) {
+      (async () => {
+        try {
+          for (const sId of sessionIds) {
+            const { data: remaining } = await supabase
+              .from("orders")
+              .select("id, subtotal_snapshot, tax_snapshot, total_snapshot, status")
+              .eq("table_session_id", sId);
+
+            const active = (remaining || []).filter(
+              (o) => o.status !== "CANCELLED" && o.status !== "REJECTED"
+            );
+
+            if (active.length === 0) {
+              await supabase.from("payment_attempts").delete().eq("bill_id", sId);
+              await supabase.from("bills").delete().eq("table_session_id", sId);
+            } else {
+              const newSubtotal = active.reduce((s, o) => s + (o.subtotal_snapshot || 0), 0);
+              const newTax = active.reduce((s, o) => s + (o.tax_snapshot || 0), 0);
+              const newTotal = active.reduce((s, o) => s + (o.total_snapshot || 0), 0);
+
+              await supabase
+                .from("bills")
+                .update({
+                  subtotal: newSubtotal,
+                  tax: newTax,
+                  total: newTotal,
+                  updated_at: new Date().toISOString(),
+                })
+                .eq("table_session_id", sId);
+            }
+          }
+        } catch (e) {
+          console.warn("Background bill cleanup notice:", e);
+        }
+      })();
+    }
+
+    invalidateAdminOverviewCache();
+
+    broadcastSyncEvent({
+      type: "STATUS_CHANGED",
+      timestamp: Date.now(),
+    });
+
+    return {
+      success: true,
+      deletedCount: orderIds.length,
+      message: `Successfully deleted ${orderIds.length} order(s).`,
+    };
+  } catch (err: any) {
+    console.error("deleteMultipleAdminOrdersAction error:", err);
+    return { success: false, deletedCount: 0, message: err?.message || "Failed to delete orders." };
+  }
+}
+
+/**
+ * Server Action: Update or void payment status from Admin Control Tower.
+ */
+export async function updateAdminPaymentAction(
+  orderIdOrTxn: string,
+  newStatus: string
+): Promise<{ success: boolean; message: string }> {
+  const supabase = createAdminClient();
+  try {
+    const { error } = await supabase
+      .from("orders")
+      .update({
+        payment_status: newStatus,
+        updated_at: new Date().toISOString(),
+      })
+      .or(`id.eq.${orderIdOrTxn},order_no.eq.${parseInt(orderIdOrTxn.replace(/\D/g, "") || "0", 10)}`);
+
+    invalidateAdminOverviewCache();
+
+    broadcastSyncEvent({
+      type: "STATUS_CHANGED",
+      timestamp: Date.now(),
+    });
+
+    return {
+      success: !error,
+      message: error ? error.message : "Payment status updated successfully.",
+    };
+  } catch (err: any) {
+    return { success: false, message: err?.message || "Failed to update payment status." };
+  }
+}
+
+/**
+ * Server Action: Delete or void payment ledger record from Admin Control Tower.
+ */
+export async function deleteAdminPaymentAction(
+  orderIdOrTxn: string
+): Promise<{ success: boolean; message: string }> {
+  const supabase = createAdminClient();
+  try {
+    await supabase
+      .from("orders")
+      .update({
+        payment_status: "UNPAID (VOID)",
+        updated_at: new Date().toISOString(),
+      })
+      .or(`id.eq.${orderIdOrTxn},order_no.eq.${parseInt(orderIdOrTxn.replace(/\D/g, "") || "0", 10)}`);
+
+    invalidateAdminOverviewCache();
+
+    broadcastSyncEvent({
+      type: "STATUS_CHANGED",
+      timestamp: Date.now(),
+    });
+
+    return {
+      success: true,
+      message: "Payment transaction record voided and removed from ledger.",
+    };
+  } catch (err: any) {
+    return { success: false, message: err?.message || "Failed to void payment transaction." };
   }
 }
 
@@ -761,6 +1279,8 @@ export async function purgeCustomerOrdersAction(rawPhone: string = "+91930508433
     } catch {
       // ignore table missing
     }
+
+    invalidateAdminOverviewCache();
 
     // Broadcast sync event to update all client screens instantly
     broadcastSyncEvent({

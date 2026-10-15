@@ -35,32 +35,75 @@ export const StaffJukeboxDj: React.FC<StaffJukeboxDjProps> = ({ initialData }) =
     return () => clearInterval(interval);
   }, []);
 
+  // Update Song Request Status (0ms instant optimistic update)
   const handleStatusUpdate = async (requestId: string, status: SongRequestStatus) => {
-    setFeedback(null);
+    const prevData = data;
+    setData((prev) => {
+      const track =
+        (prev.playingTrack?.id === requestId ? prev.playingTrack : null) ||
+        prev.pendingRequests.find((t) => t.id === requestId) ||
+        prev.queuedTracks.find((t) => t.id === requestId);
+
+      if (!track) return prev;
+
+      const updatedTrack = { ...track, status };
+
+      let playingTrack = prev.playingTrack?.id === requestId ? null : prev.playingTrack;
+      let pendingRequests = prev.pendingRequests.filter((t) => t.id !== requestId);
+      let queuedTracks = prev.queuedTracks.filter((t) => t.id !== requestId);
+      let playedHistory = prev.playedHistory;
+
+      if (status === "PLAYING") {
+        playingTrack = updatedTrack;
+      } else if (status === "QUEUED") {
+        queuedTracks = [...queuedTracks, updatedTrack];
+      } else if (status === "PLAYED" || status === "SKIPPED") {
+        playedHistory = [updatedTrack, ...playedHistory];
+      }
+
+      return {
+        ...prev,
+        playingTrack,
+        pendingRequests,
+        queuedTracks,
+        playedHistory,
+      };
+    });
+    setFeedback(`Status updated to ${status}`);
+
     try {
       const res = await updateSongStatusAction(requestId, status);
-      if (res.success) {
-        setFeedback(res.message || `Status updated to ${status}`);
-        const fresh = await fetchStaffJukeboxAction();
-        if (fresh.success) setData(fresh);
+      if (!res.success) {
+        setData(prevData);
+        setFeedback("Failed to update status.");
       }
     } catch {
+      setData(prevData);
       setFeedback("Failed to update status.");
     }
   };
 
+  // Toggle Music Session (0ms instant optimistic update)
   const handleToggleSession = async () => {
     if (!data.session) return;
     const isCurrentlyOpen = data.session.status === "OPEN";
+    const targetStatus: "OPEN" | "CLOSED" = isCurrentlyOpen ? "CLOSED" : "OPEN";
+    const prevData = data;
+
+    setData((prev) => ({
+      ...prev,
+      session: prev.session ? { ...prev.session, status: targetStatus } : null,
+    }));
+    setFeedback(`Session ${targetStatus.toLowerCase()}.`);
 
     try {
       const res = await toggleMusicSessionAction(data.session.id, !isCurrentlyOpen);
-      if (res.success) {
-        setFeedback(res.message || "Session toggled.");
-        const fresh = await fetchStaffJukeboxAction();
-        if (fresh.success) setData(fresh);
+      if (!res.success) {
+        setData(prevData);
+        setFeedback("Failed to toggle session.");
       }
     } catch {
+      setData(prevData);
       setFeedback("Failed to toggle session.");
     }
   };

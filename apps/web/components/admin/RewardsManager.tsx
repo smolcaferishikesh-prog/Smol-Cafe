@@ -94,24 +94,47 @@ export const RewardsManager: React.FC<RewardsManagerProps> = ({ initialRewards }
       active: true,
     };
 
-    setIsCreating(true);
+    const tempId = `temp_rew_${Date.now()}`;
+    const optimisticReward: Reward = {
+      id: tempId,
+      name,
+      description: description || null,
+      type,
+      discount_value: payload.discountValue,
+      points_cost: numericPoints,
+      expiry_days: payload.expiryDays ?? null,
+      menu_item_id: null,
+      active: true,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+
+    const prevRewards = rewards;
+
+    // 1. Instant 0ms Optimistic UI update & form reset
+    setRewards((prev) => [...prev, optimisticReward]);
+    setName("");
+    setDescription("");
+    setDiscountValue("50");
+    setPointsCost("50");
+    setFeedback({ type: "success", text: "Reward created!" });
+    broadcastSyncEvent({ type: "LOYALTY_UPDATED", timestamp: Date.now() });
+
+    // 2. Background database persistence
     try {
       const res = await createRewardAction(payload);
       if (res.success && res.reward) {
-        setRewards((prev) => [...prev, res.reward!]);
-        setName("");
-        setDescription("");
-        setDiscountValue("50");
-        setPointsCost("50");
-        setFeedback({ type: "success", text: res.message || "Reward created!" });
-        broadcastSyncEvent({ type: "LOYALTY_UPDATED", timestamp: Date.now() });
+        setRewards((prev) =>
+          prev.map((r) => (r.id === tempId ? res.reward! : r))
+        );
       } else {
+        // Rollback
+        setRewards(prevRewards);
         setFeedback({ type: "error", text: res.message || "Failed to create reward." });
       }
     } catch {
+      setRewards(prevRewards);
       setFeedback({ type: "error", text: "An error occurred." });
-    } finally {
-      setIsCreating(false);
     }
   };
 

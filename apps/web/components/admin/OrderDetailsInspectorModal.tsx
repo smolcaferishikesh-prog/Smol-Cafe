@@ -19,6 +19,8 @@ import {
   Code,
   Layers,
   ArrowRight,
+  Edit2,
+  Trash2,
 } from "lucide-react";
 
 interface OrderDetailsInspectorModalProps {
@@ -26,6 +28,8 @@ interface OrderDetailsInspectorModalProps {
   tag?: TableJsonTag | null;
   onClose: () => void;
   onUpdateStatus?: (orderId: string, status: OrderStatus) => Promise<void>;
+  onEditOrder?: (order: AdminOrderRecord) => void;
+  onDeleteOrder?: (orderId: string) => Promise<void> | void;
 }
 
 export const OrderDetailsInspectorModal: React.FC<OrderDetailsInspectorModalProps> = ({
@@ -33,10 +37,13 @@ export const OrderDetailsInspectorModal: React.FC<OrderDetailsInspectorModalProp
   tag,
   onClose,
   onUpdateStatus,
+  onEditOrder,
+  onDeleteOrder,
 }) => {
   const [activeTab, setActiveTab] = useState<"details" | "raw">("details");
   const [copied, setCopied] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
@@ -139,13 +146,29 @@ export const OrderDetailsInspectorModal: React.FC<OrderDetailsInspectorModalProp
             </div>
           </div>
 
-          <button
-            onClick={onClose}
-            className="flex h-8 w-8 items-center justify-center rounded-full border border-[#C9AE8B]/30 dark:border-stone-700 bg-[#F3E7D3] dark:bg-stone-800 text-[#725039] dark:text-stone-400 hover:text-[#241F1C] dark:hover:text-white transition cursor-pointer"
-            aria-label="Close"
-          >
-            <X className="h-4 w-4" />
-          </button>
+          <div className="flex items-center gap-2">
+            {order && onEditOrder && (
+              <button
+                onClick={() => {
+                  onClose();
+                  onEditOrder(order);
+                }}
+                className="flex items-center gap-1.5 rounded-xl border border-[#C9AE8B]/50 dark:border-stone-700 bg-[#F3E7D3] dark:bg-stone-800 text-[#725039] dark:text-[#F3E7D3] hover:text-[#B72E35] dark:hover:text-[#F2C84B] px-3 py-1.5 text-xs font-mono font-bold transition cursor-pointer"
+                title="Edit this order"
+              >
+                <Edit2 className="h-3.5 w-3.5 text-[#B72E35] dark:text-[#F2C84B]" />
+                <span>Edit Order</span>
+              </button>
+            )}
+
+            <button
+              onClick={onClose}
+              className="flex h-8 w-8 items-center justify-center rounded-full border border-[#C9AE8B]/30 dark:border-stone-700 bg-[#F3E7D3] dark:bg-stone-800 text-[#725039] dark:text-stone-400 hover:text-[#241F1C] dark:hover:text-white transition cursor-pointer"
+              aria-label="Close"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
         </div>
 
         {/* Tab Toggle: Formatted Details vs Raw Metadata */}
@@ -455,14 +478,67 @@ export const OrderDetailsInspectorModal: React.FC<OrderDetailsInspectorModalProp
           </div>
         )}
 
-        {/* Footer Close Button */}
-        <div className="mt-4 pt-3 border-t border-[#C9AE8B]/30 dark:border-stone-800 flex justify-end">
-          <button
-            onClick={onClose}
-            className="px-5 py-2 rounded-xl bg-[#241F1C] dark:bg-stone-800 text-[#F3E7D3] dark:text-white text-xs font-mono font-bold hover:bg-[#3D3530] dark:hover:bg-stone-700 transition cursor-pointer"
-          >
-            Close
-          </button>
+        {/* Footer Actions */}
+        <div className="mt-4 pt-3 border-t border-[#C9AE8B]/30 dark:border-stone-800 flex flex-wrap items-center justify-between gap-2.5">
+          <div>
+            {order && onDeleteOrder && (
+              !confirmDelete ? (
+                <button
+                  type="button"
+                  onClick={() => setConfirmDelete(true)}
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-rose-300 dark:border-rose-900/60 bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-400 hover:bg-rose-600 hover:text-white px-3 py-1.5 text-xs font-mono font-bold transition shadow-xs cursor-pointer active:scale-95"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  <span>Delete Order</span>
+                </button>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-mono text-rose-600 font-bold">Confirm delete?</span>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      await onDeleteOrder(order.id);
+                      onClose();
+                    }}
+                    className="rounded-xl bg-rose-600 text-white hover:bg-rose-700 px-3 py-1 text-xs font-mono font-bold transition cursor-pointer"
+                  >
+                    Yes, Delete
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setConfirmDelete(false)}
+                    className="rounded-xl border border-stone-300 dark:border-stone-700 bg-white dark:bg-stone-800 px-2.5 py-1 text-xs font-mono text-stone-700 dark:text-stone-300 hover:bg-stone-100 transition cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              )
+            )}
+          </div>
+
+          <div className="flex items-center gap-2">
+            {order && onEditOrder && (
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  onEditOrder(order);
+                }}
+                className="inline-flex items-center gap-1.5 rounded-xl border border-[#B72E35] bg-[#B72E35] text-white hover:bg-[#8C1D23] px-3.5 py-2 text-xs font-mono font-bold transition cursor-pointer shadow-xs active:scale-95"
+              >
+                <Edit2 className="h-3.5 w-3.5" />
+                <span>Edit Order</span>
+              </button>
+            )}
+
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-5 py-2 rounded-xl bg-[#241F1C] dark:bg-stone-800 text-[#F3E7D3] dark:text-white text-xs font-mono font-bold hover:bg-[#3D3530] dark:hover:bg-stone-700 transition cursor-pointer"
+            >
+              Close
+            </button>
+          </div>
         </div>
       </div>
     </div>,

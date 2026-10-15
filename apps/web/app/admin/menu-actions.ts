@@ -3,6 +3,7 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { revalidatePath, revalidateTag } from "next/cache";
 import { broadcastSyncEvent } from "@/lib/sync-events";
+import { invalidateAdminOverviewCache } from "@/app/admin/actions";
 import {
   getMenuCatalog,
   getCustomItemsStore,
@@ -220,32 +221,32 @@ export async function saveMenuItemAction(
       const supabase = createAdminClient();
 
       if (isEdit) {
-        await supabase
-          .from("menu_items")
-          .update({
-            name,
-            category_id: categoryId,
-            status: itemStatus,
-            updated_at: new Date().toISOString(),
-          })
-          .eq("id", itemId);
-
-        await supabase
-          .from("menu_prices")
-          .upsert({
-            menu_item_id: itemId,
-            amount_paise: amountPaise,
-            currency: "INR",
-            effective_from: new Date().toISOString(),
-          });
-
-        await supabase
-          .from("menu_item_versions")
-          .insert({
-            menu_item_id: itemId,
-            description: description || "",
-            image_url: imageUrl || null,
-          });
+        await Promise.all([
+          supabase
+            .from("menu_items")
+            .update({
+              name,
+              category_id: categoryId,
+              status: itemStatus,
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", itemId),
+          supabase
+            .from("menu_prices")
+            .upsert({
+              menu_item_id: itemId,
+              amount_paise: amountPaise,
+              currency: "INR",
+              effective_from: new Date().toISOString(),
+            }),
+          supabase
+            .from("menu_item_versions")
+            .insert({
+              menu_item_id: itemId,
+              description: description || "",
+              image_url: imageUrl || null,
+            }),
+        ]);
       } else {
         await supabase
           .from("menu_items")
@@ -256,22 +257,23 @@ export async function saveMenuItemAction(
             status: itemStatus,
           });
 
-        await supabase
-          .from("menu_prices")
-          .insert({
-            menu_item_id: itemId,
-            amount_paise: amountPaise,
-            currency: "INR",
-            effective_from: new Date().toISOString(),
-          });
-
-        await supabase
-          .from("menu_item_versions")
-          .insert({
-            menu_item_id: itemId,
-            description: description || "",
-            image_url: imageUrl || null,
-          });
+        await Promise.all([
+          supabase
+            .from("menu_prices")
+            .insert({
+              menu_item_id: itemId,
+              amount_paise: amountPaise,
+              currency: "INR",
+              effective_from: new Date().toISOString(),
+            }),
+          supabase
+            .from("menu_item_versions")
+            .insert({
+              menu_item_id: itemId,
+              description: description || "",
+              image_url: imageUrl || null,
+            }),
+        ]);
       }
     } catch {
       // In-memory fallback handles gracefully
@@ -310,13 +312,12 @@ export async function saveMenuItemAction(
 
     try {
       revalidateTag("menu-catalog");
-      revalidatePath("/menu");
-      revalidatePath("/smol-menu");
-      revalidatePath("/admin");
       revalidatePath("/");
     } catch {
       // ignore
     }
+
+    invalidateAdminOverviewCache();
 
     return {
       success: true,
@@ -375,16 +376,12 @@ export async function deleteMenuItemAction(
 
     try {
       revalidateTag("menu-catalog");
-      revalidatePath("/menu");
-      revalidatePath("/smol-menu");
-      revalidatePath("/admin");
-      revalidatePath("/kitchen");
-      revalidatePath("/barista");
-      revalidatePath("/t");
       revalidatePath("/");
     } catch {
       // ignore
     }
+
+    invalidateAdminOverviewCache();
 
     return {
       success: true,

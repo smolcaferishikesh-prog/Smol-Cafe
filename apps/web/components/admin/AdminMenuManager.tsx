@@ -403,20 +403,20 @@ export const AdminMenuManager: React.FC<AdminMenuManagerProps> = ({ onItemChange
     try {
       const stockStatusStr = targetStatus === "SOLD_OUT" ? "SOLD_OUT" : "IN_STOCK";
 
-      // 2. Persist in Admin actions
-      const res = await saveMenuItemAction({
-        id: item.id,
-        name: item.name,
-        categoryId: item.categoryId,
-        priceRupees: item.priceRupees,
-        description: item.description,
-        dietary: item.dietary as "veg" | "non-veg" | "vegan" | "egg" | "beverage",
-        status: targetStatus,
-        imageUrl: item.imageUrl,
-      });
-
-      // 3. Persist in Kitchen actions
-      await updateMenuItemStockAction(item.id, stockStatusStr);
+      // 2 & 3. Persist in parallel to save time
+      const [res] = await Promise.all([
+        saveMenuItemAction({
+          id: item.id,
+          name: item.name,
+          categoryId: item.categoryId,
+          priceRupees: item.priceRupees,
+          description: item.description,
+          dietary: item.dietary as "veg" | "non-veg" | "vegan" | "egg" | "beverage",
+          status: targetStatus,
+          imageUrl: item.imageUrl,
+        }),
+        updateMenuItemStockAction(item.id, stockStatusStr),
+      ]);
 
       if (res.success) {
         broadcastSyncEvent({
@@ -446,27 +446,36 @@ export const AdminMenuManager: React.FC<AdminMenuManagerProps> = ({ onItemChange
     }
   };
 
-  // Delete item
+  // Delete item (0ms instant optimistic update)
   const handleDeleteItem = async (itemId: string) => {
+    const prevItems = items;
+
+    // 1. Instant 0ms Optimistic removal & modal close
+    setItems((prev) => prev.filter((i) => i.id !== itemId));
+    setDeletingItemId(null);
+    setFeedback({ type: "success", text: "Item removed from menu." });
+
+    broadcastSyncEvent({
+      type: "ITEM_AVAILABILITY_CHANGED",
+      itemId,
+      stockStatus: "ARCHIVED",
+      availability: "ARCHIVED",
+      timestamp: Date.now(),
+      metadata: { id: itemId, status: "ARCHIVED", deleted: true },
+    });
+    if (onItemChange) onItemChange();
+
+    // 2. Background database deletion
     try {
       const res = await deleteMenuItemAction(itemId);
-      if (res.success) {
-        setFeedback({ type: "success", text: "Item removed from menu." });
-        setDeletingItemId(null);
-        setItems((prev) => prev.filter((i) => i.id !== itemId));
-        broadcastSyncEvent({
-          type: "ITEM_AVAILABILITY_CHANGED",
-          itemId,
-          stockStatus: "ARCHIVED",
-          availability: "ARCHIVED",
-          timestamp: Date.now(),
-          metadata: { id: itemId, status: "ARCHIVED", deleted: true },
-        });
-        if (onItemChange) onItemChange();
-      } else {
-        setFeedback({ type: "error", text: res.message });
+      if (!res.success) {
+        // Rollback on failure
+        setItems(prevItems);
+        setFeedback({ type: "error", text: res.message || "Failed to delete item." });
       }
     } catch {
+      // Rollback on network error
+      setItems(prevItems);
       setFeedback({ type: "error", text: "Failed to delete item." });
     }
   };

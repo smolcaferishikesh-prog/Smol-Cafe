@@ -231,123 +231,197 @@ export const ProcurementManager: React.FC<ProcurementManagerProps> = ({ initialD
     e.preventDefault();
     if (!quickRestockItem || quickRestockQty <= 0) return;
 
-    setIsQuickRestocking(true);
-    setFeedback(null);
+    const targetItem = quickRestockItem;
+    const qty = quickRestockQty;
+    const vendorId = quickRestockVendorId;
+    const notes = quickRestockNotes;
+    const previousData = data;
 
+    // 1. Instant 0ms Optimistic UI update & immediate modal close
+    setData((prev) => {
+      if (!prev.radarData) return prev;
+      const updatedIngredients = prev.radarData.ingredients.map((ing) => {
+        if (ing.id === targetItem.id) {
+          const newStock = Number((ing.currentStock + qty).toFixed(1));
+          return {
+            ...ing,
+            currentStock: newStock,
+            status: (newStock <= ing.minThreshold * 0.4
+              ? "CRITICAL_LOW"
+              : newStock <= ing.minThreshold
+              ? "LOW_STOCK"
+              : "OPTIMAL") as IngredientStockItem["status"],
+          };
+        }
+        return ing;
+      });
+      return {
+        ...prev,
+        radarData: {
+          ...prev.radarData,
+          ingredients: updatedIngredients,
+        },
+      };
+    });
+
+    const updatedStock = Number((targetItem.currentStock + qty).toFixed(1));
+    setQuickRestockItem(null);
+    playStockIngestSound();
+    setFeedback({ type: "success", text: `Restocked +${qty} ${targetItem.unitSymbol} successfully!` });
+
+    broadcastSyncEvent({
+      type: "INVENTORY_UPDATED",
+      itemId: targetItem.id,
+      metadata: {
+        ingredientId: targetItem.id,
+        newStock: updatedStock,
+      },
+    });
+
+    // 2. Background database persistence
     try {
-      const vendor = data.vendors.find((v) => v.id === quickRestockVendorId);
+      const vendor = previousData.vendors.find((v) => v.id === vendorId);
       const res = await quickRestockGRNAction({
-        ingredientId: quickRestockItem.id,
-        quantity: quickRestockQty,
-        unitCostPaise: quickRestockItem.costPerUnitPaise,
-        vendorId: quickRestockVendorId || undefined,
-        vendorName: vendor?.name || quickRestockItem.preferredVendorName,
-        notes: quickRestockNotes.trim() || undefined,
+        ingredientId: targetItem.id,
+        quantity: qty,
+        unitCostPaise: targetItem.costPerUnitPaise,
+        vendorId: vendorId || undefined,
+        vendorName: vendor?.name || targetItem.preferredVendorName,
+        notes: notes.trim() || undefined,
       });
 
-      if (res.success) {
-        playStockIngestSound();
-        setFeedback({ type: "success", text: res.message || `Restocked +${quickRestockQty} ${quickRestockItem.unitSymbol} successfully!` });
-
-        // Optimistically update local radar data
-        setData((prev) => {
-          if (!prev.radarData) return prev;
-          const updatedIngredients = prev.radarData.ingredients.map((ing) => {
-            if (ing.id === quickRestockItem.id) {
-              const newStock = Number((ing.currentStock + quickRestockQty).toFixed(1));
-              return {
-                ...ing,
-                currentStock: newStock,
-                status: (newStock <= ing.minThreshold * 0.4
-                  ? "CRITICAL_LOW"
-                  : newStock <= ing.minThreshold
-                  ? "LOW_STOCK"
-                  : "OPTIMAL") as IngredientStockItem["status"],
-              };
-            }
-            return ing;
-          });
-          return {
-            ...prev,
-            radarData: {
-              ...prev.radarData,
-              ingredients: updatedIngredients,
-            },
-          };
-        });
-
-        const updatedStock = Number((quickRestockItem.currentStock + quickRestockQty).toFixed(1));
-        setQuickRestockItem(null);
-        await refreshData();
-        broadcastSyncEvent({
-          type: "INVENTORY_UPDATED",
-          itemId: quickRestockItem.id,
-          metadata: {
-            ingredientId: quickRestockItem.id,
-            newStock: updatedStock,
-          },
-        });
-      } else {
+      if (!res.success) {
+        setData(previousData);
         setFeedback({ type: "error", text: res.message || "Could not complete restock." });
+      } else {
+        void refreshData();
       }
     } catch {
+      setData(previousData);
       setFeedback({ type: "error", text: "An error occurred during restock." });
-    } finally {
-      setIsQuickRestocking(false);
     }
   };
 
-  // Stock Adjustment Submit
+  // Stock Adjustment Submit (0ms instant optimistic update)
   const handleAdjustSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!adjustItem || adjustQty === 0) return;
 
-    setIsAdjusting(true);
-    setFeedback(null);
+    const targetItem = adjustItem;
+    const qty = adjustQty;
+    const reason = adjustReason;
+    const notes = adjustNotes;
+    const previousData = data;
 
+    // 1. Instant 0ms Optimistic UI update & immediate modal close
+    setData((prev) => {
+      if (!prev.radarData) return prev;
+      const updatedIngredients = prev.radarData.ingredients.map((ing) => {
+        if (ing.id === targetItem.id) {
+          const newStock = Math.max(0, Number((ing.currentStock + qty).toFixed(1)));
+          return {
+            ...ing,
+            currentStock: newStock,
+            status: (newStock <= ing.minThreshold * 0.4
+              ? "CRITICAL_LOW"
+              : newStock <= ing.minThreshold
+              ? "LOW_STOCK"
+              : "OPTIMAL") as IngredientStockItem["status"],
+          };
+        }
+        return ing;
+      });
+      return {
+        ...prev,
+        radarData: {
+          ...prev.radarData,
+          ingredients: updatedIngredients,
+        },
+      };
+    });
+
+    setAdjustItem(null);
+    setFeedback({ type: "success", text: "Stock adjusted." });
+
+    broadcastSyncEvent({
+      type: "INVENTORY_UPDATED",
+      itemId: targetItem.id,
+      metadata: {
+        ingredientId: targetItem.id,
+      },
+    });
+
+    // 2. Background database persistence
     try {
       const res = await adjustIngredientStockAction({
-        ingredientId: adjustItem.id,
-        adjustmentQty: adjustQty,
-        reason: adjustReason,
-        notes: adjustNotes.trim() || undefined,
+        ingredientId: targetItem.id,
+        adjustmentQty: qty,
+        reason,
+        notes: notes.trim() || undefined,
       });
 
-      if (res.success) {
-        setFeedback({ type: "success", text: res.message || "Stock adjusted." });
-        const adjustedItemId = adjustItem.id;
-        setAdjustItem(null);
-        await refreshData();
-        broadcastSyncEvent({
-          type: "INVENTORY_UPDATED",
-          itemId: adjustedItemId,
-          metadata: {
-            ingredientId: adjustedItemId,
-            newStock: res.newStock,
-          },
-        });
-      } else {
+      if (!res.success) {
+        setData(previousData);
         setFeedback({ type: "error", text: res.message || "Failed to adjust stock." });
+      } else {
+        void refreshData();
       }
     } catch {
+      setData(previousData);
       setFeedback({ type: "error", text: "An error occurred during adjustment." });
-    } finally {
-      setIsAdjusting(false);
     }
   };
 
-  // Threshold update submit
+  // Threshold update submit (0ms instant optimistic update)
   const handleThresholdSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!thresholdItem) return;
 
-    setIsUpdatingThreshold(true);
-    setFeedback(null);
-
     const targetId = thresholdItem.id;
     const targetMin = thresholdVal;
     const targetCost = Math.round(unitCostVal * 100);
+    const previousData = data;
 
+    // 1. Instant 0ms Optimistic UI update & immediate modal close
+    setData((prev) => {
+      if (!prev.radarData) return prev;
+      const updatedIngredients = prev.radarData.ingredients.map((ing) => {
+        if (ing.id === targetId) {
+          const currentStock = ing.currentStock;
+          const status =
+            currentStock <= targetMin * 0.4
+              ? ("CRITICAL_LOW" as const)
+              : currentStock <= targetMin
+              ? ("LOW_STOCK" as const)
+              : currentStock >= targetMin * 2.5
+              ? ("OVERSTOCKED" as const)
+              : ("OPTIMAL" as const);
+          return {
+            ...ing,
+            minThreshold: targetMin,
+            costPerUnitPaise: targetCost,
+            status,
+          };
+        }
+        return ing;
+      });
+
+      return {
+        ...prev,
+        radarData: {
+          ...prev.radarData,
+          ingredients: updatedIngredients,
+          criticalCount: updatedIngredients.filter((i) => i.status === "CRITICAL_LOW").length,
+          lowStockCount: updatedIngredients.filter((i) => i.status === "LOW_STOCK").length,
+          healthyCount: updatedIngredients.filter((i) => i.status === "OPTIMAL" || i.status === "OVERSTOCKED").length,
+        },
+      };
+    });
+
+    setThresholdItem(null);
+    setFeedback({ type: "success", text: "Threshold updated." });
+
+    // 2. Background database persistence
     try {
       const res = await updateIngredientThresholdAction({
         ingredientId: targetId,
@@ -355,54 +429,15 @@ export const ProcurementManager: React.FC<ProcurementManagerProps> = ({ initialD
         costPerUnitPaise: targetCost,
       });
 
-      if (res.success) {
-        setFeedback({ type: "success", text: res.message || "Threshold updated." });
-        setThresholdItem(null);
-
-        const confirmedMin = res.updatedThreshold ?? targetMin;
-        setData((prev) => {
-          if (!prev.radarData) return prev;
-          const updatedIngredients = prev.radarData.ingredients.map((ing) => {
-            if (ing.id === targetId) {
-              const currentStock = ing.currentStock;
-              const status =
-                currentStock <= confirmedMin * 0.4
-                  ? ("CRITICAL_LOW" as const)
-                  : currentStock <= confirmedMin
-                  ? ("LOW_STOCK" as const)
-                  : currentStock >= confirmedMin * 2.5
-                  ? ("OVERSTOCKED" as const)
-                  : ("OPTIMAL" as const);
-              return {
-                ...ing,
-                minThreshold: confirmedMin,
-                costPerUnitPaise: targetCost,
-                status,
-              };
-            }
-            return ing;
-          });
-
-          return {
-            ...prev,
-            radarData: {
-              ...prev.radarData,
-              ingredients: updatedIngredients,
-              criticalCount: updatedIngredients.filter((i) => i.status === "CRITICAL_LOW").length,
-              lowStockCount: updatedIngredients.filter((i) => i.status === "LOW_STOCK").length,
-              healthyCount: updatedIngredients.filter((i) => i.status === "OPTIMAL" || i.status === "OVERSTOCKED").length,
-            },
-          };
-        });
-
-        await refreshData();
-      } else {
+      if (!res.success) {
+        setData(previousData);
         setFeedback({ type: "error", text: res.message || "Failed to update threshold." });
+      } else {
+        void refreshData();
       }
     } catch {
+      setData(previousData);
       setFeedback({ type: "error", text: "An error occurred." });
-    } finally {
-      setIsUpdatingThreshold(false);
     }
   };
 
