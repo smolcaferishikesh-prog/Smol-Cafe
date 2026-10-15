@@ -190,16 +190,43 @@ export const EditOrderModal: React.FC<EditOrderModalProps> = ({
     setShowAddItem(false);
   };
 
-  // Submit edits
+  // Submit edits (0ms instant optimistic update)
   const handleSaveOrder = async () => {
     if (items.length === 0) {
       setFeedback({ type: "error", text: "Order must contain at least one item." });
       return;
     }
 
-    setIsSubmitting(true);
-    setFeedback(null);
+    const previousRecord = { ...order };
+    const updatedRecord: AdminOrderRecord = {
+      ...order,
+      tableLabel,
+      status,
+      paymentMethod,
+      paymentStatus:
+        paymentStatus === "PAID"
+          ? `PAID (${paymentMethod})`
+          : paymentMethod === "COMPLIMENTARY"
+          ? "COMPLIMENTARY"
+          : "UNPAID (PENDING)",
+      instructions,
+      items: items.map((it) => `${it.name} (x${it.qty})`),
+      itemsDetail: items.map((it) => ({
+        id: it.id,
+        menuItemId: it.menuItemId,
+        name: it.name,
+        qty: it.qty,
+        priceRupees: it.priceRupees,
+        subtotalRupees: it.priceRupees * it.qty,
+      })),
+      totalRupees: grandTotalRupees,
+    };
 
+    // 1. Instant 0ms Optimistic UI update & immediate modal close
+    onOrderUpdated(updatedRecord);
+    onClose();
+
+    // 2. Background database persistence
     try {
       const res = await editAdminOrderAction({
         orderId: order.id,
@@ -211,60 +238,38 @@ export const EditOrderModal: React.FC<EditOrderModalProps> = ({
         items,
       });
 
-      if (res.success) {
-        const updatedRecord: AdminOrderRecord = {
-          ...order,
-          tableLabel,
-          status,
-          paymentMethod,
-          paymentStatus:
-            paymentStatus === "PAID"
-              ? `PAID (${paymentMethod})`
-              : paymentMethod === "COMPLIMENTARY"
-              ? "COMPLIMENTARY"
-              : "UNPAID (PENDING)",
-          instructions,
-          items: items.map((it) => `${it.name} (x${it.qty})`),
-          itemsDetail: items.map((it) => ({
-            id: it.id,
-            menuItemId: it.menuItemId,
-            name: it.name,
-            qty: it.qty,
-            priceRupees: it.priceRupees,
-            subtotalRupees: it.priceRupees * it.qty,
-          })),
-          totalRupees: grandTotalRupees,
-        };
-        onOrderUpdated(updatedRecord);
-        onClose();
-      } else {
-        setFeedback({ type: "error", text: res.message || "Failed to update order." });
+      if (!res.success) {
+        // Rollback on failure
+        onOrderUpdated(previousRecord);
+        console.error("Failed to save order changes:", res.message);
       }
     } catch (err: any) {
-      setFeedback({ type: "error", text: err?.message || "Unexpected error saving order." });
-    } finally {
-      setIsSubmitting(false);
+      // Rollback on network error
+      onOrderUpdated(previousRecord);
+      console.error("Unexpected error saving order:", err);
     }
   };
 
-  // Delete Order
+  // Delete Order (0ms instant optimistic update)
   const handleDeleteOrder = async () => {
-    setIsDeleting(true);
-    setFeedback(null);
+    const previousRecord = { ...order };
 
+    // 1. Instant 0ms Optimistic removal & modal close
+    onOrderDeleted(order.id);
+    setShowDeleteConfirm(false);
+    onClose();
+
+    // 2. Background database deletion
     try {
       const res = await deleteAdminOrderAction(order.id);
-      if (res.success) {
-        onOrderDeleted(order.id);
-        onClose();
-      } else {
-        setFeedback({ type: "error", text: res.message || "Failed to delete order." });
+      if (!res.success) {
+        // Rollback on failure
+        onOrderUpdated(previousRecord);
+        console.error("Failed to delete order:", res.message);
       }
     } catch (err: any) {
-      setFeedback({ type: "error", text: err?.message || "Unexpected error deleting order." });
-    } finally {
-      setIsDeleting(false);
-      setShowDeleteConfirm(false);
+      onOrderUpdated(previousRecord);
+      console.error("Unexpected error deleting order:", err);
     }
   };
 

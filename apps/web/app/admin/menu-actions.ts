@@ -312,9 +312,6 @@ export async function saveMenuItemAction(
 
     try {
       revalidateTag("menu-catalog");
-      revalidatePath("/menu");
-      revalidatePath("/smol-menu");
-      revalidatePath("/admin");
       revalidatePath("/");
     } catch {
       // ignore
@@ -379,12 +376,6 @@ export async function deleteMenuItemAction(
 
     try {
       revalidateTag("menu-catalog");
-      revalidatePath("/menu");
-      revalidatePath("/smol-menu");
-      revalidatePath("/admin");
-      revalidatePath("/kitchen");
-      revalidatePath("/barista");
-      revalidatePath("/t");
       revalidatePath("/");
     } catch {
       // ignore

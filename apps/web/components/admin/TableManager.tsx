@@ -727,99 +727,180 @@ export const TableManager: React.FC<TableManagerProps> = ({
     setFeedback(null);
   };
 
-  // Submit Add Table
+  // Submit Add Table (0ms instant optimistic update)
   const handleSubmitAdd = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!tableLabel.trim()) {
+    const cleanLabel = tableLabel.trim();
+    if (!cleanLabel) {
       setFeedback({ type: "error", text: "Please enter a table label or number." });
       return;
     }
-    setIsLoading(true);
+
+    const tempId = `temp_tbl_${Date.now()}`;
+    const optimisticTable: DiningTableRecord = {
+      id: tempId,
+      location_id: "",
+      label: cleanLabel,
+      seats: tableSeats,
+      active: tableActive,
+      section: tableSection,
+      isOccupied: false,
+    };
+
+    const previousTables = tables;
+    const previousSections = sections;
+
+    // 1. Instant 0ms Optimistic UI update & immediate modal close
+    setTables((prev) => {
+      const normLabel = cleanLabel.toLowerCase();
+      const matchIdx = prev.findIndex(
+        (t) => t.id === tempId || t.label.trim().toLowerCase() === normLabel
+      );
+      if (matchIdx >= 0) {
+        return prev.map((t, idx) => (idx === matchIdx ? { ...t, ...optimisticTable } : t));
+      }
+      return [...prev, optimisticTable];
+    });
+
+    if (!sections.includes(tableSection)) {
+      setSections((prev) => [...prev, tableSection]);
+    }
+
+    setIsAddModalOpen(false);
+    setIsAddSectionDropdownOpen(false);
+    setFeedback({ type: "success", text: `Table T-${cleanLabel} added! Scannable QR stand & tags generated.` });
+    setViewingQrTable(optimisticTable);
+
+    broadcastSyncEvent({
+      type: "TABLE_CREATED",
+      tableId: tempId,
+      tableLabel: cleanLabel,
+      metadata: {
+        id: tempId,
+        label: cleanLabel,
+        seats: tableSeats,
+        active: tableActive,
+        section: tableSection,
+      },
+    });
+
+    // 2. Background database persistence
     try {
       const res = await createTableAction({
-        label: tableLabel.trim(),
+        label: cleanLabel,
         section: tableSection,
         seats: tableSeats,
         active: tableActive,
       });
 
       if (res.success && res.table) {
-        const newTable = res.table;
-        setTables((prev) => {
-          const normLabel = newTable.label.trim().toLowerCase();
-          const matchIdx = prev.findIndex(
-            (t) => t.id === newTable.id || t.label.trim().toLowerCase() === normLabel
-          );
-          if (matchIdx >= 0) {
-            return prev.map((t, idx) => (idx === matchIdx ? { ...t, ...newTable } : t));
-          }
-          return [...prev, newTable];
-        });
-
-        if (!sections.includes(tableSection)) {
-          setSections((prev) => [...prev, tableSection]);
-        }
-        setIsAddModalOpen(false);
-        setIsAddSectionDropdownOpen(false);
-        setFeedback({ type: "success", text: `Table T-${res.table.label} added! Scannable QR stand & tags generated.` });
-        // Automatically open the new Table's QR Stand for instant preview & printing!
-        setViewingQrTable(res.table);
+        const confirmedTable = res.table;
+        setTables((prev) =>
+          prev.map((t) =>
+            t.id === tempId || t.label.trim().toLowerCase() === cleanLabel.toLowerCase()
+              ? confirmedTable
+              : t
+          )
+        );
+        setViewingQrTable(confirmedTable);
       } else {
+        // Rollback on error
+        setTables(previousTables);
+        setSections(previousSections);
         setFeedback({ type: "error", text: res.message || "Failed to add table." });
       }
     } catch {
+      setTables(previousTables);
+      setSections(previousSections);
       setFeedback({ type: "error", text: "An unexpected error occurred." });
-    } finally {
-      setIsLoading(false);
     }
   };
 
-  // Submit Edit Table
+  // Submit Edit Table (0ms instant optimistic update)
   const handleSubmitEdit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingTable) return;
-    if (!tableLabel.trim()) {
+    const cleanLabel = tableLabel.trim();
+    if (!cleanLabel) {
       setFeedback({ type: "error", text: "Table label cannot be empty." });
       return;
     }
-    setIsLoading(true);
+
+    const targetTable = { ...editingTable };
+    const previousTables = tables;
+    const previousSections = sections;
+
+    const optimisticUpdatedTable: DiningTableRecord = {
+      ...targetTable,
+      label: cleanLabel,
+      section: tableSection,
+      seats: tableSeats,
+      active: tableActive,
+    };
+
+    // 1. Instant 0ms Optimistic UI update & immediate modal close
+    setTables((prev) => {
+      const seen = new Set<string>();
+      return prev
+        .map((t) =>
+          t.id === targetTable.id || t.label.trim().toLowerCase() === targetTable.label.trim().toLowerCase()
+            ? { ...t, ...optimisticUpdatedTable }
+            : t
+        )
+        .filter((t) => {
+          const norm = t.label.trim().toLowerCase();
+          if (seen.has(norm)) return false;
+          seen.add(norm);
+          return true;
+        });
+    });
+
+    if (!sections.includes(tableSection)) {
+      setSections((prev) => [...prev, tableSection]);
+    }
+
+    setEditingTable(null);
+    setIsEditSectionDropdownOpen(false);
+    setFeedback({ type: "success", text: "Table updated successfully!" });
+
+    broadcastSyncEvent({
+      type: "TABLE_RENAMED",
+      tableLabel: cleanLabel,
+      tableId: targetTable.id,
+      metadata: {
+        id: targetTable.id,
+        label: cleanLabel,
+        active: tableActive,
+        section: tableSection,
+        seats: tableSeats,
+      },
+    });
+
+    // 2. Background database persistence
     try {
-      const res = await updateTableAction(editingTable.id, {
-        label: tableLabel.trim(),
+      const res = await updateTableAction(targetTable.id, {
+        label: cleanLabel,
         section: tableSection,
         seats: tableSeats,
         active: tableActive,
       });
 
-      if (res.success && res.table) {
-        const updatedTable = res.table;
-        setTables((prev) => {
-          const seen = new Set<string>();
-          return prev
-            .map((t) =>
-              t.id === editingTable.id || t.label.trim().toLowerCase() === editingTable.label.trim().toLowerCase()
-                ? { ...t, ...updatedTable }
-                : t
-            )
-            .filter((t) => {
-              const norm = t.label.trim().toLowerCase();
-              if (seen.has(norm)) return false;
-              seen.add(norm);
-              return true;
-            });
-        });
-        if (!sections.includes(tableSection)) {
-          setSections((prev) => [...prev, tableSection]);
-        }
-        setEditingTable(null);
-        setFeedback({ type: "success", text: "Table updated successfully!" });
-      } else {
+      if (!res.success) {
+        // Rollback
+        setTables(previousTables);
+        setSections(previousSections);
         setFeedback({ type: "error", text: res.message || "Failed to update table." });
+      } else if (res.table) {
+        const confirmed = res.table;
+        setTables((prev) =>
+          prev.map((t) => (t.id === targetTable.id ? { ...t, ...confirmed } : t))
+        );
       }
     } catch {
+      // Rollback
+      setTables(previousTables);
+      setSections(previousSections);
       setFeedback({ type: "error", text: "An unexpected error occurred." });
-    } finally {
-      setIsLoading(false);
     }
   };
 
@@ -861,33 +942,39 @@ export const TableManager: React.FC<TableManagerProps> = ({
     }
   };
 
-  // Delete Table
+  // Delete Table (0ms instant optimistic update)
   const handleConfirmDelete = async () => {
     if (!deletingTable) return;
-    setIsLoading(true);
+    const target = deletingTable;
+    const previousTables = tables;
+
+    // 1. Instant 0ms Optimistic removal & modal close
+    setTables((prev) => prev.filter((t) => t.id !== target.id));
+    setDeletingTable(null);
+    setFeedback({ type: "success", text: `Table ${target.label} deleted successfully.` });
+
+    broadcastSyncEvent({
+      type: "TABLE_DELETED",
+      tableId: target.id,
+      tableLabel: target.label,
+      metadata: { id: target.id, label: target.label },
+    });
+
+    // 2. Background database deletion
     try {
-      const res = await deleteTableAction(deletingTable.id);
-      if (res.success) {
-        setTables((prev) => prev.filter((t) => t.id !== deletingTable.id));
-        broadcastSyncEvent({
-          type: "TABLE_DELETED",
-          tableId: deletingTable.id,
-          tableLabel: deletingTable.label,
-          metadata: { id: deletingTable.id, label: deletingTable.label },
-        });
-        setDeletingTable(null);
-        setFeedback({ type: "success", text: `Table ${deletingTable.label} deleted successfully.` });
-      } else {
+      const res = await deleteTableAction(target.id);
+      if (!res.success) {
+        // Rollback on failure
+        setTables(previousTables);
         setFeedback({ type: "error", text: res.message || "Could not delete table." });
       }
     } catch {
+      setTables(previousTables);
       setFeedback({ type: "error", text: "Error deleting table." });
-    } finally {
-      setIsLoading(false);
     }
   };
 
-  // Add Section
+  // Add Section (0ms instant optimistic update)
   const handleAddSection = async (e: React.FormEvent) => {
     e.preventDefault();
     const trimmed = newSectionName.trim();
@@ -901,32 +988,33 @@ export const TableManager: React.FC<TableManagerProps> = ({
       return;
     }
 
-    setIsLoading(true);
-    setSectionModalFeedback(null);
+    const previousSections = sections;
+    const updatedSections = [...sections, trimmed];
+    setSections(updatedSections);
+    setNewSectionName("");
+    setSectionModalFeedback({
+      type: "success",
+      text: `Zone "${trimmed}" added!`,
+    });
+    setFeedback({ type: "success", text: `Zone "${trimmed}" added!` });
+
+    broadcastSyncEvent({
+      type: "SETTINGS_UPDATED",
+      metadata: { action: "SECTIONS_UPDATED", sections: updatedSections },
+    });
+
     try {
       const res = await createSectionAction(trimmed);
-      if (res.success && res.sections) {
-        setSections(res.sections);
-        setNewSectionName("");
-        broadcastSyncEvent({
-          type: "SETTINGS_UPDATED",
-          metadata: { action: "SECTIONS_UPDATED", sections: res.sections },
-        });
-        setSectionModalFeedback({
-          type: "success",
-          text: res.message || `Zone "${trimmed}" added!`,
-        });
-        setFeedback({ type: "success", text: res.message || `Zone "${trimmed}" added!` });
-      } else {
+      if (!res.success) {
+        setSections(previousSections);
         setSectionModalFeedback({
           type: "error",
           text: res.message || "Failed to add zone.",
         });
       }
     } catch {
+      setSections(previousSections);
       setSectionModalFeedback({ type: "error", text: "Error creating zone." });
-    } finally {
-      setIsLoading(false);
     }
   };
 

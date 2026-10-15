@@ -67,6 +67,7 @@ export const BlackboardManager: React.FC<BlackboardManagerProps> = ({ initialPos
   const [startsAt, setStartsAt] = useState("");
   const [endsAt, setEndsAt] = useState("");
 
+  // Submit new announcement (0ms instant optimistic update)
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     setFeedback(null);
@@ -85,28 +86,47 @@ export const BlackboardManager: React.FC<BlackboardManagerProps> = ({ initialPos
       active: true,
     };
 
-    setIsCreating(true);
+    const tempId = `temp_bb_${Date.now()}`;
+    const optimisticPost: BlackboardPost = {
+      id: tempId,
+      title: title.trim(),
+      body: body.trim(),
+      image_url: imageUrl.trim() || null,
+      starts_at: payload.startsAt || new Date().toISOString(),
+      ends_at: payload.endsAt || null,
+      active: true,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+
+    const prevPosts = posts;
+
+    // 1. Instant 0ms Optimistic UI update & form reset
+    setPosts((prev) => [optimisticPost, ...prev]);
+    setTitle("");
+    setBody("");
+    setImageUrl("");
+    setStartsAt("");
+    setEndsAt("");
+    setFeedback({
+      type: "success",
+      text: "Announcement published to blackboard!",
+    });
+    broadcastSyncEvent({ type: "SETTINGS_UPDATED", timestamp: Date.now() });
+
+    // 2. Background database persistence
     try {
       const res = await createBlackboardPostAction(payload);
       if (res.success && res.post) {
-        setPosts((prev) => [res.post!, ...prev]);
-        setTitle("");
-        setBody("");
-        setImageUrl("");
-        setStartsAt("");
-        setEndsAt("");
-        setFeedback({
-          type: "success",
-          text: res.message || "Announcement published to blackboard!",
-        });
-        broadcastSyncEvent({ type: "SETTINGS_UPDATED", timestamp: Date.now() });
+        setPosts((prev) => prev.map((p) => (p.id === tempId ? res.post! : p)));
       } else {
+        // Rollback
+        setPosts(prevPosts);
         setFeedback({ type: "error", text: res.message || "Failed to create announcement." });
       }
     } catch {
+      setPosts(prevPosts);
       setFeedback({ type: "error", text: "An error occurred." });
-    } finally {
-      setIsCreating(false);
     }
   };
 
@@ -139,16 +159,24 @@ export const BlackboardManager: React.FC<BlackboardManagerProps> = ({ initialPos
     }
   };
 
+  // Delete announcement (0ms instant optimistic update)
   const handleDelete = async (id: string) => {
     if (!confirm("Are you sure you want to delete this blackboard post?")) return;
 
+    const prevPosts = posts;
+    // 1. Instant 0ms Optimistic removal
+    setPosts((prev) => prev.filter((p) => p.id !== id));
+    broadcastSyncEvent({ type: "SETTINGS_UPDATED", timestamp: Date.now() });
+
+    // 2. Background database deletion
     try {
       const res = await deleteBlackboardPostAction(id);
-      if (res.success) {
-        setPosts((prev) => prev.filter((p) => p.id !== id));
-        broadcastSyncEvent({ type: "SETTINGS_UPDATED", timestamp: Date.now() });
+      if (!res.success) {
+        setPosts(prevPosts);
+        setFeedback({ type: "error", text: res.message || "Failed to delete post." });
       }
     } catch {
+      setPosts(prevPosts);
       setFeedback({ type: "error", text: "Failed to delete post." });
     }
   };

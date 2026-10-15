@@ -269,10 +269,7 @@ export async function createTableAction(input: CreateTableInput): Promise<{
     }
 
     try {
-      revalidatePath("/admin");
-      revalidatePath("/admin/tables");
       revalidatePath("/");
-      revalidatePath("/home");
     } catch {
       // Non-fatal if revalidation context is absent
     }
@@ -386,10 +383,7 @@ export async function updateTableAction(
       "Café";
 
     try {
-      revalidatePath("/admin");
-      revalidatePath("/admin/tables");
       revalidatePath("/");
-      revalidatePath("/home");
     } catch {
       // Non-fatal if revalidation context is absent
     }
@@ -473,11 +467,7 @@ export async function deleteTableAction(tableId: string): Promise<{
     }
 
     try {
-      revalidatePath("/admin");
-      revalidatePath("/admin/tables");
-      revalidatePath("/smol-backdoor/admin");
       revalidatePath("/");
-      revalidatePath("/home");
     } catch {
       // Non-fatal if context is absent
     }

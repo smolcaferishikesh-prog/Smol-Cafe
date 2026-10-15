@@ -239,27 +239,40 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
   const handleSaveRolePin = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingRole) return;
-    setPinUpdating(true);
-    setPinFeedback(null);
 
+    const targetRole = editingRole.role;
+    const prevCredentials = roleCredentials;
+
+    // 1. Instant 0ms Optimistic UI update & immediate modal close
+    if (roleCredentials) {
+      setRoleCredentials({
+        ...roleCredentials,
+        [targetRole]: {
+          ...roleCredentials[targetRole],
+          pin: editPinValue,
+          password: targetRole === "admin" ? editPasswordValue : roleCredentials[targetRole].password,
+        },
+      });
+    }
+
+    setEditingRole(null);
+    setPinFeedback({ type: "success", text: "PIN updated successfully!" });
+
+    // 2. Background database persistence
     try {
       const res = await updateRoleCredentialAction(
-        editingRole.role,
+        targetRole,
         editPinValue,
-        editingRole.role === "admin" ? editPasswordValue : undefined
+        targetRole === "admin" ? editPasswordValue : undefined
       );
 
-      if (res.success && res.credentials) {
-        setRoleCredentials(res.credentials);
-        setPinFeedback({ type: "success", text: res.message });
-        setEditingRole(null);
-      } else {
+      if (!res.success) {
+        setRoleCredentials(prevCredentials);
         setPinFeedback({ type: "error", text: res.message || "Failed to update PIN." });
       }
     } catch {
+      setRoleCredentials(prevCredentials);
       setPinFeedback({ type: "error", text: "An error occurred while updating PIN." });
-    } finally {
-      setPinUpdating(false);
     }
   };
 
@@ -481,35 +494,44 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
     }
   };
 
+  // Grant / Adjust Points (0ms instant optimistic update)
   const handleGrantPointsSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!adjustPointsModal) return;
-    setAdjustSubmitting(true);
+
+    const modalData = adjustPointsModal;
+    const prevMembers = loyaltyMembers;
+
+    // 1. Instant 0ms Optimistic UI update & immediate modal close
+    setLoyaltyMembers((prev) =>
+      prev.map((m) =>
+        m.id === modalData.member.id
+          ? {
+              ...m,
+              currentBalance: Math.max(0, m.currentBalance + modalData.pointsDelta),
+              totalEarned:
+                modalData.pointsDelta > 0
+                  ? m.totalEarned + modalData.pointsDelta
+                  : m.totalEarned,
+            }
+          : m
+      )
+    );
+    setLoyaltySaveNotice(`Adjusted ${modalData.pointsDelta > 0 ? "+" : ""}${modalData.pointsDelta} points for ${modalData.member.displayName}`);
+    broadcastSyncEvent({ type: "LOYALTY_UPDATED", timestamp: Date.now() });
+    setTimeout(() => setLoyaltySaveNotice(null), 4000);
+    setAdjustPointsModal(null);
+
+    // 2. Background database persistence
     try {
       await grantLoyaltyPointsManualAction(
-        adjustPointsModal.member.id,
-        adjustPointsModal.pointsDelta,
-        adjustPointsModal.reason || "Manual admin adjustment"
+        modalData.member.id,
+        modalData.pointsDelta,
+        modalData.reason || "Manual admin adjustment"
       );
-      setLoyaltyMembers((prev) =>
-        prev.map((m) =>
-          m.id === adjustPointsModal.member.id
-            ? {
-                ...m,
-                currentBalance: Math.max(0, m.currentBalance + adjustPointsModal.pointsDelta),
-                totalEarned:
-                  adjustPointsModal.pointsDelta > 0
-                    ? m.totalEarned + adjustPointsModal.pointsDelta
-                    : m.totalEarned,
-              }
-            : m
-        )
-      );
-      setLoyaltySaveNotice(`Adjusted ${adjustPointsModal.pointsDelta > 0 ? "+" : ""}${adjustPointsModal.pointsDelta} points for ${adjustPointsModal.member.displayName}`);
-      broadcastSyncEvent({ type: "LOYALTY_UPDATED", timestamp: Date.now() });
-      setTimeout(() => setLoyaltySaveNotice(null), 4000);
-      setAdjustPointsModal(null);
     } catch {
+      // Rollback on network error
+      setLoyaltyMembers(prevMembers);
       setActionModal({
         type: "danger",
         title: "Points Adjustment Failed",
@@ -517,8 +539,6 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
         confirmLabel: "Understood",
         onConfirm: () => setActionModal(null),
       });
-    } finally {
-      setAdjustSubmitting(false);
     }
   };
 
