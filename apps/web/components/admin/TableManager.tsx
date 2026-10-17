@@ -1118,7 +1118,7 @@ export const TableManager: React.FC<TableManagerProps> = ({
 
             <button
               onClick={handleOpenAdd}
-              className="flex items-center gap-1.5 rounded-2xl bg-[#B72E35] hover:bg-[#9B252B] px-3.5 sm:px-4 py-1.5 sm:py-2 text-xs font-mono font-bold text-white shadow-md shadow-red-950/20 active:scale-95 transition whitespace-nowrap cursor-pointer"
+              className="flex items-center gap-1.5 rounded-2xl bg-[#B72E35] hover:bg-[#9B252B] dark:bg-purple-600 dark:hover:bg-purple-500 px-3.5 sm:px-4 py-1.5 sm:py-2 text-xs font-mono font-bold text-white shadow-md shadow-red-950/20 active:scale-95 transition whitespace-nowrap cursor-pointer"
             >
               <Plus className="h-3.5 w-3.5" />
               <span>Add Table</span>
@@ -1223,7 +1223,7 @@ export const TableManager: React.FC<TableManagerProps> = ({
             </p>
             <button
               onClick={handleOpenAdd}
-              className="mt-4 inline-flex items-center gap-1.5 rounded-xl bg-[#B72E35] px-3.5 py-1.5 text-xs font-mono text-white font-bold cursor-pointer"
+              className="mt-4 inline-flex items-center gap-1.5 rounded-xl bg-[#B72E35] hover:bg-[#9B252B] dark:bg-purple-600 dark:hover:bg-purple-500 px-3.5 py-1.5 text-xs font-mono text-white font-bold cursor-pointer"
             >
               <Plus className="h-3.5 w-3.5" />
               <span>Add Table to This Section</span>
@@ -1582,7 +1582,7 @@ export const TableManager: React.FC<TableManagerProps> = ({
                 <button
                   type="submit"
                   disabled={isLoading}
-                  className="flex items-center gap-1.5 rounded-xl bg-[#B72E35] hover:bg-[#9B252B] px-5 py-2 text-xs font-mono font-bold text-white shadow-md transition disabled:opacity-50 cursor-pointer"
+                  className="flex items-center gap-1.5 rounded-xl bg-[#B72E35] hover:bg-[#9B252B] dark:bg-purple-600 dark:hover:bg-purple-500 px-5 py-2 text-xs font-mono font-bold text-white shadow-md transition disabled:opacity-50 cursor-pointer"
                 >
                   {isLoading && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
                   {isLoading ? "Adding Table..." : "Add Table"}
@@ -1783,7 +1783,7 @@ export const TableManager: React.FC<TableManagerProps> = ({
                 <button
                   type="submit"
                   disabled={isLoading}
-                  className="flex items-center gap-1.5 rounded-xl bg-[#B72E35] hover:bg-[#9B252B] px-5 py-2 text-xs font-mono font-bold text-white shadow-md transition disabled:opacity-50 cursor-pointer"
+                  className="flex items-center gap-1.5 rounded-xl bg-[#B72E35] hover:bg-[#9B252B] dark:bg-purple-600 dark:hover:bg-purple-500 px-5 py-2 text-xs font-mono font-bold text-white shadow-md transition disabled:opacity-50 cursor-pointer"
                 >
                   {isLoading && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
                   {isLoading ? "Saving Changes..." : "Save Changes"}
@@ -1902,7 +1902,7 @@ export const TableManager: React.FC<TableManagerProps> = ({
                 <button
                   type="submit"
                   disabled={isLoading || !newSectionName.trim()}
-                  className="flex items-center justify-center gap-1.5 rounded-xl bg-[#B72E35] hover:bg-[#9B252B] active:scale-95 px-4 py-2 text-xs font-mono font-bold text-white shadow-xs disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer shrink-0 transition"
+                  className="flex items-center justify-center gap-1.5 rounded-xl bg-[#B72E35] hover:bg-[#9B252B] dark:bg-purple-600 dark:hover:bg-purple-500 active:scale-95 px-4 py-2 text-xs font-mono font-bold text-white shadow-xs disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer shrink-0 transition"
                 >
                   {isLoading && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
                   <span>{isLoading ? "Adding..." : "Add"}</span>
@@ -2329,7 +2329,7 @@ export const TableManager: React.FC<TableManagerProps> = ({
                 <div className="flex items-center gap-2 shrink-0">
                   <button
                     onClick={() => handlePrintAllStands(origin)}
-                    className="flex items-center gap-1.5 rounded-xl bg-[#B72E35] hover:bg-[#9B252B] text-white px-4 py-2 text-xs font-mono font-bold shadow-md transition cursor-pointer"
+                    className="flex items-center gap-1.5 rounded-xl bg-[#B72E35] hover:bg-[#9B252B] dark:bg-purple-600 dark:hover:bg-purple-500 text-white px-4 py-2 text-xs font-mono font-bold shadow-md transition cursor-pointer"
                   >
                     <Printer className="h-4 w-4" />
                     <span>Print All Stands</span>
