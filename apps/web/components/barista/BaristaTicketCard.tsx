@@ -91,7 +91,7 @@ export const BaristaTicketCard: React.FC<BaristaTicketCardProps> = ({
       : "DELIVERED";
 
   let actionButtonLabel = "START BREWING";
-  let actionButtonColor = "bg-[#B72E35] hover:bg-[#9B242A] text-white";
+  let actionButtonColor = "bg-[#B72E35] hover:bg-[#9B242A] dark:bg-purple-600 dark:hover:bg-purple-500 text-white";
 
   if (displayStatus === "BREWING") {
     actionButtonLabel = "MARK BREW READY ☕";

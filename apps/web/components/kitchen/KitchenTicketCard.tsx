@@ -105,7 +105,7 @@ export const KitchenTicketCard: React.FC<KitchenTicketCardProps> = ({ ticket, on
           : "bg-stone-800 text-stone-400 border-stone-700";
 
   let actionButtonLabel = "START PREPARING";
-  let actionButtonColor = "bg-[#B72E35] hover:bg-[#9B242A] text-white";
+  let actionButtonColor = "bg-[#B72E35] hover:bg-[#9B242A] dark:bg-purple-600 dark:hover:bg-purple-500 text-white";
 
   if (displayStatus === "PREPARING") {
     actionButtonLabel = "MARK READY";
