@@ -225,25 +225,11 @@ const COMMUNITY_MEDIA: CommunityMediaItem[] = [
     alt: "Evening ambience at Smol Cafe Tapovan",
   },
   {
-    id: "cm-7",
-    type: "image",
-    url: "https://ik.imagekit.io/sonu2k1/Smol%20Cafe%20by%20Kuava%20Digitals/Landing-Page%20/WhatsApp%20Image%202026-10-16%20at%2016.55.36%20(1).jpeg",
-    caption: "Fresh beans ground on order",
-    alt: "Coffee beans grinding at Smol Cafe",
-  },
-  {
     id: "cm-8",
     type: "image",
     url: "https://ik.imagekit.io/sonu2k1/Smol%20Cafe%20by%20Kuava%20Digitals/Landing-Page%20/WhatsApp%20Image%202026-10-16%20at%2016.55.39%20(1).jpeg",
     caption: "The Living Library book exchange",
     alt: "Living library bookshelf at Smol Cafe",
-  },
-  {
-    id: "cm-9",
-    type: "image",
-    url: "https://ik.imagekit.io/sonu2k1/Smol%20Cafe%20by%20Kuava%20Digitals/Landing-Page%20/WhatsApp%20Image%202026-10-16%20at%2016.55.37.jpeg",
-    caption: "Sunlight streaming through mountain pines",
-    alt: "Morning sunlight at Smol Cafe Tapovan",
   },
   {
     id: "cm-10",
@@ -300,13 +286,6 @@ const COMMUNITY_MEDIA: CommunityMediaItem[] = [
     url: "https://ik.imagekit.io/sonu2k1/Smol%20Cafe%20by%20Kuava%20Digitals/Landing-Page%20/WhatsApp%20Image%202026-10-16%20at%2017.07.05%20(1).jpeg",
     caption: "Shared plates and honest smiles",
     alt: "Food and community at Smol Cafe",
-  },
-  {
-    id: "cm-18",
-    type: "image",
-    url: "https://ik.imagekit.io/sonu2k1/Smol%20Cafe%20by%20Kuava%20Digitals/Landing-Page%20/WhatsApp%20Image%202026-10-16%20at%2016.55.48.jpeg",
-    caption: "Handcrafted ceramics and wooden tables",
-    alt: "Rustic aesthetic details at Smol Cafe",
   },
   {
     id: "cm-19",
@@ -633,7 +612,7 @@ export const LandingPageView: React.FC = () => {
       </div>
 
       {/* ─── STICKY NAVIGATION BAR ─── */}
-      <header className="sticky top-0 z-30 bg-[#F3E7D3]/95 dark:bg-[#151110]/95 backdrop-blur-md border-b border-[#E2D7C7]/80 dark:border-stone-800/80 transition-colors">
+      <header className="sticky top-0 z-40 bg-[#F3E7D3]/95 dark:bg-[#151110]/95 backdrop-blur-md border-b border-[#E2D7C7]/80 dark:border-stone-800/80 transition-colors">
         <div className="max-w-6xl mx-auto px-3 sm:px-5 lg:px-6 h-16 sm:h-[70px] flex items-center justify-between gap-3">
           {/* Logo & Brand Identity (No circle, properly visible light & dark logos) */}
           <Link href="/" className="flex items-center gap-2.5 sm:gap-3 group shrink-0">
@@ -1342,7 +1321,7 @@ export const LandingPageView: React.FC = () => {
           {/* VIEW 1: Interactive Pegged Polaroid Line Carousel */}
           {communityViewMode === "clothesline" && (
             <div className="space-y-3">
-              <div className="relative w-full rounded-2xl sm:rounded-3xl overflow-hidden bg-gradient-to-b from-[#FAF4EB]/90 to-[#F5ECE0]/90 dark:from-[#1C1715]/95 dark:to-[#161210]/95 border border-[#E2D7C7] dark:border-stone-800/80 shadow-md">
+              <div className="relative w-full rounded-2xl sm:rounded-3xl overflow-hidden bg-gradient-to-b from-[#FAF4EB]/90 to-[#F5ECE0]/90 dark:from-[#1C1715]/95 dark:to-[#161210]/95 border border-[#E2D7C7] dark:border-stone-800/80 shadow-md isolate">
                 {/* Top hint tag */}
                 <div className="absolute top-3 left-4 right-4 flex items-center justify-between pointer-events-none z-10 text-[11px] font-mono text-[#725039]/80 dark:text-[#C9AE8B]/80">
                   <span className="flex items-center gap-1.5 bg-[#FAF4EB]/85 dark:bg-stone-900/85 backdrop-blur-md px-2.5 py-1 rounded-full border border-[#C9AE8B]/30 dark:border-stone-700/60 shadow-xs">
@@ -1723,7 +1702,7 @@ export const LandingPageView: React.FC = () => {
           role="dialog"
           aria-modal="true"
           aria-labelledby="events-modal-title"
-          className="fixed inset-0 z-50 overflow-y-auto bg-black/75 backdrop-blur-md flex items-center justify-center p-3 sm:p-5 md:p-6 animate-in fade-in duration-200"
+          className="fixed inset-0 z-[60] overflow-y-auto bg-black/75 backdrop-blur-md flex items-center justify-center p-3 sm:p-5 md:p-6 animate-in fade-in duration-200"
           onClick={(e) => {
             if (e.target === e.currentTarget) {
               setIsEventsModalOpen(false);
@@ -2025,7 +2004,7 @@ export const LandingPageView: React.FC = () => {
         <div
           role="dialog"
           aria-modal="true"
-          className="fixed inset-0 z-50 overflow-hidden bg-black/92 backdrop-blur-lg flex flex-col items-center justify-between p-3 sm:p-6 animate-in fade-in duration-200"
+          className="fixed inset-0 z-[60] overflow-hidden bg-black/92 backdrop-blur-lg flex flex-col items-center justify-between p-3 sm:p-6 animate-in fade-in duration-200"
           onClick={(e) => {
             if (e.target === e.currentTarget) {
               setActiveLightboxIndex(null);

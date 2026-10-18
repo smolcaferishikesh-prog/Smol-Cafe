@@ -237,7 +237,7 @@ function useSlideImages(slides: Slide[]): string[] {
 }
 
 const PL_CSS = [
-  ".pl-root{position:relative;width:100%;overflow:hidden;background:var(--pl-bg);color:var(--pl-ink);user-select:none;-webkit-user-select:none;touch-action:pan-y;outline:none;cursor:grab}",
+  ".pl-root{position:relative;width:100%;overflow:hidden;isolation:isolate;background:var(--pl-bg);color:var(--pl-ink);user-select:none;-webkit-user-select:none;touch-action:pan-y;outline:none;cursor:grab}",
   ".pl-root[data-drag='1']{cursor:grabbing}",
   ".pl-root:focus-visible{box-shadow:inset 0 0 0 2px var(--pl-ink)}",
   ".pl-string{position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none;overflow:visible}",
