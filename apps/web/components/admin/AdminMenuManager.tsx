@@ -535,7 +535,7 @@ export const AdminMenuManager: React.FC<AdminMenuManagerProps> = ({ onItemChange
 
           <button
             onClick={handleOpenAdd}
-            className="flex items-center gap-2 px-4 py-2.5 bg-[#B72E35] hover:bg-[#9E2329] text-white rounded-xl text-sm font-semibold shadow-xs transition"
+            className="flex items-center gap-2 px-4 py-2.5 bg-[#B72E35] hover:bg-[#9E2329] dark:bg-purple-600 dark:hover:bg-purple-500 text-white rounded-xl text-sm font-semibold shadow-xs transition"
           >
             <Plus className="w-4 h-4" />
             <span>Add New Item</span>
@@ -1034,7 +1034,7 @@ export const AdminMenuManager: React.FC<AdminMenuManagerProps> = ({ onItemChange
                 <button
                   type="submit"
                   disabled={isSubmitting}
-                  className="flex items-center gap-2 px-5 py-2.5 bg-[#B72E35] hover:bg-[#9E2329] text-white rounded-xl text-xs font-bold shadow-xs transition disabled:opacity-50"
+                  className="flex items-center gap-2 px-5 py-2.5 bg-[#B72E35] hover:bg-[#9E2329] dark:bg-purple-600 dark:hover:bg-purple-500 text-white rounded-xl text-xs font-bold shadow-xs transition disabled:opacity-50"
                 >
                   {isSubmitting ? (
                     <RefreshCw className="w-3.5 h-3.5 animate-spin" />

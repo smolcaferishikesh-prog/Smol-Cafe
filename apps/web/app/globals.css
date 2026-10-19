@@ -531,12 +531,12 @@ body {
 
 /* In Night Mode: 3D Button glow */
 .btn-3d-cherry-night {
-  background: linear-gradient(180deg, #C5343B 0%, #A6242B 100%);
+  background: linear-gradient(180deg, #9333EA 0%, #7E22CE 100%);
   box-shadow:
     inset 0 1px 1px rgba(255, 255, 255, 0.4),
     inset 0 -2px 4px rgba(0, 0, 0, 0.3),
-    0 5px 0 #610E14,
-    0 0 24px rgba(183, 46, 53, 0.55),
+    0 5px 0 #581C87,
+    0 0 24px rgba(168, 85, 247, 0.55),
     0 14px 28px rgba(0, 0, 0, 0.7);
   transition: all 0.15s cubic-bezier(0.16, 1, 0.3, 1);
 }
@@ -545,8 +545,8 @@ body {
   transform: translateY(-1px);
   box-shadow:
     inset 0 1px 1px rgba(255, 255, 255, 0.5),
-    0 6px 0 #610E14,
-    0 0 30px rgba(183, 46, 53, 0.7),
+    0 6px 0 #581C87,
+    0 0 30px rgba(168, 85, 247, 0.7),
     0 18px 32px rgba(0, 0, 0, 0.8);
 }
 
@@ -554,8 +554,8 @@ body {
   transform: translateY(4px);
   box-shadow:
     inset 0 2px 3px rgba(0, 0, 0, 0.4),
-    0 1px 0 #610E14,
-    0 0 14px rgba(183, 46, 53, 0.4);
+    0 1px 0 #581C87,
+    0 0 14px rgba(168, 85, 247, 0.4);
 }
 
 /* 3D Embossed Medallion Seal for QR Icon */
@@ -609,4 +609,32 @@ body {
   box-shadow:
     inset 0 1px 2px rgba(0, 0, 0, 0.5),
     0 1px 2px rgba(0, 0, 0, 0.3);
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   GLOBAL DARK MODE BUTTON TRANSFORMATION (ALL RED BUTTONS -> PURPLE)
+   ══════════════════════════════════════════════════════════════════════════ */
+html.dark button[class*="bg-[#B72E35]"]:not([class*="dark:bg-"]),
+.dark button[class*="bg-[#B72E35]"]:not([class*="dark:bg-"]),
+html.dark a[class*="bg-[#B72E35]"]:not([class*="dark:bg-"]),
+.dark a[class*="bg-[#B72E35]"]:not([class*="dark:bg-"]),
+html.dark [role="button"][class*="bg-[#B72E35]"]:not([class*="dark:bg-"]),
+.dark [role="button"][class*="bg-[#B72E35]"]:not([class*="dark:bg-"]) {
+  background-color: #9333ea !important;
+}
+
+html.dark button[class*="bg-[#B72E35]"]:not([class*="dark:hover:bg-"]):hover,
+.dark button[class*="bg-[#B72E35]"]:not([class*="dark:hover:bg-"]):hover,
+html.dark a[class*="bg-[#B72E35]"]:not([class*="dark:hover:bg-"]):hover,
+.dark a[class*="bg-[#B72E35]"]:not([class*="dark:hover:bg-"]):hover,
+html.dark [role="button"][class*="bg-[#B72E35]"]:not([class*="dark:hover:bg-"]):hover,
+.dark [role="button"][class*="bg-[#B72E35]"]:not([class*="dark:hover:bg-"]):hover {
+  background-color: #a855f7 !important;
+}
+
+/* Hero 'Brighter Days.' Title & Wavy Underline in Dark/Night Mode */
+html.dark .hero-brighter-days,
+.dark .hero-brighter-days {
+  color: #c084fc !important;
+  text-decoration-color: #c084fc !important;
 }

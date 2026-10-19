@@ -87,7 +87,7 @@ export const AdminLoginGate: React.FC<AdminLoginGateProps> = ({ onSuccess }) => 
           <button
             type="submit"
             disabled={isLoading || !pin}
-            className="flex min-h-[48px] w-full items-center justify-center rounded-2xl bg-[#B72E35] py-3.5 text-sm font-semibold text-white shadow-md transition hover:bg-[#9B242A] active:scale-[0.98] disabled:opacity-50 cursor-pointer"
+            className="flex min-h-[48px] w-full items-center justify-center rounded-2xl bg-[#B72E35] hover:bg-[#9B242A] dark:bg-purple-600 dark:hover:bg-purple-500 py-3.5 text-sm font-semibold text-white shadow-md transition active:scale-[0.98] disabled:opacity-50 cursor-pointer"
           >
             {isLoading ? "verifying..." : "open admin dashboard"}
           </button>
