@@ -287,6 +287,10 @@ export const AdminMenuManager: React.FC<AdminMenuManagerProps> = ({ onItemChange
         });
 
         if (res.success) {
+          const finalImg = res.imageUrl !== undefined ? res.imageUrl : (formImageUrl.trim() || null);
+          setItems((prev) =>
+            prev.map((i) => (i.id === editingItem.id ? { ...updatedItem, imageUrl: finalImg } : i))
+          );
           broadcastSyncEvent({
             type: "ITEM_AVAILABILITY_CHANGED",
             itemId: editingItem.id,
@@ -303,7 +307,7 @@ export const AdminMenuManager: React.FC<AdminMenuManagerProps> = ({ onItemChange
               dietary: formDietary,
               best_pairing: formBestPairing.trim(),
               status: formStatus,
-              imageUrl: formImageUrl.trim() || null,
+              imageUrl: finalImg,
             },
           });
           setFeedback({ type: "success", text: `Dish "${formName.trim()}" updated successfully!` });
@@ -352,15 +356,20 @@ export const AdminMenuManager: React.FC<AdminMenuManagerProps> = ({ onItemChange
       });
 
       if (res.success) {
+        const finalImg = res.imageUrl !== undefined ? res.imageUrl : (formImageUrl.trim() || null);
+        const resolvedId = res.itemId || newDishId;
+        setItems((prev) =>
+          prev.map((i) => (i.id === newDishId ? { ...optimisticItem, id: resolvedId, imageUrl: finalImg } : i))
+        );
         broadcastSyncEvent({
           type: "ITEM_AVAILABILITY_CHANGED",
-          itemId: res.itemId || newDishId,
+          itemId: resolvedId,
           priceRupees: dishPrice,
           stockStatus: formStatus === "SOLD_OUT" ? "SOLD_OUT" : "IN_STOCK",
           availability: formStatus === "SOLD_OUT" ? "SOLD_OUT" : "IN_STOCK",
           timestamp: Date.now(),
           metadata: {
-            id: res.itemId || newDishId,
+            id: resolvedId,
             name: formName.trim(),
             categoryId: formCategoryId,
             priceRupees: dishPrice,
@@ -368,7 +377,7 @@ export const AdminMenuManager: React.FC<AdminMenuManagerProps> = ({ onItemChange
             dietary: formDietary,
             best_pairing: formBestPairing.trim(),
             status: formStatus,
-            imageUrl: formImageUrl.trim() || null,
+            imageUrl: finalImg,
           },
         });
         setFeedback({ type: "success", text: `Dish "${formName.trim()}" added to menu successfully!` });

@@ -80,6 +80,7 @@ export const ItemCustomizationModal: React.FC<ItemCustomizationModalProps> = ({
               src={item.imageUrl}
               alt={item.name}
               fill
+              unoptimized={item.imageUrl.startsWith("data:")}
               className="object-cover"
               sizes="(max-width: 640px) 100vw, 448px"
             />

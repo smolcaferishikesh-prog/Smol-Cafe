@@ -401,7 +401,7 @@ export async function checkStaffAuthAction(): Promise<boolean> {
   return Boolean(cookieStore.get(STAFF_SESSION_COOKIE)?.value);
 }
 
-import { getStoredCredentials } from "@/app/smol-backdoor/actions";
+import { getStoredCredentials } from "@/lib/auth/credentials";
 
 /**
  * Server Action: Staff login

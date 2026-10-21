@@ -1,5 +1,9 @@
 import { cookies } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
+import {
+  getStoredCredentials,
+  generateRoleCredentialToken,
+} from "@/lib/auth/credentials";
 
 export const STAFF_SESSION_COOKIE = "smol_staff_session";
 
@@ -12,13 +16,27 @@ export interface AuthCheckResult {
 }
 
 /**
- * Sets the staff session cookie with explicit role permissions.
+ * Sets the staff session cookie with explicit role permissions and cryptographic credential signature.
  */
 export async function setStaffSessionCookie(
-  role: "kitchen" | "barista" | "cashier" | "admin" | "super_admin"
+  role: "kitchen" | "barista" | "cashier" | "admin" | "super_admin",
+  signature?: string
 ): Promise<void> {
   const cookieStore = await cookies();
-  cookieStore.set(STAFF_SESSION_COOKIE, role, {
+  let sig = signature;
+  if (!sig) {
+    try {
+      const creds = await getStoredCredentials();
+      const roleKey = role === "super_admin" ? "admin" : (role as "admin" | "cashier" | "kitchen" | "barista");
+      const cred = creds[roleKey];
+      if (cred) {
+        sig = generateRoleCredentialToken(roleKey, cred.pin, cred.password);
+      }
+    } catch {}
+  }
+  const cookieVal = sig ? `${role}:${sig}` : role;
+
+  cookieStore.set(STAFF_SESSION_COOKIE, cookieVal, {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
     sameSite: "lax",
@@ -37,7 +55,7 @@ export async function clearStaffSessionCookie(): Promise<void> {
 
 /**
  * Server-Side RBAC Guard: Validates that the request has an active authenticated staff session.
- * Checks both the HTTP-only staff session cookie and Supabase JWT app_metadata role.
+ * Enforces credential signature matching: if admin changed password/PIN, old sessions are automatically rejected and logged out!
  */
 export async function requireStaffAuth(
   allowedRoles: string[] = ["super_admin", "admin", "cashier", "kitchen", "barista", "chef"]
@@ -47,7 +65,31 @@ export async function requireStaffAuth(
 
   // 1. Check HTTP-Only Staff Role Cookie
   if (staffCookie) {
-    const role = staffCookie.toLowerCase();
+    const [rawRole, tokenSig] = staffCookie.split(":");
+    const role = rawRole?.toLowerCase();
+
+    // Check credential signature freshness against active credentials
+    try {
+      const creds = await getStoredCredentials();
+      const roleKey = role === "super_admin" ? "admin" : (role as "admin" | "cashier" | "kitchen" | "barista");
+      const targetCred = creds[roleKey];
+
+      if (targetCred) {
+        const expectedSig = generateRoleCredentialToken(roleKey, targetCred.pin, targetCred.password);
+        // If cookie does NOT have a signature or signature doesn't match active credentials:
+        if (!tokenSig || tokenSig !== expectedSig) {
+          cookieStore.delete(STAFF_SESSION_COOKIE);
+          return {
+            authorized: false,
+            error: "AUTH_REQUIRED",
+            message: "Credentials have been updated by Admin. Please log in with the new PIN/password.",
+          };
+        }
+      }
+    } catch (err) {
+      console.warn("requireStaffAuth signature verification notice:", err);
+    }
+
     // Super admin & admin have access to all dashboards
     if (role === "admin" || role === "super_admin" || role === "authenticated") {
       return { authorized: true, role: "admin" };

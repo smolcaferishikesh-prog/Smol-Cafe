@@ -505,7 +505,7 @@ export async function transitionOrderStatusAction(
   }
 }
 
-import { getStoredCredentials } from "@/app/smol-backdoor/actions";
+import { getStoredCredentials } from "@/lib/auth/credentials";
 
 /**
  * Server Action: Staff login

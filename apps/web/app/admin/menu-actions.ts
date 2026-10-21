@@ -117,17 +117,29 @@ async function uploadBase64ToStorage(base64Data: string, itemId: string): Promis
     const ext = mimeType.split("/")[1] || "jpeg";
     const filename = `dishes/${itemId}_${Date.now()}.${ext}`;
 
-    const { data, error } = await supabase.storage
+    let uploadRes = await supabase.storage
       .from("menu-photos")
       .upload(filename, buffer, {
         contentType: mimeType,
         upsert: true,
       });
 
-    if (!error && data?.path) {
+    if (uploadRes.error && (uploadRes.error as any).message?.toLowerCase().includes("not found")) {
+      try {
+        await supabase.storage.createBucket("menu-photos", { public: true });
+        uploadRes = await supabase.storage
+          .from("menu-photos")
+          .upload(filename, buffer, {
+            contentType: mimeType,
+            upsert: true,
+          });
+      } catch {}
+    }
+
+    if (!uploadRes.error && uploadRes.data?.path) {
       const { data: publicUrlData } = supabase.storage
         .from("menu-photos")
-        .getPublicUrl(data.path);
+        .getPublicUrl(uploadRes.data.path);
       if (publicUrlData?.publicUrl) {
         return publicUrlData.publicUrl;
       }
@@ -143,7 +155,7 @@ async function uploadBase64ToStorage(base64Data: string, itemId: string): Promis
  */
 export async function saveMenuItemAction(
   payload: SaveMenuItemPayload
-): Promise<{ success: boolean; message: string; itemId: string }> {
+): Promise<{ success: boolean; message: string; itemId: string; imageUrl?: string | null }> {
   try {
     const { id, name, categoryId, priceRupees, description, imageUrl, dietary, bestPairing, status } = payload;
     const isEdit = !!id;
@@ -244,7 +256,7 @@ export async function saveMenuItemAction(
             .insert({
               menu_item_id: itemId,
               description: description || "",
-              image_url: imageUrl || null,
+              image_url: finalImageUrl || null,
             }),
         ]);
       } else {
@@ -271,7 +283,7 @@ export async function saveMenuItemAction(
             .insert({
               menu_item_id: itemId,
               description: description || "",
-              image_url: imageUrl || null,
+              image_url: finalImageUrl || null,
             }),
         ]);
       }
@@ -323,6 +335,7 @@ export async function saveMenuItemAction(
       success: true,
       message: isEdit ? `Dish "${name}" updated successfully.` : `Dish "${name}" created and added to menu.`,
       itemId,
+      imageUrl: finalImageUrl,
     };
   } catch (error: any) {
     console.error("saveMenuItemAction error:", error);

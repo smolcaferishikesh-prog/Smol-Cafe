@@ -197,8 +197,17 @@ export const FOOD_IMAGE_CATALOG: Record<string, string> = {
  * If no custom image is assigned, returns empty string (no automatic stock photos).
  */
 export function getFoodImage(name: string, customUrl?: string | null): string {
-  if (customUrl && typeof customUrl === "string" && customUrl.trim().startsWith("http")) {
-    return customUrl.trim();
+  if (customUrl && typeof customUrl === "string") {
+    const trimmed = customUrl.trim();
+    if (
+      trimmed.startsWith("http://") ||
+      trimmed.startsWith("https://") ||
+      trimmed.startsWith("data:image/") ||
+      trimmed.startsWith("blob:") ||
+      trimmed.startsWith("/")
+    ) {
+      return trimmed;
+    }
   }
   return "";
 }
