@@ -74,8 +74,9 @@ export function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // 4. Read the staff session cookie
-  const staffRole = request.cookies.get(STAFF_SESSION_COOKIE)?.value?.toLowerCase();
+  // 4. Read the staff session cookie (supports role or role:signature format)
+  const rawCookie = request.cookies.get(STAFF_SESSION_COOKIE)?.value;
+  const staffRole = rawCookie?.split(":")[0]?.toLowerCase();
 
   // No session → redirect to /smol-backdoor login
   if (!staffRole) {

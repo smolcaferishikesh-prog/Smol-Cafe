@@ -96,9 +96,8 @@ import {
   getRoleCredentialsAction,
   updateRoleCredentialAction,
   resetRoleCredentialAction,
-  type RoleCredentialsMap,
-  type RoleCredential,
 } from "@/app/smol-backdoor/actions";
+import type { RoleCredentialsMap, RoleCredential } from "@/lib/auth/credentials";
 import type { OrderStatus } from "@smol-cafe/db";
 
 interface AdminTowerProps {
@@ -240,6 +239,10 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
     e.preventDefault();
     if (!editingRole) return;
 
+    if (typeof window !== "undefined") {
+      (window as any).__SMOL_SELF_CREDENTIAL_CHANGE__ = Date.now();
+    }
+
     const targetRole = editingRole.role;
     const prevCredentials = roleCredentials;
 
@@ -277,6 +280,9 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
   };
 
   const handleResetRolePin = async (role: "admin" | "cashier" | "kitchen" | "barista") => {
+    if (typeof window !== "undefined") {
+      (window as any).__SMOL_SELF_CREDENTIAL_CHANGE__ = Date.now();
+    }
     setPinUpdating(true);
     try {
       const res = await resetRoleCredentialAction(role);
@@ -1048,6 +1054,20 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
 
     const unsub = subscribeToSyncEvents((ev) => {
       if (isMounted) {
+        if (ev.type === "STAFF_CREDENTIALS_CHANGED") {
+          const target = (ev.metadata?.role as string) || ev.station?.toLowerCase();
+          if (target === "admin" || target === "all" || ev.station === "ALL") {
+            const isSelf = typeof window !== "undefined" && (window as any).__SMOL_SELF_CREDENTIAL_CHANGE__ && (Date.now() - (window as any).__SMOL_SELF_CREDENTIAL_CHANGE__ < 5000);
+            if (!isSelf) {
+              try {
+                alert("⚠️ Security Notice: Admin credentials (PIN/Password) were changed from another session. Redirecting to login...");
+              } catch {}
+              window.location.href = "/smol-backdoor";
+              return;
+            }
+          }
+        }
+
         void refreshData(true);
         if (ev.type === "SETTINGS_UPDATED") {
           void getRoleCredentialsAction(true).then((res) => {

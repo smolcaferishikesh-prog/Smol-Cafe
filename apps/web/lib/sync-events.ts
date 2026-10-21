@@ -25,7 +25,8 @@ export type SyncEventType =
   | "BILL_SETTLED"
   | "PAYMENT_COMPLETED"
   | "BARISTA_TICKET_CHANGED"
-  | "SETTINGS_UPDATED";
+  | "SETTINGS_UPDATED"
+  | "STAFF_CREDENTIALS_CHANGED";
 
 export interface SyncPayload {
   type: SyncEventType;

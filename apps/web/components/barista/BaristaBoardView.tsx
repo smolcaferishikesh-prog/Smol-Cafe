@@ -300,6 +300,18 @@ export const BaristaBoardView: React.FC<BaristaBoardViewProps> = ({ initialOrder
     scheduleNextPoll();
 
     const unsubscribe = subscribeToSyncEvents((event) => {
+      // Automatic real-time logout if PIN/password changed by Admin
+      if (event.type === "STAFF_CREDENTIALS_CHANGED") {
+        const target = (event.metadata?.role as string) || event.station?.toLowerCase();
+        if (target === "barista" || target === "all" || event.station === "ALL") {
+          try {
+            alert("⚠️ Security Notice: Barista desk credentials (PIN) were updated by Admin. Redirecting to login...");
+          } catch {}
+          window.location.href = "/smol-backdoor";
+          return;
+        }
+      }
+
       // Ignore orders awaiting cashier approval in Barista Desk
       if (
         event.type !== "ORDER_CONFIRMED" &&

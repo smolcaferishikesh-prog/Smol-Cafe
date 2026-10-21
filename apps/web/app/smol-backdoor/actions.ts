@@ -1,7 +1,18 @@
 "use server";
 
 import { redirect } from "next/navigation";
-import { setStaffSessionCookie, clearStaffSessionCookie } from "@/lib/auth/rbac";
+import { setStaffSessionCookie, clearStaffSessionCookie, requireStaffAuth } from "@/lib/auth/rbac";
+import { broadcastSyncEvent } from "@/lib/sync-events";
+import {
+  type RoleCredential,
+  type RoleCredentialsMap,
+  DEFAULT_ROLE_CREDENTIALS,
+  getStoredCredentials,
+  persistCredentials,
+  generateRoleCredentialToken,
+} from "@/lib/auth/credentials";
+
+export type { RoleCredential, RoleCredentialsMap };
 
 export interface StaffLoginInput {
   role: "kitchen" | "barista" | "cashier" | "admin";
@@ -14,217 +25,6 @@ export interface StaffLoginResult {
   role?: string;
   redirectTo?: string;
   message?: string;
-}
-
-export interface RoleCredential {
-  role: "admin" | "cashier" | "kitchen" | "barista";
-  roleName: string;
-  portal: string;
-  pin: string;
-  password?: string;
-  permissions: string;
-  status: string;
-}
-
-export interface RoleCredentialsMap {
-  admin: RoleCredential;
-  cashier: RoleCredential;
-  kitchen: RoleCredential;
-  barista: RoleCredential;
-}
-
-const DEFAULT_ROLE_CREDENTIALS: RoleCredentialsMap = {
-  admin: {
-    role: "admin",
-    roleName: "Super Admin (Owner)",
-    portal: "/admin",
-    pin: "9227",
-    password: "smol2026",
-    permissions: "Full Control, Budgets, Logs",
-    status: "Active",
-  },
-  cashier: {
-    role: "cashier",
-    roleName: "Cashier / Counter Staff",
-    portal: "/cashier",
-    pin: "8112",
-    permissions: "Order Verification, Cash Settlement",
-    status: "Active",
-  },
-  kitchen: {
-    role: "kitchen",
-    roleName: "Kitchen Display (Chef/Cooks)",
-    portal: "/kitchen",
-    pin: "6175",
-    permissions: "Order Queue, Food Prep Status",
-    status: "Active",
-  },
-  barista: {
-    role: "barista",
-    roleName: "Barista Desk (Espresso & Brew)",
-    portal: "/smol-backdoor/barista",
-    pin: "1234",
-    permissions: "Beverage Queue, Shot Timer, Brew Status",
-    status: "Active",
-  },
-};
-
-import fs from "fs";
-import path from "path";
-import { createAdminClient } from "@/lib/supabase/admin";
-import { requireStaffAuth } from "@/lib/auth/rbac";
-import { broadcastSyncEvent } from "@/lib/sync-events";
-
-declare global {
-  var __SMOL_ROLE_CREDENTIALS__: RoleCredentialsMap | undefined;
-}
-
-const CREDENTIALS_FILE_PATH = path.join(process.cwd(), "data", "staff-credentials.json");
-
-function mergeWithDefaults(saved: Partial<RoleCredentialsMap>): RoleCredentialsMap {
-  return {
-    admin: {
-      ...DEFAULT_ROLE_CREDENTIALS.admin,
-      ...(saved.admin || {}),
-      role: "admin",
-      portal: "/admin",
-      permissions: "Full Control, Budgets, Logs",
-      status: "Active",
-    },
-    cashier: {
-      ...DEFAULT_ROLE_CREDENTIALS.cashier,
-      ...(saved.cashier || {}),
-      role: "cashier",
-      portal: "/cashier",
-      permissions: "Order Verification, Cash Settlement",
-      status: "Active",
-    },
-    kitchen: {
-      ...DEFAULT_ROLE_CREDENTIALS.kitchen,
-      ...(saved.kitchen || {}),
-      role: "kitchen",
-      portal: "/kitchen",
-      permissions: "Order Queue, Food Prep Status",
-      status: "Active",
-    },
-    barista: {
-      ...DEFAULT_ROLE_CREDENTIALS.barista,
-      ...(saved.barista || {}),
-      role: "barista",
-      portal: "/smol-backdoor/barista",
-      permissions: "Beverage Queue, Shot Timer, Brew Status",
-      status: "Active",
-    },
-  };
-}
-
-/**
- * Returns current role credentials with multi-tier persistence:
- * 1. In-memory hot cache
- * 2. Supabase PostgreSQL database (budgets table: category='STAFF_RBAC', month='CONFIG')
- * 3. Local persistent file (data/staff-credentials.json)
- * 4. Default credentials fallback
- */
-export async function getStoredCredentials(): Promise<RoleCredentialsMap> {
-  if (globalThis.__SMOL_ROLE_CREDENTIALS__) {
-    return globalThis.__SMOL_ROLE_CREDENTIALS__;
-  }
-
-  // Tier 1: Supabase Database
-  try {
-    const supabase = createAdminClient();
-    const { data, error } = await supabase
-      .from("budgets")
-      .select("notes")
-      .eq("category", "STAFF_RBAC")
-      .eq("month", "CONFIG")
-      .maybeSingle();
-
-    if (!error && data?.notes) {
-      try {
-        const parsed = JSON.parse(data.notes);
-        if (parsed && typeof parsed === "object") {
-          const merged = mergeWithDefaults(parsed);
-          globalThis.__SMOL_ROLE_CREDENTIALS__ = merged;
-          // Synchronize local file cache
-          try {
-            const dir = path.dirname(CREDENTIALS_FILE_PATH);
-            if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-            fs.writeFileSync(CREDENTIALS_FILE_PATH, JSON.stringify(merged, null, 2), "utf-8");
-          } catch {
-            // Ignore disk cache write failure
-          }
-          return merged;
-        }
-      } catch (parseErr) {
-        console.error("Failed to parse stored credentials from Supabase:", parseErr);
-      }
-    }
-  } catch (dbErr) {
-    console.warn("Could not load credentials from Supabase:", dbErr);
-  }
-
-  // Tier 2: Persistent Local File
-  try {
-    if (fs.existsSync(CREDENTIALS_FILE_PATH)) {
-      const fileContent = fs.readFileSync(CREDENTIALS_FILE_PATH, "utf-8");
-      const parsed = JSON.parse(fileContent);
-      if (parsed && typeof parsed === "object") {
-        const merged = mergeWithDefaults(parsed);
-        globalThis.__SMOL_ROLE_CREDENTIALS__ = merged;
-        return merged;
-      }
-    }
-  } catch (fsErr) {
-    console.warn("Could not read credentials from local file:", fsErr);
-  }
-
-  // Tier 3: Default Credentials
-  globalThis.__SMOL_ROLE_CREDENTIALS__ = { ...DEFAULT_ROLE_CREDENTIALS };
-  return globalThis.__SMOL_ROLE_CREDENTIALS__;
-}
-
-async function persistCredentials(creds: RoleCredentialsMap): Promise<void> {
-  globalThis.__SMOL_ROLE_CREDENTIALS__ = creds;
-
-  // 1. Persist to local filesystem
-  try {
-    const dir = path.dirname(CREDENTIALS_FILE_PATH);
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(CREDENTIALS_FILE_PATH, JSON.stringify(creds, null, 2), "utf-8");
-  } catch (fsErr) {
-    console.warn("Failed to write credentials to local file:", fsErr);
-  }
-
-  // 2. Persist to Supabase PostgreSQL database
-  try {
-    const supabase = createAdminClient();
-    const { error } = await supabase.from("budgets").upsert(
-      {
-        category: "STAFF_RBAC",
-        month: "CONFIG",
-        budgeted_amount_paise: 0,
-        notes: JSON.stringify(creds),
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: "category,month" }
-    );
-    if (error) {
-      console.error("Failed to upsert credentials in Supabase:", error.message);
-    }
-  } catch (dbErr) {
-    console.error("Failed to persist credentials in Supabase:", dbErr);
-  }
-
-  // 3. Realtime broadcast for live propagation across tabs
-  try {
-    broadcastSyncEvent({
-      type: "SETTINGS_UPDATED",
-      timestamp: Date.now(),
-    });
-  } catch {
-    // Ignore broadcast failure on server
-  }
 }
 
 /**
@@ -292,6 +92,24 @@ export async function updateRoleCredentialAction(
 
   await persistCredentials(creds);
 
+  // If the admin updated admin credentials, refresh the admin's own current session cookie
+  // so the active admin on this device doesn't get kicked out, while all OTHER sessions with the old signature fail!
+  if (role === "admin") {
+    const token = generateRoleCredentialToken("admin", creds.admin.pin, creds.admin.password);
+    await setStaffSessionCookie("admin", token);
+  }
+
+  // Real-time broadcast: Invalidate active sessions across all devices/tabs immediately
+  broadcastSyncEvent({
+    type: "STAFF_CREDENTIALS_CHANGED",
+    station: role === "admin" ? "ALL" : (role.toUpperCase() as any),
+    metadata: {
+      role,
+      action: "CREDENTIALS_CHANGED",
+      timestamp: Date.now(),
+    },
+  });
+
   return {
     success: true,
     credentials: creds,
@@ -319,6 +137,22 @@ export async function resetRoleCredentialAction(
   if (role) {
     creds[role] = { ...DEFAULT_ROLE_CREDENTIALS[role] };
     await persistCredentials(creds);
+
+    if (role === "admin") {
+      const token = generateRoleCredentialToken("admin", creds.admin.pin, creds.admin.password);
+      await setStaffSessionCookie("admin", token);
+    }
+
+    broadcastSyncEvent({
+      type: "STAFF_CREDENTIALS_CHANGED",
+      station: (role.toUpperCase() as any),
+      metadata: {
+        role,
+        action: "CREDENTIALS_RESET",
+        timestamp: Date.now(),
+      },
+    });
+
     return {
       success: true,
       credentials: creds,
@@ -332,6 +166,20 @@ export async function resetRoleCredentialAction(
       barista: { ...DEFAULT_ROLE_CREDENTIALS.barista },
     };
     await persistCredentials(defaultCopy);
+
+    const token = generateRoleCredentialToken("admin", defaultCopy.admin.pin, defaultCopy.admin.password);
+    await setStaffSessionCookie("admin", token);
+
+    broadcastSyncEvent({
+      type: "STAFF_CREDENTIALS_CHANGED",
+      station: "ALL",
+      metadata: {
+        role: "all",
+        action: "CREDENTIALS_RESET",
+        timestamp: Date.now(),
+      },
+    });
+
     return {
       success: true,
       credentials: defaultCopy,
@@ -367,7 +215,8 @@ export async function staffBackdoorLoginAction(
     if (trimmedPin !== currentCred.pin) {
       return { success: false, message: "Invalid Kitchen Station PIN. Please try again." };
     }
-    await setStaffSessionCookie("kitchen");
+    const token = generateRoleCredentialToken("kitchen", currentCred.pin);
+    await setStaffSessionCookie("kitchen", token);
     return {
       success: true,
       role: "kitchen",
@@ -381,7 +230,8 @@ export async function staffBackdoorLoginAction(
     if (trimmedPin !== currentCred.pin) {
       return { success: false, message: "Invalid Barista Station PIN. Please try again." };
     }
-    await setStaffSessionCookie("barista");
+    const token = generateRoleCredentialToken("barista", currentCred.pin);
+    await setStaffSessionCookie("barista", token);
     return {
       success: true,
       role: "barista",
@@ -395,7 +245,8 @@ export async function staffBackdoorLoginAction(
     if (trimmedPin !== currentCred.pin) {
       return { success: false, message: "Invalid Cashier Desk PIN. Please try again." };
     }
-    await setStaffSessionCookie("cashier");
+    const token = generateRoleCredentialToken("cashier", currentCred.pin);
+    await setStaffSessionCookie("cashier", token);
     return {
       success: true,
       role: "cashier",
@@ -417,7 +268,8 @@ export async function staffBackdoorLoginAction(
     if (!pinMatches && !passMatches) {
       return { success: false, message: "Invalid Admin PIN or master password. Please try again." };
     }
-    await setStaffSessionCookie("admin");
+    const token = generateRoleCredentialToken("admin", currentCred.pin, currentCred.password);
+    await setStaffSessionCookie("admin", token);
     return {
       success: true,
       role: "admin",

@@ -315,6 +315,18 @@ export const KitchenBoardView: React.FC<KitchenBoardViewProps> = ({ initialOrder
 
     // 2. Cross-Interface Real-Time Sync Subscription
     const unsubscribe = subscribeToSyncEvents((event) => {
+      // Automatic real-time logout if PIN/password changed by Admin
+      if (event.type === "STAFF_CREDENTIALS_CHANGED") {
+        const target = (event.metadata?.role as string) || event.station?.toLowerCase();
+        if (target === "kitchen" || target === "all" || event.station === "ALL") {
+          try {
+            alert("⚠️ Security Notice: Kitchen credentials (PIN) were updated by Admin. Redirecting to login...");
+          } catch {}
+          window.location.href = "/smol-backdoor";
+          return;
+        }
+      }
+
       // Ignore orders awaiting cashier approval in Kitchen KDS
       if (
         event.type !== "ORDER_CONFIRMED" &&

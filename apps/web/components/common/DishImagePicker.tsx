@@ -243,16 +243,15 @@ export const DishImagePicker: React.FC<DishImagePickerProps> = ({
 
       {/* Current Preview Banner */}
       {imageUrl && !isCameraActive && (
-        <div className="relative rounded-2xl overflow-hidden border border-[#C9AE8B]/40 dark:border-stone-700 bg-stone-100 dark:bg-stone-900 h-36 flex items-center justify-center group shadow-xs">
+        <div className="relative rounded-2xl overflow-hidden border-2 border-[#C9AE8B]/60 dark:border-stone-700 bg-stone-900 h-40 flex items-center justify-center shadow-xs">
           <img
             src={imageUrl}
             alt={dishName || "Dish Preview"}
             className="h-full w-full object-cover"
           />
-          <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition flex items-center justify-center gap-2">
-            <span className="text-white text-xs font-mono font-bold px-2 py-1 rounded-md bg-black/60">
-              Photo Selected ✓
-            </span>
+          <div className="absolute bottom-2.5 right-2.5 bg-black/75 backdrop-blur-xs text-white text-[11px] font-mono font-semibold px-2.5 py-1 rounded-lg flex items-center gap-1.5 shadow-md border border-white/20">
+            <Check className="h-3.5 w-3.5 text-emerald-400" />
+            <span>Photo Attached</span>
           </div>
         </div>
       )}

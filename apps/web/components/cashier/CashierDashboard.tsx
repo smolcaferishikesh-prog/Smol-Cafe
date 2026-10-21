@@ -259,6 +259,19 @@ export const CashierDashboard: React.FC<CashierDashboardProps> = ({
 
     const unsubscribe = subscribeToSyncEvents((event) => {
       if (!isMounted) return;
+
+      // Automatic real-time logout if PIN/password changed by Admin
+      if (event.type === "STAFF_CREDENTIALS_CHANGED") {
+        const target = (event.metadata?.role as string) || event.station?.toLowerCase();
+        if (target === "cashier" || target === "all" || event.station === "ALL") {
+          try {
+            alert("⚠️ Security Notice: Cashier desk credentials (PIN) were updated by Admin. Redirecting to login...");
+          } catch {}
+          window.location.href = "/smol-backdoor";
+          return;
+        }
+      }
+
       if (event.type === "ORDER_PENDING_CASHIER" || event.status === "PENDING_CONFIRMATION") {
         if (event.orderId && !playedChimeOrderIdsRef.current.has(event.orderId)) {
           playedChimeOrderIdsRef.current.add(event.orderId);

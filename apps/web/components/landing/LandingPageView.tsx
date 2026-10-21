@@ -1,8 +1,9 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import Image from "next/image";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   Coffee,
   BookOpen,
@@ -366,10 +367,102 @@ const COMMUNITY_MEDIA: CommunityMediaItem[] = [
   },
 ];
 
+const HERO_SLIDES = [
+  {
+    url: "https://ik.imagekit.io/sonu2k1/Smol%20Cafe%20by%20Kuava%20Digitals/Landing-Page%20/WhatsApp%20Image%202026-10-16%20at%2017.06.56.jpeg?updatedAt=1792223599429",
+    alt: "Smol Café Interior overlooking Himalayan mountains and Ganges in Tapovan Rishikesh",
+  },
+  {
+    url: "https://ik.imagekit.io/sonu2k1/Smol%20Cafe%20by%20Kuava%20Digitals/Landing-Page%20/WhatsApp%20Image%202026-10-16%20at%2017.06.53.jpeg?updatedAt=1792223599125",
+    alt: "Smol Café Warm Hearth and Cozy Seating in Tapovan Rishikesh",
+  },
+];
+
 export const LandingPageView: React.FC = () => {
+  const router = useRouter();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [expandedFaq, setExpandedFaq] = useState<number | null>(null);
   const [istTime, setIstTime] = useState<string>("");
+
+  // Hidden Staff Backdoor Access (Triple-tap on Logo + Ctrl/Cmd + Shift + S)
+  const logoClickTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const logoClickCountRef = useRef(0);
+
+  const handleSecretBackdoorTrigger = () => {
+    if (typeof window !== "undefined" && "vibrate" in navigator) {
+      try {
+        navigator.vibrate([40, 30, 60]);
+      } catch {}
+    }
+    router.push("/smol-backdoor");
+  };
+
+  const handleLogoClick = (e: React.MouseEvent) => {
+    logoClickCountRef.current += 1;
+    if (logoClickCountRef.current >= 3) {
+      e.preventDefault();
+      if (logoClickTimeoutRef.current) clearTimeout(logoClickTimeoutRef.current);
+      logoClickCountRef.current = 0;
+      handleSecretBackdoorTrigger();
+      return;
+    }
+
+    if (logoClickTimeoutRef.current) {
+      clearTimeout(logoClickTimeoutRef.current);
+    }
+    logoClickTimeoutRef.current = setTimeout(() => {
+      logoClickCountRef.current = 0;
+    }, 1500);
+  };
+
+  // Keyboard shortcut: Ctrl + Shift + S or Cmd + Shift + S (Staff Backdoor)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === "S" || e.key === "s")) {
+        e.preventDefault();
+        handleSecretBackdoorTrigger();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [router]);
+
+  // Hero Carousel State
+  const [heroSlideIndex, setHeroSlideIndex] = useState(0);
+  const [isHeroHovered, setIsHeroHovered] = useState(false);
+  const [heroTouchStartX, setHeroTouchStartX] = useState<number | null>(null);
+
+  // Auto-rotate hero slides every 5.5s unless hovered
+  useEffect(() => {
+    if (isHeroHovered) return;
+    const interval = setInterval(() => {
+      setHeroSlideIndex((prev) => (prev + 1) % HERO_SLIDES.length);
+    }, 5500);
+    return () => clearInterval(interval);
+  }, [isHeroHovered]);
+
+  const nextHeroSlide = () => {
+    setHeroSlideIndex((prev) => (prev + 1) % HERO_SLIDES.length);
+  };
+
+  const prevHeroSlide = () => {
+    setHeroSlideIndex((prev) => (prev - 1 + HERO_SLIDES.length) % HERO_SLIDES.length);
+  };
+
+  const handleHeroTouchStart = (e: React.TouchEvent) => {
+    setHeroTouchStartX(e.touches[0].clientX);
+  };
+
+  const handleHeroTouchEnd = (e: React.TouchEvent) => {
+    if (heroTouchStartX === null) return;
+    const diff = heroTouchStartX - e.changedTouches[0].clientX;
+    if (Math.abs(diff) > 40) {
+      if (diff > 0) nextHeroSlide();
+      else prevHeroSlide();
+    }
+    setHeroTouchStartX(null);
+  };
 
   // Events Popup Modal State
   const [isEventsModalOpen, setIsEventsModalOpen] = useState(false);
@@ -614,8 +707,13 @@ export const LandingPageView: React.FC = () => {
       {/* ─── STICKY NAVIGATION BAR ─── */}
       <header className="sticky top-0 z-40 bg-[#F3E7D3]/95 dark:bg-[#151110]/95 backdrop-blur-md border-b border-[#E2D7C7]/80 dark:border-stone-800/80 transition-colors">
         <div className="max-w-6xl mx-auto px-3 sm:px-5 lg:px-6 h-16 sm:h-[70px] flex items-center justify-between gap-3">
-          {/* Logo & Brand Identity (No circle, properly visible light & dark logos) */}
-          <Link href="/" className="flex items-center gap-2.5 sm:gap-3 group shrink-0">
+          {/* Logo & Brand Identity (Triple-tap unlocks /smol-backdoor) */}
+          <Link
+            href="/"
+            onClick={handleLogoClick}
+            className="flex items-center gap-2.5 sm:gap-3 group shrink-0 select-none"
+            title="smol café"
+          >
             <div className="relative h-11 sm:h-12 w-auto flex items-center justify-center shrink-0 transition-transform group-hover:scale-105">
               {/* Light Mode Logo: Arched Red Door */}
               <Image
@@ -719,8 +817,11 @@ export const LandingPageView: React.FC = () => {
         {/* Mobile & Tablet Slide-down Drawer */}
         {mobileMenuOpen && (
           <div className="lg:hidden border-b border-[#E2D7C7] dark:border-stone-800 bg-[#FAF4EB] dark:bg-[#1C1715] px-4 sm:px-6 py-5 space-y-4 shadow-2xl animate-in slide-in-from-top-2 duration-200">
-            {/* Drawer Brand Header with unclipped logo */}
-            <div className="flex items-center gap-2.5 pb-3 border-b border-[#E2D7C7]/60 dark:border-stone-800">
+            {/* Drawer Brand Header (Triple-tap unlocks /smol-backdoor) */}
+            <div
+              onClick={handleLogoClick}
+              className="flex items-center gap-2.5 pb-3 border-b border-[#E2D7C7]/60 dark:border-stone-800 cursor-pointer select-none"
+            >
               <div className="relative h-9 w-auto flex items-center shrink-0">
                 <Image
                   src="/logo-transparent.png"
@@ -887,19 +988,79 @@ export const LandingPageView: React.FC = () => {
 
           {/* Hero Visual Frame */}
           <div className="mt-8 sm:mt-12 lg:mt-14 relative mx-auto max-w-5xl">
-            <div className="relative rounded-2xl sm:rounded-3xl lg:rounded-[2.5rem] overflow-hidden border-2 border-[#E2D7C7] dark:border-stone-800 shadow-xl bg-[#241F1C]">
+            <div
+              className="group relative rounded-2xl sm:rounded-3xl lg:rounded-[2.5rem] overflow-hidden border-2 border-[#E2D7C7] dark:border-stone-800 shadow-xl bg-[#241F1C] select-none"
+              onMouseEnter={() => setIsHeroHovered(true)}
+              onMouseLeave={() => setIsHeroHovered(false)}
+              onTouchStart={handleHeroTouchStart}
+              onTouchEnd={handleHeroTouchEnd}
+            >
               <div className="relative aspect-[4/3] xs:aspect-[16/11] sm:aspect-[16/10] lg:aspect-[16/9] w-full">
-                <Image
-                  src="/hero_himalayan_cafe.jpg"
-                  alt="Smol Café Interior overlooking Himalayan mountains and Ganges in Tapovan Rishikesh"
-                  fill
-                  priority
-                  className="object-cover object-center filter brightness-[0.96] contrast-[1.03] transition-transform duration-700 hover:scale-101"
-                />
-                <div className="absolute inset-0 bg-gradient-to-t from-[#151110]/85 via-black/10 to-transparent pointer-events-none" />
+                {HERO_SLIDES.map((slide, idx) => (
+                  <div
+                    key={slide.url}
+                    className={`absolute inset-0 transition-opacity duration-1000 ease-in-out ${
+                      idx === heroSlideIndex ? "opacity-100 z-0" : "opacity-0 pointer-events-none"
+                    }`}
+                  >
+                    <Image
+                      src={slide.url}
+                      alt={slide.alt}
+                      fill
+                      priority={idx === 0}
+                      sizes="(max-width: 768px) 100vw, 1200px"
+                      className="object-cover object-center filter brightness-[0.96] contrast-[1.03] transition-transform duration-700 hover:scale-101"
+                    />
+                  </div>
+                ))}
+                <div className="absolute inset-0 bg-gradient-to-t from-[#151110]/85 via-black/10 to-transparent pointer-events-none z-[1]" />
+
+                {/* Carousel Navigation Arrows */}
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    prevHeroSlide();
+                  }}
+                  aria-label="Previous photo"
+                  className="absolute left-2.5 sm:left-4 top-1/2 -translate-y-1/2 z-20 w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-black/40 hover:bg-black/70 text-white backdrop-blur-md border border-white/20 flex items-center justify-center transition-all opacity-80 sm:opacity-0 group-hover:opacity-100 focus:opacity-100 shadow-lg hover:scale-105 active:scale-95"
+                >
+                  <ChevronLeft className="w-4 h-4 sm:w-5 sm:h-5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    nextHeroSlide();
+                  }}
+                  aria-label="Next photo"
+                  className="absolute right-2.5 sm:right-4 top-1/2 -translate-y-1/2 z-20 w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-black/40 hover:bg-black/70 text-white backdrop-blur-md border border-white/20 flex items-center justify-center transition-all opacity-80 sm:opacity-0 group-hover:opacity-100 focus:opacity-100 shadow-lg hover:scale-105 active:scale-95"
+                >
+                  <ChevronRight className="w-4 h-4 sm:w-5 sm:h-5" />
+                </button>
+
+                {/* Carousel Indicator Dots */}
+                <div className="absolute bottom-3 sm:bottom-24 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2 px-3 py-1.5 rounded-full bg-black/45 backdrop-blur-md border border-white/20 shadow-md">
+                  {HERO_SLIDES.map((_, idx) => (
+                    <button
+                      key={idx}
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setHeroSlideIndex(idx);
+                      }}
+                      aria-label={`Switch to slide ${idx + 1}`}
+                      className={`h-2 rounded-full transition-all duration-300 ${
+                        idx === heroSlideIndex
+                          ? "w-6 bg-[#F2C84B]"
+                          : "w-2 bg-white/50 hover:bg-white/90"
+                      }`}
+                    />
+                  ))}
+                </div>
 
                 {/* Floating Widget 1: Roastery status */}
-                <div className="absolute top-3 left-3 sm:top-5 sm:left-5 bg-white/90 dark:bg-black/85 backdrop-blur-md px-2.5 sm:px-3.5 py-1.5 sm:py-2 rounded-xl sm:rounded-2xl border border-white/40 dark:border-white/10 shadow-md flex items-center gap-2">
+                <div className="absolute top-3 left-3 sm:top-5 sm:left-5 z-10 bg-white/90 dark:bg-black/85 backdrop-blur-md px-2.5 sm:px-3.5 py-1.5 sm:py-2 rounded-xl sm:rounded-2xl border border-white/40 dark:border-white/10 shadow-md flex items-center gap-2">
                   <div className="w-6 h-6 sm:w-8 sm:h-8 rounded-lg sm:rounded-xl bg-[#FDF0E7] dark:bg-purple-950/50 flex items-center justify-center text-[#B72E35] dark:text-purple-400 shrink-0">
                     <Coffee className="w-3 h-3 sm:w-4 sm:h-4" />
                   </div>
@@ -914,7 +1075,7 @@ export const LandingPageView: React.FC = () => {
                 </div>
 
                 {/* Floating Widget 2: Rating */}
-                <div className="absolute top-3 right-3 sm:top-5 sm:right-5 bg-white/90 dark:bg-black/85 backdrop-blur-md px-2.5 sm:px-3.5 py-1.5 sm:py-2 rounded-xl sm:rounded-2xl border border-white/40 dark:border-white/10 shadow-md flex items-center gap-1.5 sm:gap-2">
+                <div className="absolute top-3 right-3 sm:top-5 sm:right-5 z-10 bg-white/90 dark:bg-black/85 backdrop-blur-md px-2.5 sm:px-3.5 py-1.5 sm:py-2 rounded-xl sm:rounded-2xl border border-white/40 dark:border-white/10 shadow-md flex items-center gap-1.5 sm:gap-2">
                   <div className="flex text-amber-500">
                     {[...Array(5)].map((_, i) => (
                       <Star key={i} className="w-3 h-3 sm:w-3.5 sm:h-3.5 fill-current" />
@@ -931,7 +1092,7 @@ export const LandingPageView: React.FC = () => {
                 </div>
 
                 {/* Floating Widget 3: Bottom Banner Overlay (Desktop & Tablet) */}
-                <div className="hidden sm:flex absolute bottom-3 sm:bottom-5 left-3 sm:left-5 right-3 sm:right-5 bg-white/95 dark:bg-[#1C1614]/95 backdrop-blur-md rounded-xl sm:rounded-2xl p-3.5 sm:p-5 border border-white/40 dark:border-white/10 shadow-lg flex-col md:flex-row items-start md:items-center justify-between gap-3">
+                <div className="hidden sm:flex absolute bottom-3 sm:bottom-5 left-3 sm:left-5 right-3 sm:right-5 z-10 bg-white/95 dark:bg-[#1C1614]/95 backdrop-blur-md rounded-xl sm:rounded-2xl p-3.5 sm:p-5 border border-white/40 dark:border-white/10 shadow-lg flex-col md:flex-row items-start md:items-center justify-between gap-3">
                   <div className="space-y-0.5">
                     <div className="flex items-center gap-2">
                       <span className="text-[11px] sm:text-xs font-mono uppercase font-bold text-[#B72E35] dark:text-purple-400">
@@ -1099,9 +1260,10 @@ export const LandingPageView: React.FC = () => {
             <div className="rounded-2xl sm:rounded-3xl bg-[#FAF4EB] dark:bg-[#1C1715] border-2 border-[#E2D7C7] dark:border-stone-800 overflow-hidden shadow-md flex flex-col justify-between">
               <div className="relative aspect-[16/10] sm:aspect-video w-full">
                 <Image
-                  src="/hero_himalayan_cafe.jpg"
-                  alt="Smol Cafe by Day"
+                  src="https://ik.imagekit.io/sonu2k1/Smol%20Cafe%20by%20Kuava%20Digitals/Landing-Page%20/WhatsApp%20Image%202026-10-16%20at%2016.55.39.jpeg?updatedAt=1792223586024"
+                  alt="Smol Cafe Sunlight & Brew Morning"
                   fill
+                  sizes="(max-width: 768px) 100vw, 50vw"
                   className="object-cover"
                 />
                 <div className="absolute top-3 left-3 sm:top-4 sm:left-4 bg-[#F2C84B] text-[#241F1C] font-mono text-[10px] sm:text-xs px-2.5 sm:px-3 py-1 rounded-full font-bold flex items-center gap-1.5 shadow-sm">
@@ -1129,9 +1291,10 @@ export const LandingPageView: React.FC = () => {
             <div className="rounded-2xl sm:rounded-3xl bg-[#241F1C] text-[#F3E7D3] border-2 border-stone-800 overflow-hidden shadow-md flex flex-col justify-between">
               <div className="relative aspect-[16/10] sm:aspect-video w-full">
                 <Image
-                  src="/evening_pour_over_bar.jpg"
-                  alt="Smol Cafe by Evening"
+                  src="https://ik.imagekit.io/sonu2k1/Smol%20Cafe%20by%20Kuava%20Digitals/Landing-Page%20/WhatsApp%20Image%202026-10-16%20at%2016.55.35%20(1).jpeg?updatedAt=1792223575306"
+                  alt="Smol Cafe Twilight & Vinyl Intimate Evening"
                   fill
+                  sizes="(max-width: 768px) 100vw, 50vw"
                   className="object-cover"
                 />
                 <div className="absolute top-3 left-3 sm:top-4 sm:left-4 bg-[#754CFF] text-white font-mono text-[10px] sm:text-xs px-2.5 sm:px-3 py-1 rounded-full font-bold flex items-center gap-1.5 shadow-sm">
@@ -1527,9 +1690,10 @@ export const LandingPageView: React.FC = () => {
             <div className="lg:col-span-7">
               <div className="relative rounded-2xl sm:rounded-3xl overflow-hidden border-2 border-[#E2D7C7] dark:border-stone-800 shadow-xl bg-stone-900 aspect-[16/10] sm:aspect-video lg:aspect-[16/10]">
                 <Image
-                  src="/hero_himalayan_cafe.jpg"
+                  src="https://ik.imagekit.io/sonu2k1/Smol%20Cafe%20by%20Kuava%20Digitals/Landing-Page%20/WhatsApp%20Image%202026-10-16%20at%2016.55.37.jpeg?updatedAt=1792223589336"
                   alt="Smol Cafe Rishikesh Tapovan View"
                   fill
+                  sizes="(max-width: 1024px) 100vw, 60vw"
                   className="object-cover filter contrast-105"
                 />
                 <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/35 to-transparent p-4 sm:p-6 lg:p-8 flex flex-col justify-end">
