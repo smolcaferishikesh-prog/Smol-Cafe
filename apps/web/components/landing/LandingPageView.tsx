@@ -377,6 +377,10 @@ const HERO_SLIDES = [
     url: "https://ik.imagekit.io/sonu2k1/Smol%20Cafe%20by%20Kuava%20Digitals/Landing-Page%20/WhatsApp%20Image%202026-10-16%20at%2017.06.53.jpeg?updatedAt=1792223599125",
     alt: "Smol Café Warm Hearth and Cozy Seating in Tapovan Rishikesh",
   },
+  {
+    url: "https://ik.imagekit.io/sonu2k1/Smol%20Cafe%20by%20Kuava%20Digitals/Landing-Page%20/WhatsApp%20Image%202026-10-16%20at%2017.07.02.jpeg?updatedAt=1792223594109",
+    alt: "Smol Café Aesthetic Mountain Lounge and Reading Corner in Tapovan Rishikesh",
+  },
 ];
 
 export const LandingPageView: React.FC = () => {
