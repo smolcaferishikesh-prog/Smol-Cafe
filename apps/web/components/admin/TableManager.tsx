@@ -40,7 +40,7 @@ import {
 import { JsonTagInspectorModal } from "@/components/table/JsonTagInspectorModal";
 import { createTableJsonTag, type TableJsonTag } from "@/lib/table-tag";
 import { broadcastSyncEvent, subscribeToSyncEvents } from "@/lib/sync-events";
-import { normalizeTableLabel } from "@/lib/table-store";
+import { normalizeTableLabel } from "@/lib/table-label";
 
 export const DEFAULT_QR_DOMAIN = "https://www.smolcafe.in";
 
