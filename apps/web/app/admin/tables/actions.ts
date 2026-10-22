@@ -251,6 +251,9 @@ export async function createTableAction(input: CreateTableInput): Promise<{
 
     // Unrecord from deleted tables store in case this name was previously deleted
     unrecordDeletedTable(label);
+    unrecordDeletedTable(cleanNum);
+    unrecordDeletedTable(`table-${cleanNum}`);
+    unrecordDeletedTable(`t-${cleanNum}`);
     unrecordDeletedTable(tableId);
 
     // 3. Save section mapping in runtime registry
@@ -280,6 +283,7 @@ export async function createTableAction(input: CreateTableInput): Promise<{
     }
 
     try {
+      revalidatePath("/admin/tables");
       revalidatePath("/");
     } catch {
       // Non-fatal if revalidation context is absent
@@ -394,6 +398,7 @@ export async function updateTableAction(
       "Café";
 
     try {
+      revalidatePath("/admin/tables");
       revalidatePath("/");
     } catch {
       // Non-fatal if revalidation context is absent
@@ -499,6 +504,7 @@ export async function deleteTableAction(tableId: string): Promise<{
     }
 
     try {
+      revalidatePath("/admin/tables");
       revalidatePath("/");
     } catch {
       // Non-fatal if context is absent

@@ -40,6 +40,7 @@ import {
 import { JsonTagInspectorModal } from "@/components/table/JsonTagInspectorModal";
 import { createTableJsonTag, type TableJsonTag } from "@/lib/table-tag";
 import { broadcastSyncEvent, subscribeToSyncEvents } from "@/lib/sync-events";
+import { normalizeTableLabel } from "@/lib/table-label";
 
 export const DEFAULT_QR_DOMAIN = "https://www.smolcafe.in";
 
@@ -252,6 +253,23 @@ export const TableManager: React.FC<TableManagerProps> = ({
   const deletedIdsRef = React.useRef<Set<string>>(new Set());
   const deletedLabelsRef = React.useRef<Set<string>>(new Set());
 
+  // Helper to remove table ID and all its label variations from deleted tombstone refs
+  const clearDeletedRefs = React.useCallback((id?: string, label?: string) => {
+    if (id) {
+      deletedIdsRef.current.delete(id);
+    }
+    if (label) {
+      const clean = label.trim().toLowerCase();
+      deletedLabelsRef.current.delete(clean);
+      try {
+        const variations = normalizeTableLabel(clean);
+        variations.forEach((v) => deletedLabelsRef.current.delete(v.toLowerCase()));
+      } catch {
+        // ignore
+      }
+    }
+  }, []);
+
   useEffect(() => {
     setMounted(true);
   }, []);
@@ -260,13 +278,26 @@ export const TableManager: React.FC<TableManagerProps> = ({
     try {
       const res = await fetchTablesAndSectionsAction();
       if (res.success && res.tables) {
-        setTables(
-          res.tables.filter(
+        setTables((prev) => {
+          const serverTables = res.tables.filter(
             (t) =>
               !deletedIdsRef.current.has(t.id) &&
               !deletedLabelsRef.current.has(t.label.trim().toLowerCase())
-          )
-        );
+          );
+          const serverIds = new Set(serverTables.map((t) => t.id));
+          const serverLabels = new Set(serverTables.map((t) => t.label.trim().toLowerCase()));
+
+          // Retain newly created local tables not yet synced to server response
+          const localPending = prev.filter(
+            (t) =>
+              !serverIds.has(t.id) &&
+              !serverLabels.has(t.label.trim().toLowerCase()) &&
+              !deletedIdsRef.current.has(t.id) &&
+              !deletedLabelsRef.current.has(t.label.trim().toLowerCase())
+          );
+
+          return [...serverTables, ...localPending];
+        });
         if (res.sections && res.sections.length > 0) {
           setSections(res.sections);
         }
@@ -278,13 +309,26 @@ export const TableManager: React.FC<TableManagerProps> = ({
 
   React.useEffect(() => {
     if (initialTables && initialTables.length > 0) {
-      setTables(
-        initialTables.filter(
+      setTables((prev) => {
+        const serverTables = initialTables.filter(
           (t) =>
             !deletedIdsRef.current.has(t.id) &&
             !deletedLabelsRef.current.has(t.label.trim().toLowerCase())
-        )
-      );
+        );
+        const serverIds = new Set(serverTables.map((t) => t.id));
+        const serverLabels = new Set(serverTables.map((t) => t.label.trim().toLowerCase()));
+
+        // Retain newly created local tables not yet synced to server response
+        const localPending = prev.filter(
+          (t) =>
+            !serverIds.has(t.id) &&
+            !serverLabels.has(t.label.trim().toLowerCase()) &&
+            !deletedIdsRef.current.has(t.id) &&
+            !deletedLabelsRef.current.has(t.label.trim().toLowerCase())
+        );
+
+        return [...serverTables, ...localPending];
+      });
     } else {
       refreshTables();
     }
@@ -301,8 +345,7 @@ export const TableManager: React.FC<TableManagerProps> = ({
         const seats = Number(meta.seats) || 2;
         const active = meta.active !== undefined ? Boolean(meta.active) : true;
 
-        if (id) deletedIdsRef.current.delete(id);
-        if (label) deletedLabelsRef.current.delete(label.trim().toLowerCase());
+        clearDeletedRefs(id, label);
 
         setTables((prev) => {
           const normLabel = label.trim().toLowerCase();
@@ -767,7 +810,7 @@ export const TableManager: React.FC<TableManagerProps> = ({
 
     setIsAddModalOpen(false);
     setIsAddSectionDropdownOpen(false);
-    deletedLabelsRef.current.delete(cleanLabel.toLowerCase());
+    clearDeletedRefs(tempId, cleanLabel);
     setFeedback({ type: "success", text: `Table T-${cleanLabel} added! Scannable QR stand & tags generated.` });
     setViewingQrTable(optimisticTable);
 
@@ -795,15 +838,20 @@ export const TableManager: React.FC<TableManagerProps> = ({
 
       if (res.success && res.table) {
         const confirmedTable = res.table;
-        deletedIdsRef.current.delete(confirmedTable.id);
-        deletedLabelsRef.current.delete(confirmedTable.label.toLowerCase());
-        setTables((prev) =>
-          prev.map((t) =>
-            t.id === tempId || t.label.trim().toLowerCase() === cleanLabel.toLowerCase()
-              ? confirmedTable
-              : t
-          )
-        );
+        clearDeletedRefs(confirmedTable.id, confirmedTable.label);
+        clearDeletedRefs(confirmedTable.id, cleanLabel);
+        setTables((prev) => {
+          const matchIdx = prev.findIndex(
+            (t) =>
+              t.id === tempId ||
+              t.id === confirmedTable.id ||
+              t.label.trim().toLowerCase() === cleanLabel.toLowerCase()
+          );
+          if (matchIdx >= 0) {
+            return prev.map((t, idx) => (idx === matchIdx ? confirmedTable : t));
+          }
+          return [...prev, confirmedTable];
+        });
         setViewingQrTable(confirmedTable);
       } else {
         // Rollback on error
