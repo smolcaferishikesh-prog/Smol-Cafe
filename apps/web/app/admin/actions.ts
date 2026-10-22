@@ -4,6 +4,7 @@ import { createAdminClient, isMockDatabase } from "@/lib/supabase/admin";
 import { TABLE_ZONES_CONFIG } from "@/lib/table-tag";
 import { broadcastSyncEvent } from "@/lib/sync-events";
 import { getMenuCatalog } from "@/lib/queries/menu";
+import { filterDeletedTables, isTableDeleted } from "@/lib/table-store";
 import { safeUpdateOrderWithInstructions, extractOrderInstructions } from "@/lib/order-instructions";
 import type { OrderStatus } from "@smol-cafe/db";
 
@@ -169,7 +170,7 @@ export async function fetchAdminOverviewAction(forceRefresh = false): Promise<{
     }
 
     const orders = ordersRes.data || [];
-    const diningTables = tablesRes.data || [];
+    const diningTables = filterDeletedTables(tablesRes.data || []);
     const tableSessions = sessionsRes.data || [];
     const bills = billsRes.data || [];
 
@@ -472,20 +473,23 @@ export async function fetchAdminOverviewAction(forceRefresh = false): Promise<{
       orders: count,
     }));
 
-    // 7. Zone Utilization Calculation (6 smol-cafe, 4 smol-lounge, 4 smol-terrace)
+    // 7. Zone Utilization Calculation
     const zoneTableCounts: Record<string, { total: number; occupied: number }> = {
-      "smol-cafe": { total: 6, occupied: 0 },
-      "smol-lounge": { total: 4, occupied: 0 },
-      "smol-terrace": { total: 4, occupied: 0 },
+      "smol-cafe": { total: 0, occupied: 0 },
+      "smol-lounge": { total: 0, occupied: 0 },
+      "smol-terrace": { total: 0, occupied: 0 },
     };
 
-    for (let i = 1; i <= 14; i++) {
-      const label = i.toString().padStart(2, "0");
-      const zName = TABLE_ZONES_CONFIG[label]?.zone || "smol-cafe";
-      if (zoneTableCounts[zName]) {
-        if (activeTableIds.has(label)) {
-          zoneTableCounts[zName].occupied++;
-        }
+    for (const t of diningTables) {
+      const label = t.label;
+      const cleanNum = (label || "").toString().padStart(2, "0");
+      const zName = TABLE_ZONES_CONFIG[cleanNum]?.zone || (t as any).section || "smol-cafe";
+      if (!zoneTableCounts[zName]) {
+        zoneTableCounts[zName] = { total: 0, occupied: 0 };
+      }
+      zoneTableCounts[zName].total++;
+      if (activeTableIds.has(label) || activeTableIds.has(cleanNum)) {
+        zoneTableCounts[zName].occupied++;
       }
     }
 

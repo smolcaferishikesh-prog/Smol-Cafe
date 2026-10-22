@@ -282,29 +282,17 @@ export const EditOrderModal: React.FC<EditOrderModalProps> = ({
       .slice(0, 20);
   }, [availableMenuItems, dishSearch]);
 
-  const defaultTables = [
-    "01",
-    "02",
-    "03",
-    "04",
-    "05",
-    "06",
-    "07",
-    "08",
-    "09",
-    "10",
-    "11",
-    "12",
-    "Terrace-01",
-    "Terrace-02",
-    "Riverside",
-  ];
-
   const resolvedTableOptions = useMemo(() => {
-    const set = new Set(defaultTables);
-    allTables.forEach((t) => set.add(t.label));
-    if (order.tableLabel) set.add(order.tableLabel);
-    return Array.from(set);
+    const list: string[] = [];
+    if (allTables && allTables.length > 0) {
+      allTables.forEach((t) => {
+        if (t.label && !list.includes(t.label)) list.push(t.label);
+      });
+    }
+    if (order.tableLabel && !list.includes(order.tableLabel)) {
+      list.push(order.tableLabel);
+    }
+    return list.length > 0 ? list : [order.tableLabel || "01"];
   }, [allTables, order.tableLabel]);
 
   if (!mounted) return null;

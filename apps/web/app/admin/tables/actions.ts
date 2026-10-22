@@ -4,6 +4,12 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { revalidatePath } from "next/cache";
 import { broadcastSyncEvent } from "@/lib/sync-events";
 import { invalidateAdminOverviewCache } from "@/app/admin/actions";
+import {
+  filterDeletedTables,
+  recordDeletedTable,
+  unrecordDeletedTable,
+  isTableDeleted,
+} from "@/lib/table-store";
 
 export interface DiningTableRecord {
   id: string;
@@ -160,8 +166,9 @@ export async function fetchTablesAndSectionsAction(): Promise<{
     });
 
     const sections = getSectionsList(tables);
+    const nonDeletedTables = filterDeletedTables(tables);
 
-    return { success: true, tables, sections };
+    return { success: true, tables: nonDeletedTables, sections };
   } catch (err: any) {
     console.error("fetchTablesAndSectionsAction unexpected error:", err);
     return { success: false, tables: [], sections: DEFAULT_SECTIONS, message: err?.message || "Error fetching tables" };
@@ -241,6 +248,10 @@ export async function createTableAction(input: CreateTableInput): Promise<{
     }
 
     const tableId = inserted.id;
+
+    // Unrecord from deleted tables store in case this name was previously deleted
+    unrecordDeletedTable(label);
+    unrecordDeletedTable(tableId);
 
     // 3. Save section mapping in runtime registry
     if (!globalThis.__SMOL_TABLE_SECTIONS_MAP__) {
@@ -434,6 +445,24 @@ export async function deleteTableAction(tableId: string): Promise<{
   try {
     const supabase = createAdminClient();
 
+    // 0. Fetch table details to get label for tombstone persistence & broadcast
+    let tableLabel = "";
+    try {
+      const { data: tbl } = await supabase
+        .from("dining_tables")
+        .select("id, label")
+        .eq("id", tableId)
+        .maybeSingle();
+      if (tbl?.label) {
+        tableLabel = tbl.label;
+      }
+    } catch {
+      // ignore
+    }
+
+    // Record to persistent deleted store immediately (prevent resurrection)
+    recordDeletedTable(tableId, tableLabel);
+
     // 1. Close or delete any existing table sessions for this table
     try {
       await supabase
@@ -464,6 +493,9 @@ export async function deleteTableAction(tableId: string): Promise<{
     // 4. Clean up runtime memory map
     if (globalThis.__SMOL_TABLE_SECTIONS_MAP__) {
       delete globalThis.__SMOL_TABLE_SECTIONS_MAP__[tableId];
+      if (tableLabel) {
+        delete globalThis.__SMOL_TABLE_SECTIONS_MAP__[tableLabel];
+      }
     }
 
     try {
@@ -477,11 +509,17 @@ export async function deleteTableAction(tableId: string): Promise<{
     broadcastSyncEvent({
       type: "TABLE_DELETED",
       tableId,
-      metadata: { id: tableId },
+      tableLabel,
+      metadata: { id: tableId, label: tableLabel },
       timestamp: Date.now(),
     });
 
-    return { success: true, message: "Table deleted successfully." };
+    return {
+      success: true,
+      message: tableLabel
+        ? `Table ${tableLabel} deleted successfully.`
+        : "Table deleted successfully.",
+    };
   } catch (err: unknown) {
     const errorMsg = err instanceof Error ? err.message : "Failed to delete table.";
     return { success: false, message: errorMsg };

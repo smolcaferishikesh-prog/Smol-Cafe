@@ -25,6 +25,8 @@ import {
   fetchAdminMenuCatalogAction,
   saveMenuItemAction,
   deleteMenuItemAction,
+  clearAllMenuItemsAction,
+  resetToMasterMenuAction,
   type AdminMenuItem,
   type AdminCategoryOption,
 } from "@/app/admin/menu-actions";
@@ -67,6 +69,54 @@ export const AdminMenuManager: React.FC<AdminMenuManagerProps> = ({ onItemChange
   // Delete confirmation
   const [deletingItemId, setDeletingItemId] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<{ type: "success" | "error"; text: string } | null>(null);
+
+  // Bulk catalog management states
+  const [showClearConfirm, setShowClearConfirm] = useState<boolean>(false);
+  const [showRestoreConfirm, setShowRestoreConfirm] = useState<boolean>(false);
+  const [isClearingAll, setIsClearingAll] = useState<boolean>(false);
+  const [isRestoringMaster, setIsRestoringMaster] = useState<boolean>(false);
+
+  const handleClearAllCatalog = async () => {
+    setIsClearingAll(true);
+    setShowClearConfirm(false);
+    setItems([]);
+    setFeedback({ type: "success", text: "Clearing entire menu catalog..." });
+    try {
+      const res = await clearAllMenuItemsAction();
+      if (res.success) {
+        setFeedback({ type: "success", text: res.message });
+        if (onItemChange) onItemChange();
+      } else {
+        setFeedback({ type: "error", text: res.message });
+        loadMenu();
+      }
+    } catch {
+      setFeedback({ type: "error", text: "Failed to clear menu." });
+      loadMenu();
+    } finally {
+      setIsClearingAll(false);
+    }
+  };
+
+  const handleRestoreMasterMenu = async () => {
+    setIsRestoringMaster(true);
+    setShowRestoreConfirm(false);
+    setFeedback({ type: "success", text: "Restoring Smol Café master menu..." });
+    try {
+      const res = await resetToMasterMenuAction();
+      if (res.success) {
+        setFeedback({ type: "success", text: res.message });
+        await loadMenu();
+        if (onItemChange) onItemChange();
+      } else {
+        setFeedback({ type: "error", text: res.message });
+      }
+    } catch {
+      setFeedback({ type: "error", text: "Failed to restore master menu." });
+    } finally {
+      setIsRestoringMaster(false);
+    }
+  };
 
   const loadMenu = useCallback(async () => {
     setIsLoading(true);
@@ -532,7 +582,7 @@ export const AdminMenuManager: React.FC<AdminMenuManagerProps> = ({ onItemChange
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center flex-wrap gap-2.5">
           <button
             onClick={loadMenu}
             disabled={isLoading}
@@ -541,6 +591,30 @@ export const AdminMenuManager: React.FC<AdminMenuManagerProps> = ({ onItemChange
           >
             <RefreshCw className={`w-4 h-4 ${isLoading ? "animate-spin" : ""}`} />
           </button>
+
+          <button
+            type="button"
+            onClick={() => setShowRestoreConfirm(true)}
+            disabled={isRestoringMaster || isLoading}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-stone-200 dark:border-stone-700 bg-stone-50 dark:bg-stone-800 hover:bg-stone-100 dark:hover:bg-stone-700 text-stone-700 dark:text-stone-300 text-xs font-semibold transition"
+            title="Restore default Smol Café master menu (64 items)"
+          >
+            <Sparkles className="w-3.5 h-3.5 text-amber-600" />
+            <span>Restore Master</span>
+          </button>
+
+          {items.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setShowClearConfirm(true)}
+              disabled={isClearingAll || isLoading}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-rose-200 dark:border-rose-900/60 bg-rose-50/50 dark:bg-rose-950/30 hover:bg-rose-100/70 text-rose-700 dark:text-rose-400 text-xs font-semibold transition"
+              title="Delete all dishes to start with a fresh blank menu"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span>Clear Entire Catalog</span>
+            </button>
+          )}
 
           <button
             onClick={handleOpenAdd}
@@ -670,11 +744,35 @@ export const AdminMenuManager: React.FC<AdminMenuManagerProps> = ({ onItemChange
           <RefreshCw className="w-8 h-8 text-[#B72E35] animate-spin mb-3" />
           <p className="text-sm text-stone-500 font-mono">Loading menu catalog...</p>
         </div>
+      ) : items.length === 0 ? (
+        <div className="p-12 text-center bg-white dark:bg-stone-900 rounded-2xl border border-dashed border-stone-300 dark:border-stone-700">
+          <UtensilsCrossed className="w-12 h-12 text-stone-300 dark:text-stone-700 mx-auto mb-3" />
+          <h3 className="text-stone-800 dark:text-stone-200 font-serif font-bold text-lg">Your Menu Catalog is Empty</h3>
+          <p className="text-xs text-stone-500 max-w-sm mx-auto mt-1 mb-5 leading-relaxed">
+            All dishes have been removed or cleared. Any dishes you add now are saved permanently to Supabase and will never reset.
+          </p>
+          <div className="flex items-center justify-center flex-wrap gap-3">
+            <button
+              onClick={handleOpenAdd}
+              className="flex items-center gap-2 px-4 py-2 bg-[#B72E35] text-white rounded-xl text-xs font-bold shadow-xs hover:bg-[#9E2329] transition"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Add Your First Dish</span>
+            </button>
+            <button
+              onClick={() => setShowRestoreConfirm(true)}
+              className="flex items-center gap-2 px-4 py-2 bg-stone-100 dark:bg-stone-800 text-stone-700 dark:text-stone-300 rounded-xl text-xs font-semibold hover:bg-stone-200 dark:hover:bg-stone-700 transition"
+            >
+              <Sparkles className="w-4 h-4 text-amber-600" />
+              <span>Restore Master Menu</span>
+            </button>
+          </div>
+        </div>
       ) : filteredItems.length === 0 ? (
         <div className="p-12 text-center bg-white dark:bg-stone-900 rounded-2xl border border-stone-200 dark:border-stone-800">
           <UtensilsCrossed className="w-10 h-10 text-stone-300 dark:text-stone-700 mx-auto mb-3" />
-          <p className="text-stone-700 dark:text-stone-300 font-medium">No menu items found</p>
-          <p className="text-xs text-stone-500 mt-1">Try adjusting your search or category filter.</p>
+          <p className="text-stone-700 dark:text-stone-300 font-medium">No menu items match your filters</p>
+          <p className="text-xs text-stone-500 mt-1">Try adjusting your search query or category filter.</p>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -1054,6 +1152,84 @@ export const AdminMenuManager: React.FC<AdminMenuManagerProps> = ({ onItemChange
                 </button>
               </div>
             </form>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* Clear All Confirmation Modal */}
+      {mounted && showClearConfirm && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
+          <div className="bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 rounded-2xl w-full max-w-md p-6 shadow-2xl">
+            <div className="flex items-center gap-3 text-rose-600 mb-3">
+              <div className="p-3 bg-rose-100 dark:bg-rose-950/60 rounded-xl">
+                <Trash2 className="w-6 h-6 text-rose-600" />
+              </div>
+              <div>
+                <h3 className="font-serif font-bold text-lg text-stone-900 dark:text-stone-100">Clear Entire Catalog?</h3>
+                <p className="text-xs text-stone-500">This will remove all {items.length} dishes</p>
+              </div>
+            </div>
+            <p className="text-xs text-stone-600 dark:text-stone-400 leading-relaxed mb-6">
+              Are you sure you want to delete all menu items? This will give you a completely blank menu so you can add your custom items. You can restore the original Smol Café dishes at any time using &quot;Restore Master&quot;.
+            </p>
+            <div className="flex items-center justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setShowClearConfirm(false)}
+                className="px-4 py-2 text-xs font-semibold text-stone-600 dark:text-stone-400 hover:text-stone-900 rounded-xl"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={isClearingAll}
+                onClick={handleClearAllCatalog}
+                className="px-5 py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold shadow-xs transition disabled:opacity-50 flex items-center gap-2"
+              >
+                {isClearingAll && <RefreshCw className="w-3.5 h-3.5 animate-spin" />}
+                <span>Yes, Clear All Dishes</span>
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* Restore Master Menu Confirmation Modal */}
+      {mounted && showRestoreConfirm && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
+          <div className="bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 rounded-2xl w-full max-w-md p-6 shadow-2xl">
+            <div className="flex items-center gap-3 text-amber-600 mb-3">
+              <div className="p-3 bg-amber-100 dark:bg-amber-950/60 rounded-xl">
+                <Sparkles className="w-6 h-6 text-amber-600" />
+              </div>
+              <div>
+                <h3 className="font-serif font-bold text-lg text-stone-900 dark:text-stone-100">Restore Master Menu?</h3>
+                <p className="text-xs text-stone-500">Reset catalog back to Smol Café master items</p>
+              </div>
+            </div>
+            <p className="text-xs text-stone-600 dark:text-stone-400 leading-relaxed mb-6">
+              This will restore all 64 original Smol Café dishes across all 13 categories with standard pricing and chef notes.
+            </p>
+            <div className="flex items-center justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setShowRestoreConfirm(false)}
+                className="px-4 py-2 text-xs font-semibold text-stone-600 dark:text-stone-400 hover:text-stone-900 rounded-xl"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={isRestoringMaster}
+                onClick={handleRestoreMasterMenu}
+                className="px-5 py-2.5 bg-[#B72E35] hover:bg-[#9E2329] text-white rounded-xl text-xs font-bold shadow-xs transition disabled:opacity-50 flex items-center gap-2"
+              >
+                {isRestoringMaster && <RefreshCw className="w-3.5 h-3.5 animate-spin" />}
+                <span>Restore Master Menu</span>
+              </button>
+            </div>
           </div>
         </div>,
         document.body
