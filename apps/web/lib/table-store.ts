@@ -24,7 +24,7 @@ function getPersistenceFilePath(): string | null {
 function loadPersistedStore(): PersistedTablesStore {
   const defaultStore: PersistedTablesStore = {
     deletedTableIds: [],
-    deletedTableLabels: ["03", "3", "table-03", "table 03", "t-03"],
+    deletedTableLabels: [],
   };
 
   if (!isServer) return defaultStore;
@@ -148,11 +148,13 @@ export function recordDeletedTable(id: string, label: string): void {
  * Remove deleted status when an admin re-creates a table with that name
  */
 export function unrecordDeletedTable(idOrLabel: string): void {
+  if (!idOrLabel || !idOrLabel.trim()) return;
   const store = loadPersistedStore();
-  const variations = new Set(normalizeTableLabel(idOrLabel));
-  variations.add(idOrLabel.trim().toLowerCase());
+  const raw = idOrLabel.trim();
+  const variations = new Set(normalizeTableLabel(raw).map((v) => v.toLowerCase()));
+  variations.add(raw.toLowerCase());
 
-  const updatedIds = store.deletedTableIds.filter((id) => id !== idOrLabel.trim());
+  const updatedIds = store.deletedTableIds.filter((id) => id !== raw);
   const updatedLabels = store.deletedTableLabels.filter((lbl) => !variations.has(lbl.toLowerCase()));
 
   savePersistedStore({
@@ -162,7 +164,9 @@ export function unrecordDeletedTable(idOrLabel: string): void {
 }
 
 /**
- * Helper to filter out any deleted tables from a list
+ * Helper to filter out any deleted tables from a list.
+ * Note: Database tables with a real UUID (not present in deletedTableIds) are always
+ * considered active and never suppressed by stale label tombstones.
  */
 export function filterDeletedTables<T extends { id?: string; label?: string }>(tables: T[]): T[] {
   const store = loadPersistedStore();
@@ -170,8 +174,10 @@ export function filterDeletedTables<T extends { id?: string; label?: string }>(t
   const deletedLabels = new Set(store.deletedTableLabels.map((l) => l.toLowerCase()));
 
   return tables.filter((t) => {
+    // 1. If explicit table ID is in tombstone, filter it out
     if (t.id && deletedIds.has(t.id)) return false;
-    if (t.label) {
+    // 2. Only check label tombstones for fallback mock tables or non-UUID records
+    if (t.label && (!t.id || t.id.startsWith("mock_") || t.id.startsWith("tbl_"))) {
       const vars = normalizeTableLabel(t.label);
       if (vars.some((v) => deletedLabels.has(v))) return false;
     }
