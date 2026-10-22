@@ -1898,23 +1898,23 @@ export const LandingPageView: React.FC = () => {
           role="dialog"
           aria-modal="true"
           aria-labelledby="events-modal-title"
-          className="fixed inset-0 z-[60] overflow-y-auto bg-black/75 backdrop-blur-md flex items-center justify-center p-3 sm:p-5 md:p-6 animate-in fade-in duration-200"
+          className="fixed inset-0 z-[60] overflow-y-auto bg-black/80 bg-[radial-gradient(ellipse_at_center,rgba(183,46,53,0.38)_0%,rgba(15,5,5,0.92)_100%)] backdrop-blur-xl flex items-center justify-center p-3 sm:p-5 md:p-6 animate-in fade-in duration-200"
           onClick={(e) => {
             if (e.target === e.currentTarget) {
               setIsEventsModalOpen(false);
             }
           }}
         >
-          <div className="relative w-full max-w-2xl bg-[#FAF4EB] dark:bg-[#1E1917] rounded-3xl border-2 border-[#E2D7C7] dark:border-stone-800 shadow-2xl overflow-hidden my-auto animate-in zoom-in-95 duration-200 flex flex-col max-h-[90vh]">
+          <div className="relative w-full max-w-2xl bg-[#FAF4EB] dark:bg-[#1E1917] rounded-3xl border-2 border-[#B72E35]/40 dark:border-[#B72E35]/30 shadow-[0_0_60px_-10px_rgba(183,46,53,0.4)] overflow-hidden my-auto animate-in zoom-in-95 duration-200 flex flex-col max-h-[90vh]">
             {/* Top Himalayan Accent Stripe */}
             <div className="h-1.5 w-full bg-gradient-to-r from-[#B72E35] via-[#E88C38] to-[#B72E35] dark:from-purple-600 dark:via-fuchsia-500 dark:to-purple-600 shrink-0" />
 
             {/* Modal Header */}
             <div className="p-4 sm:p-6 pb-3 sm:pb-4 border-b border-[#E2D7C7] dark:border-stone-800/80 flex items-start justify-between gap-3 shrink-0">
               <div className="space-y-1">
-                <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-[#B72E35]/10 dark:bg-purple-500/20 text-[#B72E35] dark:text-purple-300 text-[10px] sm:text-[11px] font-mono uppercase tracking-wider font-semibold">
-                  <Sparkles className="w-3 h-3" />
-                  Community Gatherings · Tapovan
+                <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-[#B72E35]/15 dark:bg-[#B72E35]/25 text-[#B72E35] dark:text-[#FFA3A8] text-[10px] sm:text-[11px] font-mono uppercase tracking-wider font-semibold border border-[#B72E35]/30">
+                  <Sparkles className="w-3 h-3 text-[#B72E35]" />
+                  Community Gatherings · Coming Soon
                 </div>
                 <h3
                   id="events-modal-title"
@@ -1977,205 +1977,263 @@ export const LandingPageView: React.FC = () => {
               </div>
             </div>
 
-            {/* Modal Body: Events List */}
-            <div className="p-4 sm:p-6 space-y-3.5 overflow-y-auto flex-1">
-              {[
-                ...liveDbEvents.map((e) => ({
-                  id: e.id,
-                  title: e.title,
-                  category: "Special Session",
-                  timeLabel: new Date(e.startsAt).toLocaleDateString("en-IN", {
-                    weekday: "short",
-                    month: "short",
-                    day: "numeric",
-                    hour: "numeric",
-                    minute: "numeric",
-                    hour12: true,
-                  }),
-                  location: e.joinUrlOrNote || "The Living Library, Tapovan",
-                  description: e.description,
-                  capacity: e.capacity || 20,
-                  rsvpCount: e.rsvpCount || 0,
-                  badgeBg: "bg-amber-100 text-amber-900 border-amber-300 dark:bg-amber-950/70 dark:text-amber-300 dark:border-amber-800",
-                })),
-                ...CURATED_DEFAULT_EVENTS,
-              ]
-                .filter((evt, idx, arr) => arr.findIndex((x) => x.title === evt.title) === idx)
-                .map((event) => {
-                  const isConfirmed = !!confirmedRsvps[event.id];
-                  const isRsvpingThis = activeRsvpEventId === event.id;
+            {/* Modal Body: Events List with Red Blur + Coming Soon Overlay */}
+            <div className="relative overflow-hidden flex-1 flex flex-col min-h-[380px]">
+              {/* Underlying Blurred Background Events List with Red Tint */}
+              <div className="p-4 sm:p-6 space-y-3.5 overflow-hidden filter blur-[5px] opacity-25 select-none pointer-events-none scale-[0.99] max-h-[50vh]">
+                {[
+                  ...liveDbEvents.map((e) => ({
+                    id: e.id,
+                    title: e.title,
+                    category: "Special Session",
+                    timeLabel: new Date(e.startsAt).toLocaleDateString("en-IN", {
+                      weekday: "short",
+                      month: "short",
+                      day: "numeric",
+                      hour: "numeric",
+                      minute: "numeric",
+                      hour12: true,
+                    }),
+                    location: e.joinUrlOrNote || "The Living Library, Tapovan",
+                    description: e.description,
+                    capacity: e.capacity || 20,
+                    rsvpCount: e.rsvpCount || 0,
+                    badgeBg: "bg-amber-100 text-amber-900 border-amber-300 dark:bg-amber-950/70 dark:text-amber-300 dark:border-amber-800",
+                  })),
+                  ...CURATED_DEFAULT_EVENTS,
+                ]
+                  .filter((evt, idx, arr) => arr.findIndex((x) => x.title === evt.title) === idx)
+                  .map((event) => {
+                    const isConfirmed = !!confirmedRsvps[event.id];
+                    const isRsvpingThis = activeRsvpEventId === event.id;
 
-                  return (
-                    <div
-                      key={event.id}
-                      className="p-3.5 sm:p-4 rounded-2xl border border-[#E2D7C7] dark:border-stone-800 bg-white/70 dark:bg-stone-900/60 transition-all hover:border-[#B72E35]/40 dark:hover:border-purple-500/40"
-                    >
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <div className="flex items-center gap-2">
-                          <span
-                            className={`px-2.5 py-0.5 rounded-full text-[10px] sm:text-[11px] font-mono font-semibold border ${event.badgeBg}`}
-                          >
-                            {event.category}
-                          </span>
-                          <span className="text-[10px] sm:text-[11px] font-mono text-[#725039] dark:text-stone-400">
-                            • Free Entry
-                          </span>
-                        </div>
-
-                        <div className="flex items-center gap-1.5 text-[11px] font-mono text-[#725039] dark:text-[#C9AE8B]">
-                          <Clock className="w-3.5 h-3.5 text-[#B72E35] dark:text-purple-400" />
-                          <span>{event.timeLabel}</span>
-                        </div>
-                      </div>
-
-                      <h4 className="font-serif font-bold text-base sm:text-lg text-[#241F1C] dark:text-[#F3E7D3] mt-2">
-                        {event.title}
-                      </h4>
-
-                      <div className="flex items-center gap-1.5 text-[11px] text-[#725039] dark:text-stone-400 mt-0.5 mb-2 font-mono">
-                        <MapPin className="w-3.5 h-3.5 text-[#B72E35] dark:text-purple-400" />
-                        <span>{event.location}</span>
-                      </div>
-
-                      <p className="text-xs sm:text-sm text-[#725039] dark:text-stone-300 leading-relaxed font-sans">
-                        {event.description}
-                      </p>
-
-                      {/* RSVP Interaction Area */}
-                      <div className="mt-3 pt-3 border-t border-[#E2D7C7]/70 dark:border-stone-800/80">
-                        {isConfirmed ? (
-                          <div className="flex flex-col xs:flex-row items-start xs:items-center justify-between gap-2 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 p-2.5 rounded-xl">
-                            <div className="flex items-center gap-2 text-xs font-semibold text-emerald-800 dark:text-emerald-300">
-                              <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
-                              <span>
-                                Spot Reserved for {confirmedRsvps[event.id].name} ({confirmedRsvps[event.id].partySize}{" "}
-                                {confirmedRsvps[event.id].partySize > 1 ? "guests" : "guest"})
-                              </span>
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() => handleCancelRsvp(event.id)}
-                              className="text-[11px] text-[#725039] dark:text-stone-400 hover:text-rose-600 dark:hover:text-rose-400 underline underline-offset-2 cursor-pointer"
+                    return (
+                      <div
+                        key={event.id}
+                        className="p-3.5 sm:p-4 rounded-2xl border border-[#E2D7C7] dark:border-stone-800 bg-white/70 dark:bg-stone-900/60 transition-all hover:border-[#B72E35]/40 dark:hover:border-purple-500/40"
+                      >
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div className="flex items-center gap-2">
+                            <span
+                              className={`px-2.5 py-0.5 rounded-full text-[10px] sm:text-[11px] font-mono font-semibold border ${event.badgeBg}`}
                             >
-                              Cancel RSVP
-                            </button>
+                              {event.category}
+                            </span>
+                            <span className="text-[10px] sm:text-[11px] font-mono text-[#725039] dark:text-stone-400">
+                              • Free Entry
+                            </span>
                           </div>
-                        ) : isRsvpingThis ? (
-                          <div className="p-3 rounded-xl bg-[#FAF0E1] dark:bg-stone-900 border border-[#CEBFAB] dark:border-stone-700 space-y-2.5 animate-in fade-in">
-                            <div className="flex items-center justify-between">
-                              <span className="text-xs font-bold text-[#241F1C] dark:text-[#F3E7D3] flex items-center gap-1.5">
-                                <Ticket className="w-3.5 h-3.5 text-[#B72E35] dark:text-purple-400" />
-                                Reserve Your Free Spot
-                              </span>
+
+                          <div className="flex items-center gap-1.5 text-[11px] font-mono text-[#725039] dark:text-[#C9AE8B]">
+                            <Clock className="w-3.5 h-3.5 text-[#B72E35] dark:text-purple-400" />
+                            <span>{event.timeLabel}</span>
+                          </div>
+                        </div>
+
+                        <h4 className="font-serif font-bold text-base sm:text-lg text-[#241F1C] dark:text-[#F3E7D3] mt-2">
+                          {event.title}
+                        </h4>
+
+                        <div className="flex items-center gap-1.5 text-[11px] text-[#725039] dark:text-stone-400 mt-0.5 mb-2 font-mono">
+                          <MapPin className="w-3.5 h-3.5 text-[#B72E35] dark:text-purple-400" />
+                          <span>{event.location}</span>
+                        </div>
+
+                        <p className="text-xs sm:text-sm text-[#725039] dark:text-stone-300 leading-relaxed font-sans">
+                          {event.description}
+                        </p>
+
+                        {/* RSVP Interaction Area */}
+                        <div className="mt-3 pt-3 border-t border-[#E2D7C7]/70 dark:border-stone-800/80">
+                          {isConfirmed ? (
+                            <div className="flex flex-col xs:flex-row items-start xs:items-center justify-between gap-2 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 p-2.5 rounded-xl">
+                              <div className="flex items-center gap-2 text-xs font-semibold text-emerald-800 dark:text-emerald-300">
+                                <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                                <span>
+                                  Spot Reserved for {confirmedRsvps[event.id].name} ({confirmedRsvps[event.id].partySize}{" "}
+                                  {confirmedRsvps[event.id].partySize > 1 ? "guests" : "guest"})
+                                </span>
+                              </div>
                               <button
                                 type="button"
-                                onClick={() => setActiveRsvpEventId(null)}
-                                className="text-[11px] text-[#725039] dark:text-stone-400 hover:text-black dark:hover:text-white"
+                                onClick={() => handleCancelRsvp(event.id)}
+                                className="text-[11px] text-[#725039] dark:text-stone-400 hover:text-rose-600 dark:hover:text-rose-400 underline underline-offset-2 cursor-pointer"
                               >
-                                Cancel
+                                Cancel RSVP
                               </button>
                             </div>
-
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                              <div>
-                                <label className="block text-[10px] font-mono uppercase text-[#725039] dark:text-stone-400 mb-1">
-                                  Your Name *
-                                </label>
-                                <input
-                                  type="text"
-                                  placeholder="e.g. Maya Sharma"
-                                  value={rsvpGuestName}
-                                  onChange={(e) => setRsvpGuestName(e.target.value)}
-                                  className="w-full px-3 py-1.5 rounded-lg text-xs bg-white dark:bg-stone-800 border border-[#CEBFAB] dark:border-stone-700 text-[#241F1C] dark:text-[#F3E7D3] focus:outline-none focus:border-[#B72E35] dark:focus:border-purple-500"
-                                  autoFocus
-                                />
-                              </div>
-
-                              <div>
-                                <label className="block text-[10px] font-mono uppercase text-[#725039] dark:text-stone-400 mb-1">
-                                  WhatsApp / Phone (optional)
-                                </label>
-                                <input
-                                  type="tel"
-                                  placeholder="+91 98765 43210"
-                                  value={rsvpGuestPhone}
-                                  onChange={(e) => setRsvpGuestPhone(e.target.value)}
-                                  className="w-full px-3 py-1.5 rounded-lg text-xs bg-white dark:bg-stone-800 border border-[#CEBFAB] dark:border-stone-700 text-[#241F1C] dark:text-[#F3E7D3] focus:outline-none focus:border-[#B72E35] dark:focus:border-purple-500"
-                                />
-                              </div>
-                            </div>
-
-                            <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
-                              <div className="flex items-center gap-2">
-                                <span className="text-[11px] text-[#725039] dark:text-stone-400 font-mono">
-                                  Guests:
+                          ) : isRsvpingThis ? (
+                            <div className="p-3 rounded-xl bg-[#FAF0E1] dark:bg-stone-900 border border-[#CEBFAB] dark:border-stone-700 space-y-2.5 animate-in fade-in">
+                              <div className="flex items-center justify-between">
+                                <span className="text-xs font-bold text-[#241F1C] dark:text-[#F3E7D3] flex items-center gap-1.5">
+                                  <Ticket className="w-3.5 h-3.5 text-[#B72E35] dark:text-purple-400" />
+                                  Reserve Your Free Spot
                                 </span>
-                                <div className="inline-flex rounded-lg border border-[#CEBFAB] dark:border-stone-700 p-0.5 bg-white dark:bg-stone-800">
-                                  <button
-                                    type="button"
-                                    onClick={() => setRsvpPartySize(1)}
-                                    className={`px-2 py-0.5 rounded text-[11px] font-semibold transition-colors ${
-                                      rsvpPartySize === 1
-                                        ? "bg-[#B72E35] dark:bg-purple-600 text-white"
-                                        : "text-[#725039] dark:text-stone-400 hover:text-black dark:hover:text-white"
-                                    }`}
-                                  >
-                                    1 Person
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => setRsvpPartySize(2)}
-                                    className={`px-2 py-0.5 rounded text-[11px] font-semibold transition-colors ${
-                                      rsvpPartySize === 2
-                                        ? "bg-[#B72E35] dark:bg-purple-600 text-white"
-                                        : "text-[#725039] dark:text-stone-400 hover:text-black dark:hover:text-white"
-                                    }`}
-                                  >
-                                    2 People
-                                  </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setActiveRsvpEventId(null)}
+                                  className="text-[11px] text-[#725039] dark:text-stone-400 hover:text-black dark:hover:text-white"
+                                >
+                                  Cancel
+                                </button>
+                              </div>
+
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                <div>
+                                  <label className="block text-[10px] font-mono uppercase text-[#725039] dark:text-stone-400 mb-1">
+                                    Your Name *
+                                  </label>
+                                  <input
+                                    type="text"
+                                    placeholder="e.g. Maya Sharma"
+                                    value={rsvpGuestName}
+                                    onChange={(e) => setRsvpGuestName(e.target.value)}
+                                    className="w-full px-3 py-1.5 rounded-lg text-xs bg-white dark:bg-stone-800 border border-[#CEBFAB] dark:border-stone-700 text-[#241F1C] dark:text-[#F3E7D3] focus:outline-none focus:border-[#B72E35] dark:focus:border-purple-500"
+                                    autoFocus
+                                  />
+                                </div>
+
+                                <div>
+                                  <label className="block text-[10px] font-mono uppercase text-[#725039] dark:text-stone-400 mb-1">
+                                    WhatsApp / Phone (optional)
+                                  </label>
+                                  <input
+                                    type="tel"
+                                    placeholder="+91 98765 43210"
+                                    value={rsvpGuestPhone}
+                                    onChange={(e) => setRsvpGuestPhone(e.target.value)}
+                                    className="w-full px-3 py-1.5 rounded-lg text-xs bg-white dark:bg-stone-800 border border-[#CEBFAB] dark:border-stone-700 text-[#241F1C] dark:text-[#F3E7D3] focus:outline-none focus:border-[#B72E35] dark:focus:border-purple-500"
+                                  />
                                 </div>
                               </div>
 
+                              <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-[11px] text-[#725039] dark:text-stone-400 font-mono">
+                                    Guests:
+                                  </span>
+                                  <div className="inline-flex rounded-lg border border-[#CEBFAB] dark:border-stone-700 p-0.5 bg-white dark:bg-stone-800">
+                                    <button
+                                      type="button"
+                                      onClick={() => setRsvpPartySize(1)}
+                                      className={`px-2 py-0.5 rounded text-[11px] font-semibold transition-colors ${
+                                        rsvpPartySize === 1
+                                          ? "bg-[#B72E35] dark:bg-purple-600 text-white"
+                                          : "text-[#725039] dark:text-stone-400 hover:text-black dark:hover:text-white"
+                                      }`}
+                                    >
+                                      1 Person
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => setRsvpPartySize(2)}
+                                      className={`px-2 py-0.5 rounded text-[11px] font-semibold transition-colors ${
+                                        rsvpPartySize === 2
+                                          ? "bg-[#B72E35] dark:bg-purple-600 text-white"
+                                          : "text-[#725039] dark:text-stone-400 hover:text-black dark:hover:text-white"
+                                      }`}
+                                    >
+                                      2 People
+                                    </button>
+                                  </div>
+                                </div>
+
+                                <button
+                                  type="button"
+                                  disabled={isSubmittingRsvp}
+                                  onClick={() => handleRsvpSubmit(event.id, event.title)}
+                                  className="px-4 py-1.5 rounded-full bg-[#B72E35] hover:bg-[#9E242B] dark:bg-purple-600 dark:hover:bg-purple-500 disabled:opacity-50 text-white font-semibold text-xs transition-all shadow-sm flex items-center gap-1.5 cursor-pointer ml-auto"
+                                >
+                                  {isSubmittingRsvp ? (
+                                    <span>Saving...</span>
+                                  ) : (
+                                    <>
+                                      <Send className="w-3 h-3" />
+                                      <span>Confirm My Spot</span>
+                                    </>
+                                  )}
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="flex items-center justify-between gap-3">
+                              <span className="text-[11px] text-[#725039]/80 dark:text-stone-400 font-mono">
+                                Limited seating · Walk-ins welcome
+                              </span>
                               <button
                                 type="button"
-                                disabled={isSubmittingRsvp}
-                                onClick={() => handleRsvpSubmit(event.id, event.title)}
-                                className="px-4 py-1.5 rounded-full bg-[#B72E35] hover:bg-[#9E242B] dark:bg-purple-600 dark:hover:bg-purple-500 disabled:opacity-50 text-white font-semibold text-xs transition-all shadow-sm flex items-center gap-1.5 cursor-pointer ml-auto"
+                                onClick={() => {
+                                  setActiveRsvpEventId(event.id);
+                                  setRsvpSuccessBanner(null);
+                                  setRsvpErrorBanner(null);
+                                }}
+                                className="px-3.5 py-1.5 rounded-full bg-[#FAF4EB] dark:bg-purple-950/40 hover:bg-[#B72E35] hover:text-white dark:hover:bg-purple-600 dark:hover:text-white text-[#B72E35] dark:text-purple-300 border border-[#B72E35]/40 dark:border-purple-500/40 font-mono text-xs font-semibold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
                               >
-                                {isSubmittingRsvp ? (
-                                  <span>Saving...</span>
-                                ) : (
-                                  <>
-                                    <Send className="w-3 h-3" />
-                                    <span>Confirm My Spot</span>
-                                  </>
-                                )}
+                                <Ticket className="w-3.5 h-3.5 text-[#B72E35] dark:text-purple-400" />
+                                <span>Reserve Spot (Free)</span>
                               </button>
                             </div>
-                          </div>
-                        ) : (
-                          <div className="flex items-center justify-between gap-3">
-                            <span className="text-[11px] text-[#725039]/80 dark:text-stone-400 font-mono">
-                              Limited seating · Walk-ins welcome
-                            </span>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setActiveRsvpEventId(event.id);
-                                setRsvpSuccessBanner(null);
-                                setRsvpErrorBanner(null);
-                              }}
-                              className="px-3.5 py-1.5 rounded-full bg-[#FAF4EB] dark:bg-purple-950/40 hover:bg-[#B72E35] hover:text-white dark:hover:bg-purple-600 dark:hover:text-white text-[#B72E35] dark:text-purple-300 border border-[#B72E35]/40 dark:border-purple-500/40 font-mono text-xs font-semibold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
-                            >
-                              <Ticket className="w-3.5 h-3.5 text-[#B72E35] dark:text-purple-400" />
-                              <span>Reserve Spot (Free)</span>
-                            </button>
-                          </div>
-                        )}
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  );
-                })}
+                    );
+                  })}
+              </div>
+
+              {/* Red Color Frosted Glass Blur Overlay with "Coming Soon" */}
+              <div className="absolute inset-0 z-20 flex flex-col items-center justify-center p-6 text-center bg-gradient-to-b from-[#B72E35]/30 via-[#70151A]/40 to-[#FAF4EB]/90 dark:to-[#1E1917]/95 backdrop-blur-md">
+                <div className="relative mb-3.5">
+                  <div className="absolute -inset-2 bg-gradient-to-r from-[#B72E35] to-[#E88C38] rounded-full blur-md opacity-70 animate-pulse" />
+                  <div className="relative w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-gradient-to-br from-[#B72E35] via-[#9E242B] to-[#751A1F] text-white flex items-center justify-center shadow-xl border border-white/20">
+                    <Sparkles className="w-7 h-7 sm:w-8 sm:h-8 text-[#FAF4EB]" />
+                  </div>
+                </div>
+
+                <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-[#B72E35]/20 dark:bg-[#B72E35]/30 border border-[#B72E35]/50 text-[#B72E35] dark:text-[#FFA3A8] text-xs font-mono uppercase tracking-widest font-bold shadow-xs">
+                  <span className="w-2 h-2 rounded-full bg-[#B72E35] animate-ping" />
+                  <span className="w-2 h-2 rounded-full bg-[#B72E35] -ml-4" />
+                  <span>Season Lineup · Coming Soon</span>
+                </div>
+
+                <h4 className="font-serif text-2xl sm:text-3xl font-bold text-[#241F1C] dark:text-[#FAF4EB] mt-3 tracking-tight">
+                  Upcoming Events &amp; Sessions
+                </h4>
+
+                <p className="max-w-md text-xs sm:text-sm text-[#725039] dark:text-stone-300 font-sans leading-relaxed mt-2">
+                  We are curating an intimate winter lineup of acoustic sundowners, open-mic poetry circles, and slow coffee rituals in Tapovan. Dates and free reservations will open shortly!
+                </p>
+
+                <div className="mt-4 flex flex-wrap items-center justify-center gap-2 text-[11px] font-mono text-[#725039] dark:text-stone-300">
+                  <span className="px-3 py-1 rounded-xl bg-white/80 dark:bg-stone-900/80 border border-[#B72E35]/30 shadow-xs flex items-center gap-1.5">
+                    🎸 Acoustic Sunset Jams
+                  </span>
+                  <span className="px-3 py-1 rounded-xl bg-white/80 dark:bg-stone-900/80 border border-[#B72E35]/30 shadow-xs flex items-center gap-1.5">
+                    📖 Spoken Word &amp; Poetry
+                  </span>
+                  <span className="px-3 py-1 rounded-xl bg-white/80 dark:bg-stone-900/80 border border-[#B72E35]/30 shadow-xs flex items-center gap-1.5">
+                    ♟️ Sunday Chess &amp; Coffee
+                  </span>
+                </div>
+
+                <div className="mt-5 flex items-center gap-2.5">
+                  <a
+                    href={SMOL_CAFE_MAPS_URL}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-5 py-2.5 rounded-full bg-[#B72E35] hover:bg-[#9E242B] text-white text-xs font-semibold shadow-md transition-all flex items-center gap-1.5 hover:scale-102 cursor-pointer"
+                  >
+                    <span>Visit Us in Tapovan</span>
+                    <ExternalLink className="w-3.5 h-3.5" />
+                  </a>
+                  <button
+                    type="button"
+                    onClick={() => setIsEventsModalOpen(false)}
+                    className="px-4 py-2.5 rounded-full bg-white/90 dark:bg-stone-800 hover:bg-white text-[#241F1C] dark:text-stone-200 text-xs font-semibold border border-stone-300 dark:border-stone-700 transition-all cursor-pointer"
+                  >
+                    Close
+                  </button>
+                </div>
+              </div>
             </div>
 
             {/* Modal Footer */}
@@ -2187,7 +2245,7 @@ export const LandingPageView: React.FC = () => {
                 className="text-[11px] text-[#725039] dark:text-stone-400 font-mono hover:text-[#B72E35] dark:hover:text-purple-400 transition-colors flex items-center gap-1 group"
               >
                 <span>📍 Upper Tapovan, Badrinath Road · Open Daily 7:30 AM – 11:00 PM</span>
-                <ExternalLink className="w-3 h-3 opacity-60 group-hover:opacity-100" />
+                <ExternalLink className="w-3.5 h-3.5 opacity-60 group-hover:opacity-100" />
               </a>
               <button
                 type="button"
