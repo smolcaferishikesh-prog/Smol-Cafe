@@ -381,6 +381,14 @@ const HERO_SLIDES = [
     url: "https://ik.imagekit.io/sonu2k1/Smol%20Cafe%20by%20Kuava%20Digitals/Landing-Page%20/WhatsApp%20Image%202026-10-16%20at%2017.07.02.jpeg?updatedAt=1792223594109",
     alt: "Smol Café Aesthetic Mountain Lounge and Reading Corner in Tapovan Rishikesh",
   },
+  {
+    url: "https://ik.imagekit.io/sonu2k1/Smol%20Cafe%20by%20Kuava%20Digitals/Landing-Page%20/WhatsApp%20Image%202026-10-16%20at%2016.55.51%20(1).jpeg?updatedAt=1792223593732",
+    alt: "Smol Café Serene Dining Space and Mountain Atmosphere in Tapovan Rishikesh",
+  },
+  {
+    url: "https://ik.imagekit.io/sonu2k1/Smol%20Cafe%20by%20Kuava%20Digitals/Landing-Page%20/WhatsApp%20Image%202026-10-16%20at%2016.55.50.jpeg?updatedAt=1792223594143",
+    alt: "Smol Café Handcrafted Coffee Counter and Cozy Ambiance in Tapovan Rishikesh",
+  },
 ];
 
 export const LandingPageView: React.FC = () => {
