@@ -18,6 +18,7 @@ import { PastBillsModal } from "./PastBillsModal";
 import { CallStaffHelpModal } from "@/components/common/CallStaffHelpModal";
 import { fetchActiveTablesAction } from "@/app/t/actions";
 import { soundManager } from "@/lib/sound";
+import { SMOL_CAFE_MAPS_URL } from "@/lib/constants";
 
 interface OrderStatusClientViewProps {
   initialOrders: CustomerOrderDetails[];
@@ -643,7 +644,7 @@ export const OrderStatusClientView: React.FC<OrderStatusClientViewProps> = ({
             </div>
 
             <a
-              href="https://www.google.com/maps/place/smol+caf%C3%A9/@30.1328541,78.3205732,17z/data=!3m1!4b1!4m6!3m5!1s0x3909179f8e14f5d9:0x14fb0bd1b84078dd!8m2!3d30.1328541!4d78.3205732!16s%2Fg%2F11zytk5sgj!18m1!1e1?entry=ttu&g_ep=EgoyMDI2MDkyMS4wIKXMDSoASAFQAw%3D%3D"
+              href={SMOL_CAFE_MAPS_URL}
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex items-center gap-1.5 rounded-xl bg-[#241F1C] dark:bg-amber-400 text-white dark:text-[#241F1C] px-3 py-2 text-xs font-serif font-bold shadow-xs hover:opacity-90 transition active:scale-95 shrink-0"

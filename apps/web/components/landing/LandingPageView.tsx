@@ -38,6 +38,7 @@ import {
 } from "lucide-react";
 import { ThemeToggle } from "@/components/common/ThemeToggle";
 import PolaroidLineCarousel from "@/components/ui/polaroid-line-carousel";
+import { SMOL_CAFE_MAPS_URL } from "@/lib/constants";
 import {
   fetchUpcomingEventsAction,
   registerEventRsvpAction,
@@ -1666,7 +1667,7 @@ export const LandingPageView: React.FC = () => {
 
               <div className="pt-1 flex flex-col xs:flex-row gap-2.5 sm:gap-3">
                 <a
-                  href="https://maps.google.com/?q=Tapovan+Rishikesh"
+                  href={SMOL_CAFE_MAPS_URL}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="w-full xs:w-auto text-center justify-center bg-[#B72E35] hover:bg-[#9E242B] dark:bg-purple-600 dark:hover:bg-purple-500 text-white px-5 sm:px-6 py-2.5 sm:py-3 rounded-full font-semibold text-xs sm:text-sm shadow-md transition-all flex items-center gap-2"
@@ -1688,17 +1689,24 @@ export const LandingPageView: React.FC = () => {
 
             {/* Right Visual Image */}
             <div className="lg:col-span-7">
-              <div className="relative rounded-2xl sm:rounded-3xl overflow-hidden border-2 border-[#E2D7C7] dark:border-stone-800 shadow-xl bg-stone-900 aspect-[16/10] sm:aspect-video lg:aspect-[16/10]">
+              <a
+                href={SMOL_CAFE_MAPS_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                title="Open Smol Café location on Google Maps"
+                className="group block relative rounded-2xl sm:rounded-3xl overflow-hidden border-2 border-[#E2D7C7] dark:border-stone-800 shadow-xl bg-stone-900 aspect-[16/10] sm:aspect-video lg:aspect-[16/10] cursor-pointer"
+              >
                 <Image
                   src="https://ik.imagekit.io/sonu2k1/Smol%20Cafe%20by%20Kuava%20Digitals/Landing-Page%20/WhatsApp%20Image%202026-10-16%20at%2016.55.37.jpeg?updatedAt=1792223589336"
                   alt="Smol Cafe Rishikesh Tapovan View"
                   fill
                   sizes="(max-width: 1024px) 100vw, 60vw"
-                  className="object-cover filter contrast-105"
+                  className="object-cover filter contrast-105 group-hover:scale-105 transition-transform duration-500"
                 />
                 <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/35 to-transparent p-4 sm:p-6 lg:p-8 flex flex-col justify-end">
-                  <span className="font-mono text-[10px] sm:text-xs uppercase text-[#F2C84B] font-bold">
-                    Nestled in Nature
+                  <span className="font-mono text-[10px] sm:text-xs uppercase text-[#F2C84B] font-bold flex items-center gap-1.5">
+                    <MapPin className="w-3.5 h-3.5 text-[#F2C84B]" />
+                    <span>Nestled in Nature · Tap to View on Maps</span>
                   </span>
                   <h3 className="font-serif text-xl sm:text-2xl lg:text-3xl font-bold text-white mt-0.5">
                     Smol Café · Tapovan Ridge
@@ -1707,7 +1715,7 @@ export const LandingPageView: React.FC = () => {
                     2 minutes uphill from Lakshman Jhula path. Plentiful two-wheeler parking and peaceful mountain air.
                   </p>
                 </div>
-              </div>
+              </a>
             </div>
           </div>
         </div>
@@ -1842,6 +1850,18 @@ export const LandingPageView: React.FC = () => {
               </p>
               <div className="pt-0.5 text-[11px] text-emerald-600 dark:text-emerald-400 font-mono">
                 Open Daily: 7:30 AM – 11:00 PM
+              </div>
+              <div className="pt-1">
+                <a
+                  href={SMOL_CAFE_MAPS_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 text-xs text-[#B72E35] dark:text-purple-400 hover:underline font-semibold"
+                >
+                  <MapPin className="w-3.5 h-3.5" />
+                  <span>Open in Google Maps</span>
+                  <ExternalLink className="w-3 h-3" />
+                </a>
               </div>
               <div className="pt-2">
                 <ThemeToggle variant="pill" />
@@ -2148,9 +2168,15 @@ export const LandingPageView: React.FC = () => {
 
             {/* Modal Footer */}
             <div className="p-3 sm:p-4 px-4 sm:px-6 bg-[#FAF0E1] dark:bg-stone-900 border-t border-[#E2D7C7] dark:border-stone-800 flex flex-col xs:flex-row items-center justify-between gap-2.5 text-center xs:text-left shrink-0">
-              <div className="text-[11px] text-[#725039] dark:text-stone-400 font-mono">
-                📍 Upper Tapovan, Badrinath Road · Open Daily 7:30 AM – 11:00 PM
-              </div>
+              <a
+                href={SMOL_CAFE_MAPS_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-[11px] text-[#725039] dark:text-stone-400 font-mono hover:text-[#B72E35] dark:hover:text-purple-400 transition-colors flex items-center gap-1 group"
+              >
+                <span>📍 Upper Tapovan, Badrinath Road · Open Daily 7:30 AM – 11:00 PM</span>
+                <ExternalLink className="w-3 h-3 opacity-60 group-hover:opacity-100" />
+              </a>
               <button
                 type="button"
                 onClick={() => setIsEventsModalOpen(false)}

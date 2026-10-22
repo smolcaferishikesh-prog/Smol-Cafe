@@ -2650,6 +2650,24 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
                     />
                   </div>
                 </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-[#241F1C] dark:text-stone-300 mb-1">
+                    Google Maps Location Link
+                  </label>
+                  <input
+                    type="url"
+                    value={merchantConfig.mapUrl || ""}
+                    onChange={(e) =>
+                      setMerchantConfig({ ...merchantConfig, mapUrl: e.target.value })
+                    }
+                    placeholder="https://maps.app.goo.gl/foHQ1kruZNEcBj49A?g_st=ic"
+                    className="w-full rounded-xl border border-[#C9AE8B]/50 dark:border-stone-700 bg-[#F3E7D3]/40 dark:bg-stone-900 px-3.5 py-2.5 font-mono text-xs text-[#241F1C] dark:text-white focus:border-[#B72E35] focus:outline-none"
+                  />
+                  <p className="mt-1 text-[11px] text-[#725039] dark:text-stone-500">
+                    Used across customer landing pages, order status views, and digital receipts for cafe directions and reviews.
+                  </p>
+                </div>
               </div>
 
               {/* SECTION 2: LEGAL COMPLIANCE & TAX CONFIG */}

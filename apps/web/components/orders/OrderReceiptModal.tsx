@@ -4,6 +4,7 @@ import React from "react";
 import Image from "next/image";
 import { X, Printer, Download, CheckCircle, ExternalLink, Star } from "lucide-react";
 import { printHtmlContent, generateThermalReceiptHtml, type InvoiceReceiptData } from "@/lib/print";
+import { SMOL_CAFE_MAPS_URL } from "@/lib/constants";
 
 interface OrderReceiptModalProps {
   receipt: InvoiceReceiptData;
@@ -89,7 +90,15 @@ export const OrderReceiptModal: React.FC<OrderReceiptModalProps> = ({ receipt, o
             <h2 className="font-serif text-2xl font-black tracking-tight text-[#241F1C] dark:text-white lowercase">
               smol café
             </h2>
-            <p className="text-[11px] text-[#725039] dark:text-[#C9AE8B]">Tapovan, Rishikesh, Uttarakhand</p>
+            <a
+              href={SMOL_CAFE_MAPS_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-[11px] text-[#725039] dark:text-[#C9AE8B] hover:underline inline-flex items-center gap-1"
+            >
+              <span>Tapovan, Rishikesh, Uttarakhand</span>
+              <ExternalLink className="w-2.5 h-2.5 opacity-70" />
+            </a>
             <p className="text-[9.5px] text-stone-500 dark:text-stone-400">
               GSTIN: {receipt.gstin || "05AAECS1482M1ZB"} • FSSAI: {receipt.fssaiLic || "22624039000124"}
             </p>
@@ -183,7 +192,7 @@ export const OrderReceiptModal: React.FC<OrderReceiptModalProps> = ({ receipt, o
           {/* Google Maps Review & Rating CTA */}
           <div className="pt-2">
             <a
-              href="https://www.google.com/maps/place/smol+caf%C3%A9/@30.1328541,78.3205732,17z/data=!3m1!4b1!4m6!3m5!1s0x3909179f8e14f5d9:0x14fb0bd1b84078dd!8m2!3d30.1328541!4d78.3205732!16s%2Fg%2F11zytk5sgj!18m1!1e1?entry=ttu&g_ep=EgoyMDI2MDkyMS4wIKXMDSoASAFQAw%3D%3D"
+              href={SMOL_CAFE_MAPS_URL}
               target="_blank"
               rel="noopener noreferrer"
               className="flex items-center justify-between rounded-2xl border border-amber-300 dark:border-amber-700/60 bg-amber-50 dark:bg-amber-950/30 p-2.5 text-xs text-amber-900 dark:text-amber-200 hover:bg-amber-100 dark:hover:bg-amber-950/50 transition shadow-2xs group"
