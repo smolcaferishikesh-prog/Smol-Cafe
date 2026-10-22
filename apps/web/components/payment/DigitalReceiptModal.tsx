@@ -2,8 +2,9 @@
 
 import React, { useRef } from "react";
 import Image from "next/image";
-import { X, Printer, CheckCircle, Clock } from "lucide-react";
+import { X, Printer, CheckCircle, Clock, ExternalLink } from "lucide-react";
 import { printHtmlContent, generateThermalReceiptHtml } from "@/lib/print";
+import { SMOL_CAFE_MAPS_URL } from "@/lib/constants";
 
 export interface ReceiptItem {
   name: string;
@@ -157,7 +158,15 @@ export const DigitalReceiptModal: React.FC<DigitalReceiptModalProps> = ({ receip
             <h2 className="font-serif text-2xl font-black tracking-tight text-[#241F1C] dark:text-white lowercase">
               smol café
             </h2>
-            <p className="text-[11px] text-[#725039] dark:text-[#C9AE8B]">Tapovan, Rishikesh, Uttarakhand</p>
+            <a
+              href={SMOL_CAFE_MAPS_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-[11px] text-[#725039] dark:text-[#C9AE8B] hover:underline inline-flex items-center gap-1"
+            >
+              <span>Tapovan, Rishikesh, Uttarakhand</span>
+              <ExternalLink className="w-2.5 h-2.5 opacity-70" />
+            </a>
             <p className="text-[10px] text-stone-500 dark:text-stone-400">GSTIN: {receipt.gstin || "05AAECS1482M1ZB"}</p>
           </div>
 

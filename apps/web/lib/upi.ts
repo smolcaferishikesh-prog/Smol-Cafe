@@ -5,6 +5,8 @@
  * dynamic QR code generation, and simulated verification.
  */
 
+import { SMOL_CAFE_MAPS_URL } from "./constants";
+
 export interface UpiPaymentParams {
   amountPaise: number;
   orderNo?: string | number;
@@ -19,6 +21,7 @@ export interface MerchantConfig {
   gstin: string;
   fssai?: string;
   address?: string;
+  mapUrl?: string;
   taxRatePercent: number; // e.g. 5%
   serviceChargePercent?: number;
   openingHours?: string;
@@ -36,6 +39,7 @@ const DEFAULT_MERCHANT_CONFIG: MerchantConfig = {
   gstin: "05AAECS1482M1ZB",
   fssai: "22624039000124",
   address: "Tapovan, Rishikesh, Uttarakhand 249192",
+  mapUrl: SMOL_CAFE_MAPS_URL,
   taxRatePercent: 5,
   serviceChargePercent: 0,
   openingHours: "08:00 AM – 10:00 PM (Daily)",
