@@ -248,6 +248,10 @@ export const TableManager: React.FC<TableManagerProps> = ({
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [mounted, setMounted] = useState(false);
 
+  // Local ref to track deleted table IDs & labels across syncs and prop updates
+  const deletedIdsRef = React.useRef<Set<string>>(new Set());
+  const deletedLabelsRef = React.useRef<Set<string>>(new Set());
+
   useEffect(() => {
     setMounted(true);
   }, []);
@@ -256,7 +260,13 @@ export const TableManager: React.FC<TableManagerProps> = ({
     try {
       const res = await fetchTablesAndSectionsAction();
       if (res.success && res.tables) {
-        setTables(res.tables);
+        setTables(
+          res.tables.filter(
+            (t) =>
+              !deletedIdsRef.current.has(t.id) &&
+              !deletedLabelsRef.current.has(t.label.trim().toLowerCase())
+          )
+        );
         if (res.sections && res.sections.length > 0) {
           setSections(res.sections);
         }
@@ -268,29 +278,13 @@ export const TableManager: React.FC<TableManagerProps> = ({
 
   React.useEffect(() => {
     if (initialTables && initialTables.length > 0) {
-      setTables((prev) => {
-        if (prev.length === 0) return initialTables;
-        const seen = new Set<string>();
-        const merged: DiningTableRecord[] = [];
-        const idMap = new Map<string, DiningTableRecord>();
-        initialTables.forEach((t) => idMap.set(t.label.trim().toLowerCase(), t));
-        prev.forEach((t) => {
-          const norm = t.label.trim().toLowerCase();
-          const serverVersion = idMap.get(norm);
-          if (!seen.has(norm)) {
-            seen.add(norm);
-            merged.push(serverVersion ? { ...t, ...serverVersion } : t);
-          }
-        });
-        initialTables.forEach((t) => {
-          const norm = t.label.trim().toLowerCase();
-          if (!seen.has(norm)) {
-            seen.add(norm);
-            merged.push(t);
-          }
-        });
-        return merged;
-      });
+      setTables(
+        initialTables.filter(
+          (t) =>
+            !deletedIdsRef.current.has(t.id) &&
+            !deletedLabelsRef.current.has(t.label.trim().toLowerCase())
+        )
+      );
     } else {
       refreshTables();
     }
@@ -306,6 +300,9 @@ export const TableManager: React.FC<TableManagerProps> = ({
         const section = (meta.section as string) || "smol-cafe";
         const seats = Number(meta.seats) || 2;
         const active = meta.active !== undefined ? Boolean(meta.active) : true;
+
+        if (id) deletedIdsRef.current.delete(id);
+        if (label) deletedLabelsRef.current.delete(label.trim().toLowerCase());
 
         setTables((prev) => {
           const normLabel = label.trim().toLowerCase();
@@ -379,11 +376,13 @@ export const TableManager: React.FC<TableManagerProps> = ({
       } else if (event.type === "TABLE_DELETED") {
         const targetId = event.tableId || (event.metadata?.id as string);
         const targetLabel = event.tableLabel || (event.metadata?.label as string);
+        if (targetId) deletedIdsRef.current.add(targetId);
+        if (targetLabel) deletedLabelsRef.current.add(targetLabel.trim().toLowerCase());
 
         setTables((prev) =>
           prev.filter((t) => {
             if (targetId && t.id === targetId) return false;
-            if (targetLabel && t.label.toLowerCase() === targetLabel.toLowerCase()) return false;
+            if (targetLabel && t.label.trim().toLowerCase() === targetLabel.trim().toLowerCase()) return false;
             return true;
           })
         );
@@ -768,6 +767,7 @@ export const TableManager: React.FC<TableManagerProps> = ({
 
     setIsAddModalOpen(false);
     setIsAddSectionDropdownOpen(false);
+    deletedLabelsRef.current.delete(cleanLabel.toLowerCase());
     setFeedback({ type: "success", text: `Table T-${cleanLabel} added! Scannable QR stand & tags generated.` });
     setViewingQrTable(optimisticTable);
 
@@ -795,6 +795,8 @@ export const TableManager: React.FC<TableManagerProps> = ({
 
       if (res.success && res.table) {
         const confirmedTable = res.table;
+        deletedIdsRef.current.delete(confirmedTable.id);
+        deletedLabelsRef.current.delete(confirmedTable.label.toLowerCase());
         setTables((prev) =>
           prev.map((t) =>
             t.id === tempId || t.label.trim().toLowerCase() === cleanLabel.toLowerCase()
@@ -948,8 +950,17 @@ export const TableManager: React.FC<TableManagerProps> = ({
     const target = deletingTable;
     const previousTables = tables;
 
+    deletedIdsRef.current.add(target.id);
+    deletedLabelsRef.current.add(target.label.trim().toLowerCase());
+
     // 1. Instant 0ms Optimistic removal & modal close
-    setTables((prev) => prev.filter((t) => t.id !== target.id));
+    setTables((prev) =>
+      prev.filter(
+        (t) =>
+          t.id !== target.id &&
+          t.label.trim().toLowerCase() !== target.label.trim().toLowerCase()
+      )
+    );
     setDeletingTable(null);
     setFeedback({ type: "success", text: `Table ${target.label} deleted successfully.` });
 
@@ -964,11 +975,15 @@ export const TableManager: React.FC<TableManagerProps> = ({
     try {
       const res = await deleteTableAction(target.id);
       if (!res.success) {
-        // Rollback on failure
+        // Rollback on genuine failure
+        deletedIdsRef.current.delete(target.id);
+        deletedLabelsRef.current.delete(target.label.trim().toLowerCase());
         setTables(previousTables);
         setFeedback({ type: "error", text: res.message || "Could not delete table." });
       }
     } catch {
+      deletedIdsRef.current.delete(target.id);
+      deletedLabelsRef.current.delete(target.label.trim().toLowerCase());
       setTables(previousTables);
       setFeedback({ type: "error", text: "Error deleting table." });
     }

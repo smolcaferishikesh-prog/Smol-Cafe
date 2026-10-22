@@ -191,7 +191,9 @@ const MenuContentInner: React.FC<MenuClientViewProps> = ({
           };
 
           const next = updatedCategories.map((c) =>
-            c.id === targetCategory.id ? { ...c, items: [newItem, ...c.items] } : c
+            c.id === targetCategory.id
+              ? { ...c, items: [newItem, ...c.items.filter((it) => it.id !== newItem.id)] }
+              : { ...c, items: c.items.filter((it) => it.id !== newItem.id) }
           );
           cacheMenuCatalog(next);
           return next;
@@ -615,8 +617,8 @@ const MenuContentInner: React.FC<MenuClientViewProps> = ({
 
             {/* Item List */}
             <div className="space-y-3">
-              {category.items.map((item) => (
-                <MenuItemCard key={item.id} item={item} onOpenDetail={setSelectedItem} />
+              {Array.from(new Map(category.items.map((i) => [i.id, i])).values()).map((item) => (
+                <MenuItemCard key={`${category.id}-${item.id}`} item={item} onOpenDetail={setSelectedItem} />
               ))}
             </div>
           </section>

@@ -183,12 +183,12 @@ async function runSeed() {
   const supabase = createClient(supabaseUrl, serviceRoleKey);
 
   // 1. Get or Create Default Location
-  console.log(`📍 Resolving default location ('Rishikesh Main')...`);
+  console.log(`📍 Resolving default location...`);
   let locationId: string;
-  const { data: existingLocation, error: locFindError } = await supabase
+  let { data: existingLocation, error: locFindError } = await supabase
     .from("locations")
-    .select("id")
-    .eq("name", "Rishikesh Main")
+    .select("id, name")
+    .limit(1)
     .maybeSingle();
 
   if (locFindError) {
@@ -198,7 +198,7 @@ async function runSeed() {
 
   if (existingLocation) {
     locationId = existingLocation.id;
-    console.log(`   Found existing location ID: ${locationId}`);
+    console.log(`   Found existing location (${existingLocation.name}) ID: ${locationId}`);
   } else {
     const { data: newLoc, error: locInsertError } = await supabase
       .from("locations")

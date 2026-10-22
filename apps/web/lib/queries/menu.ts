@@ -42,6 +42,70 @@ export interface CategoryWithItems {
   items: MenuItemWithDetails[];
 }
 
+const isServer = typeof window === "undefined";
+
+interface PersistedMenuStore {
+  customItems: MenuItemWithDetails[];
+  menuOverrides: Record<string, Partial<MenuItemWithDetails>>;
+  deletedItemIds: string[];
+}
+
+function getPersistenceFilePath(): string | null {
+  if (!isServer) return null;
+  try {
+    const path = require("path");
+    const cwd = process.cwd();
+    if (cwd.endsWith("apps/web")) {
+      return path.join(cwd, "data/menu-store.json");
+    }
+    return path.join(cwd, "apps/web/data/menu-store.json");
+  } catch {
+    return null;
+  }
+}
+
+function loadPersistedStore(): PersistedMenuStore {
+  if (!isServer) return { customItems: [], menuOverrides: {}, deletedItemIds: [] };
+  try {
+    const fs = require("fs");
+    const filePath = getPersistenceFilePath();
+    if (filePath && fs.existsSync(filePath)) {
+      const raw = fs.readFileSync(filePath, "utf-8");
+      const parsed = JSON.parse(raw);
+      return {
+        customItems: Array.isArray(parsed.customItems) ? parsed.customItems : [],
+        menuOverrides: parsed.menuOverrides && typeof parsed.menuOverrides === "object" ? parsed.menuOverrides : {},
+        deletedItemIds: Array.isArray(parsed.deletedItemIds) ? parsed.deletedItemIds : [],
+      };
+    }
+  } catch (err) {
+    console.warn("Notice loading menu-store.json:", err);
+  }
+  return { customItems: [], menuOverrides: {}, deletedItemIds: [] };
+}
+
+export function savePersistedMenuStore() {
+  if (!isServer) return;
+  try {
+    const fs = require("fs");
+    const path = require("path");
+    const filePath = getPersistenceFilePath();
+    if (!filePath) return;
+    const dir = path.dirname(filePath);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    const data: PersistedMenuStore = {
+      customItems: globalThis.__SMOL_CUSTOM_MENU_ITEMS__ || [],
+      menuOverrides: globalThis.__SMOL_MENU_OVERRIDES__ || {},
+      deletedItemIds: Array.from(globalThis.__SMOL_DELETED_ITEM_IDS__ || []),
+    };
+    fs.writeFileSync(filePath, JSON.stringify(data, null, 2), "utf-8");
+  } catch (err) {
+    console.warn("Notice saving menu-store.json:", err);
+  }
+}
+
 declare global {
   var __SMOL_CUSTOM_MENU_ITEMS__: MenuItemWithDetails[] | undefined;
   var __SMOL_MENU_OVERRIDES__: Record<string, Partial<MenuItemWithDetails>> | undefined;
@@ -50,21 +114,42 @@ declare global {
 
 export function getCustomItemsStore(): MenuItemWithDetails[] {
   if (!globalThis.__SMOL_CUSTOM_MENU_ITEMS__) {
-    globalThis.__SMOL_CUSTOM_MENU_ITEMS__ = [];
+    const persisted = loadPersistedStore();
+    globalThis.__SMOL_CUSTOM_MENU_ITEMS__ = persisted.customItems;
+    if (!globalThis.__SMOL_MENU_OVERRIDES__) {
+      globalThis.__SMOL_MENU_OVERRIDES__ = persisted.menuOverrides;
+    }
+    if (!globalThis.__SMOL_DELETED_ITEM_IDS__) {
+      globalThis.__SMOL_DELETED_ITEM_IDS__ = new Set(persisted.deletedItemIds);
+    }
   }
   return globalThis.__SMOL_CUSTOM_MENU_ITEMS__;
 }
 
 export function getMenuOverridesStore(): Record<string, Partial<MenuItemWithDetails>> {
   if (!globalThis.__SMOL_MENU_OVERRIDES__) {
-    globalThis.__SMOL_MENU_OVERRIDES__ = {};
+    const persisted = loadPersistedStore();
+    globalThis.__SMOL_MENU_OVERRIDES__ = persisted.menuOverrides;
+    if (!globalThis.__SMOL_CUSTOM_MENU_ITEMS__) {
+      globalThis.__SMOL_CUSTOM_MENU_ITEMS__ = persisted.customItems;
+    }
+    if (!globalThis.__SMOL_DELETED_ITEM_IDS__) {
+      globalThis.__SMOL_DELETED_ITEM_IDS__ = new Set(persisted.deletedItemIds);
+    }
   }
   return globalThis.__SMOL_MENU_OVERRIDES__;
 }
 
 export function getDeletedItemsStore(): Set<string> {
   if (!globalThis.__SMOL_DELETED_ITEM_IDS__) {
-    globalThis.__SMOL_DELETED_ITEM_IDS__ = new Set<string>();
+    const persisted = loadPersistedStore();
+    globalThis.__SMOL_DELETED_ITEM_IDS__ = new Set(persisted.deletedItemIds);
+    if (!globalThis.__SMOL_CUSTOM_MENU_ITEMS__) {
+      globalThis.__SMOL_CUSTOM_MENU_ITEMS__ = persisted.customItems;
+    }
+    if (!globalThis.__SMOL_MENU_OVERRIDES__) {
+      globalThis.__SMOL_MENU_OVERRIDES__ = persisted.menuOverrides;
+    }
   }
   return globalThis.__SMOL_DELETED_ITEM_IDS__;
 }
@@ -72,7 +157,7 @@ export function getDeletedItemsStore(): Set<string> {
 /**
  * Fallback menu catalog builder from master seed data (59 artisanal items).
  */
-function getFallbackCatalog(): CategoryWithItems[] {
+function getFallbackCatalog(includeEmptyCategories = false): CategoryWithItems[] {
   const categoryMap = new Map<string, CategoryWithItems>();
 
   for (const cat of MOCK_CATEGORIES) {
@@ -137,7 +222,7 @@ function getFallbackCatalog(): CategoryWithItems[] {
     });
   }
 
-  // Include dynamic custom items
+  // Include dynamic custom items (updating in place if already present from DB, or adding if missing)
   const customItems = getCustomItemsStore();
   for (const custom of customItems) {
     if (deletedIds.has(custom.id)) continue;
@@ -154,25 +239,39 @@ function getFallbackCatalog(): CategoryWithItems[] {
       }
     }
     if (cat) {
-      cat.items.push({
+      const resolvedItem: MenuItemWithDetails = {
         ...custom,
         ...(override || {}),
         metadata: {
           ...custom.metadata,
           ...(override?.metadata || {}),
         },
-      });
+      };
+      const existingIdx = cat.items.findIndex((i) => i.id === custom.id);
+      if (existingIdx >= 0) {
+        cat.items[existingIdx] = resolvedItem;
+      } else {
+        cat.items.push(resolvedItem);
+      }
     }
   }
 
+  // Deduplication safeguard: Ensure each item ID is uniquely rendered across the menu
+  const seenCatalogItemIds = new Set<string>();
+  for (const cat of categoryMap.values()) {
+    cat.items = cat.items.filter((item) => {
+      if (seenCatalogItemIds.has(item.id)) return false;
+      seenCatalogItemIds.add(item.id);
+      return true;
+    });
+  }
+
   return Array.from(categoryMap.values())
-    .filter((cat) => cat.items.length > 0)
+    .filter((cat) => includeEmptyCategories || cat.items.length > 0)
     .sort((a, b) => a.sortOrder - b.sortOrder);
 }
 
-import { unstable_cache } from "next/cache";
-
-export async function fetchMenuCatalogDirectly(): Promise<CategoryWithItems[]> {
+export async function fetchMenuCatalogDirectly(includeEmptyCategories = false): Promise<CategoryWithItems[]> {
   try {
     const supabase = createAdminClient();
     const nowIso = new Date().toISOString();
@@ -201,10 +300,11 @@ export async function fetchMenuCatalogDirectly(): Promise<CategoryWithItems[]> {
     ]);
 
     const categories = categoriesRes.data;
-    const items = itemsRes.data;
+    const items = itemsRes.data || [];
 
-    if (!categories || categories.length === 0 || !items || items.length === 0) {
-      return getFallbackCatalog();
+    // Fall back to seed catalog only if database connection failed or categories table is completely empty
+    if (!categories || categories.length === 0) {
+      return getFallbackCatalog(includeEmptyCategories);
     }
 
     const prices = pricesRes.data;
@@ -276,7 +376,7 @@ export async function fetchMenuCatalogDirectly(): Promise<CategoryWithItems[]> {
       });
     }
 
-    // Include dynamic custom items
+    // Include dynamic custom items (updating in place if already present from DB, or adding if missing)
     const customItems = getCustomItemsStore();
     for (const custom of customItems) {
       if (deletedIds.has(custom.id) || custom.status === "ARCHIVED") continue;
@@ -291,33 +391,49 @@ export async function fetchMenuCatalogDirectly(): Promise<CategoryWithItems[]> {
         else cat = categoryMap.values().next().value;
       }
       if (cat) {
-        cat.items.push({
+        const resolvedItem: MenuItemWithDetails = {
           ...custom,
           ...(override || {}),
           metadata: {
             ...custom.metadata,
             ...(override?.metadata || {}),
           },
-        });
+        };
+        const existingIdx = cat.items.findIndex((i) => i.id === custom.id);
+        if (existingIdx >= 0) {
+          cat.items[existingIdx] = resolvedItem;
+        } else {
+          cat.items.push(resolvedItem);
+        }
       }
     }
 
+    // Deduplication safeguard: Ensure each item ID is uniquely rendered across the menu
+    const seenCatalogItemIds = new Set<string>();
+    for (const cat of categoryMap.values()) {
+      cat.items = cat.items.filter((item) => {
+        if (seenCatalogItemIds.has(item.id)) return false;
+        seenCatalogItemIds.add(item.id);
+        return true;
+      });
+    }
+
     const result = Array.from(categoryMap.values())
-      .filter((cat) => cat.items.length > 0)
+      .filter((cat) => includeEmptyCategories || cat.items.length > 0)
       .sort((a, b) => a.sortOrder - b.sortOrder);
 
     return result;
   } catch (error) {
     console.warn("Using fallback menu catalog due to error:", error);
-    return getFallbackCatalog();
+    return getFallbackCatalog(includeEmptyCategories);
   }
 }
 
 /**
  * Direct getter for real-time menu catalog without stale ISR caching.
  */
-export async function getMenuCatalog(): Promise<CategoryWithItems[]> {
-  return fetchMenuCatalogDirectly();
+export async function getMenuCatalog(includeEmptyCategories = false): Promise<CategoryWithItems[]> {
+  return fetchMenuCatalogDirectly(includeEmptyCategories);
 }
 
 

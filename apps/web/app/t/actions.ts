@@ -11,6 +11,7 @@ import {
 } from "@/lib/session";
 import { TABLE_ZONES_CONFIG } from "@/lib/table-tag";
 import { broadcastSyncEvent } from "@/lib/sync-events";
+import { isTableDeleted, filterDeletedTables } from "@/lib/table-store";
 import type { DiningTable, TableQrToken, TableSession } from "@smol-cafe/db";
 
 export interface ResolveQrResult {
@@ -111,6 +112,20 @@ export async function resolveQrToken(
     const rawNumberLabel = matchDigits ? parseInt(matchDigits[1], 10).toString() : "";
     const standardTokenHash = standardTableLabel ? `table-${standardTableLabel}` : "";
 
+    // If this table was permanently deleted, immediately reject and never resurrect
+    if (
+      isTableDeleted(plainToken) ||
+      isTableDeleted(tokenHash) ||
+      (standardTableLabel && isTableDeleted(standardTableLabel)) ||
+      (rawNumberLabel && isTableDeleted(rawNumberLabel))
+    ) {
+      return {
+        success: false,
+        error: "INVALID_TOKEN",
+        message: "This table does not exist or has been removed. Please scan a valid table QR or ask staff for assistance.",
+      };
+    }
+
     const queryFilters = [
       `token_hash.eq.${tokenHash}`,
       `token_hash.eq.${plainToken}`,
@@ -139,7 +154,7 @@ export async function resolveQrToken(
           .eq("id", qrToken.table_id)
           .maybeSingle();
 
-        if (table) {
+        if (table && !isTableDeleted(table.id) && !isTableDeleted(table.label)) {
           diningTable = table as unknown as DiningTable;
         }
       }
@@ -156,78 +171,27 @@ export async function resolveQrToken(
       }
       const { data: tableByLabel } = await query.limit(1).maybeSingle();
 
-      if (tableByLabel) {
+      if (tableByLabel && !isTableDeleted(tableByLabel.id) && !isTableDeleted(tableByLabel.label)) {
         diningTable = tableByLabel as unknown as DiningTable;
       }
     }
 
-    // Fallback 2: Auto-provision standard cafe table if missing
-    if (!diningTable && standardTableLabel) {
-      const tableConfig = TABLE_ZONES_CONFIG[standardTableLabel] || {
-        zone: "Café",
-        capacity: 4,
-      };
-      const validLocationId = await getDefaultLocationId(supabase);
-      try {
-        const { data: insertedTable } = await supabase
-          .from("dining_tables")
-          .insert({
-            location_id: validLocationId,
-            label: standardTableLabel,
-            seats: tableConfig.capacity,
-            active: true,
-          })
-          .select()
-          .maybeSingle();
-
-        if (insertedTable) {
-          diningTable = insertedTable as unknown as DiningTable;
-          // Also create standard QR token
-          await supabase.from("table_qr_tokens").insert({
-            table_id: insertedTable.id,
-            token_hash: `table-${standardTableLabel}`,
-            version: 1,
-          });
-        }
-      } catch (upsertErr) {
-        console.warn("Could not insert dining table:", upsertErr);
-      }
-
-      if (!diningTable) {
-        const now = new Date().toISOString();
-        diningTable = {
-          id: `tbl_${standardTableLabel}`,
-          location_id: validLocationId,
-          label: standardTableLabel,
-          seats: tableConfig.capacity,
-          active: true,
-          created_at: now,
-          updated_at: now,
-        };
-      }
-    }
-
+    // Strict validation: if table is not in database or was removed, do NOT auto-provision
     if (!diningTable) {
       return {
         success: false,
         error: "INVALID_TOKEN",
-        message: "This table does not exist. Please scan a valid table QR or select your table from the welcome screen.",
+        message: "This table does not exist or has been removed. Please scan a valid table QR or select your table from the welcome screen.",
       };
     }
 
     // If diningTable is found, ensure active status
     if (!diningTable.active) {
-      // Auto-activate known standard cafe tables if temporarily inactive
-      if (standardTableLabel && TABLE_ZONES_CONFIG[standardTableLabel]) {
-        await supabase.from("dining_tables").update({ active: true }).eq("id", diningTable.id);
-        diningTable.active = true;
-      } else {
-        return {
-          success: false,
-          error: "TABLE_INACTIVE",
-          message: "This table is currently not in service. Please check with staff.",
-        };
-      }
+      return {
+        success: false,
+        error: "TABLE_INACTIVE",
+        message: "This table is currently not in service. Please check with staff.",
+      };
     }
 
     // Fetch location name
@@ -500,17 +464,18 @@ export async function fetchActiveTablesAction(): Promise<ClientTableInfo[]> {
       .select("*")
       .order("label", { ascending: true });
 
-    if (error || !tablesData || tablesData.length === 0) {
-      return Array.from({ length: 14 }, (_, i) => {
-        const label = (i + 1).toString().padStart(2, "0");
-        const info = TABLE_ZONES_CONFIG[label] || { zone: "smol-cafe", capacity: 2 };
-        return { label, zone: info.zone, capacity: info.capacity, active: true };
-      });
+    if (error || !tablesData) {
+      return [];
+    }
+
+    const nonDeleted = filterDeletedTables(tablesData);
+    if (nonDeleted.length === 0) {
+      return [];
     }
 
     const sectionMap = globalThis.__SMOL_TABLE_SECTIONS_MAP__ || defaultZoneMap;
 
-    const mappedTables = tablesData
+    const mappedTables = nonDeleted
       .filter((t: any) => t.active !== false)
       .map((t: any) => {
         const cleanNum = (t.label || "").toString().padStart(2, "0");
@@ -522,7 +487,7 @@ export async function fetchActiveTablesAction(): Promise<ClientTableInfo[]> {
           "Café";
         const capacity = t.seats || TABLE_ZONES_CONFIG[cleanNum]?.capacity || 2;
         return {
-          label: cleanNum,
+          label: t.label || cleanNum,
           zone,
           capacity,
           active: t.active !== false,
@@ -540,11 +505,7 @@ export async function fetchActiveTablesAction(): Promise<ClientTableInfo[]> {
     });
   } catch (err) {
     console.error("fetchActiveTablesAction error:", err);
-    return Array.from({ length: 10 }, (_, i) => {
-      const label = (i + 1).toString().padStart(2, "0");
-      const info = TABLE_ZONES_CONFIG[label] || { zone: "Café", capacity: 2 };
-      return { label, zone: info.zone, capacity: info.capacity, active: true };
-    });
+    return [];
   }
 }
 
