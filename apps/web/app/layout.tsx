@@ -115,7 +115,10 @@ export default function RootLayout({
           }}
         />
       </head>
-      <body className="antialiased min-h-screen bg-[#F3E7D3] dark:bg-[#241F1C] text-[#241F1C] dark:text-[#F3E7D3] font-sans selection:bg-[#B72E35]/20 selection:text-[#B72E35]">
+      <body
+        suppressHydrationWarning
+        className="antialiased min-h-screen bg-[#F3E7D3] dark:bg-[#241F1C] text-[#241F1C] dark:text-[#F3E7D3] font-sans selection:bg-[#B72E35]/20 selection:text-[#B72E35]"
+      >
         <LayoutShell>
           {children}
         </LayoutShell>

@@ -5,6 +5,15 @@
 :root {
   --background: #F3E7D3;
   --foreground: #241F1C;
+  --card: #FAF4EB;
+  --card-foreground: #241F1C;
+  --popover: #FAF4EB;
+  --popover-foreground: #241F1C;
+  --border: #E2D7C7;
+  --input: #E2D7C7;
+  --ring: #B72E35;
+  --muted: #EFE7DC;
+  --muted-foreground: #725039;
   --smol-creme: #F3E7D3;
   --smol-cherry: #B72E35;
   --smol-butter: #F2C84B;
@@ -74,9 +83,21 @@ html {
   color-scheme: light;
 }
 
-html.dark {
+html.dark,
+.dark {
   background-color: #151110;
   color-scheme: dark;
+  --background: #151110;
+  --foreground: #FAF4EB;
+  --card: #1A1715;
+  --card-foreground: #FAF4EB;
+  --popover: #1A1715;
+  --popover-foreground: #FAF4EB;
+  --border: #2D2622;
+  --input: #2D2622;
+  --ring: #F2C84B;
+  --muted: #241F1C;
+  --muted-foreground: #A89A8C;
 }
 
 body {
