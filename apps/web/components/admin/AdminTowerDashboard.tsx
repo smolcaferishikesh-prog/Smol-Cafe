@@ -52,7 +52,9 @@ import {
   FileSpreadsheet,
   AlertTriangle,
   Info,
+  LayoutGrid,
 } from "lucide-react";
+import { AnalyticsBento, type AnalyticsBentoProps } from "@/components/ui/analytics-bento";
 import { downloadCsv } from "@/lib/export-utils";
 import { DigitalReceiptModal, type ReceiptData } from "@/components/payment/DigitalReceiptModal";
 import { ProcurementManager } from "@/components/admin/ProcurementManager";
@@ -552,6 +554,8 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
 
   // Timeframe Scope State (Today, Weekly, Monthly, Yearly)
   const [timeframe, setTimeframe] = useState<"TODAY" | "WEEKLY" | "MONTHLY" | "YEARLY">("TODAY");
+  // Overview View Mode: Executive Bento Grid vs Classic Station Charts
+  const [overviewViewMode, setOverviewViewMode] = useState<"bento" | "classic">("bento");
 
   // Helper for dynamic, human-readable Y-axis scaling matching actual currency values
   const getNiceYAxisScale = (maxVal: number): {
@@ -1093,6 +1097,496 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
     };
   }, [orders, timeframe]);
 
+  // Executive Analytics Bento Data dynamically computed from real API orders & menu catalog
+  const bentoData = useMemo<AnalyticsBentoProps>(() => {
+    const isOrderPaid = (o: AdminOrderRecord) =>
+      o.status !== "CANCELLED" &&
+      o.status !== "REJECTED" &&
+      Boolean(
+        o.paymentStatus?.startsWith("PAID") ||
+        o.paymentMethod === "UPI" ||
+        o.paymentMethod === "CASH" ||
+        o.paymentMethod === "CARD" ||
+        o.paymentMethod === "ONLINE"
+      ) &&
+      o.paymentMethod !== "COMPLIMENTARY" &&
+      o.paymentMethod !== "PENDING" &&
+      o.paymentStatus !== "UNPAID (PENDING)" &&
+      o.paymentStatus !== "COMPLIMENTARY";
+
+    const getISTHour = (d: Date | string | number) => {
+      const dateObj = typeof d === "object" ? d : new Date(d);
+      const str = new Intl.DateTimeFormat("en-IN", {
+        timeZone: "Asia/Kolkata",
+        hour: "numeric",
+        hour12: false,
+      }).format(dateObj);
+      return parseInt(str, 10);
+    };
+
+    const now = new Date();
+    const nowMs = now.getTime();
+    const currentYear = now.getFullYear();
+    const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
+    const thirtyDaysMs = 30 * 24 * 60 * 60 * 1000;
+
+    // 1. REVENUE: Real Trailing 30-Day Daily Series
+    const series: { label: string; value: number }[] = [];
+    for (let i = 29; i >= 0; i--) {
+      const d = new Date(now.getTime() - i * 24 * 60 * 60 * 1000);
+      const dateStr = d.toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+      const shortLabel = d.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "Asia/Kolkata" });
+
+      const dayPaidTotal = orders
+        .filter((o) => {
+          if (!isOrderPaid(o)) return false;
+          const dt = new Date(o.rawCreatedAt || o.createdAt || Date.now());
+          return dt.toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" }) === dateStr;
+        })
+        .reduce((sum, o) => sum + (o.totalRupees || 0), 0);
+
+      series.push({ label: shortLabel, value: dayPaidTotal });
+    }
+
+    // Revenue Delta (vs prior window)
+    const prevWindowPaidTotal = (() => {
+      if (timeframe === "TODAY") {
+        const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000).toLocaleDateString("en-CA", {
+          timeZone: "Asia/Kolkata",
+        });
+        return orders
+          .filter(
+            (o) =>
+              isOrderPaid(o) &&
+              new Date(o.rawCreatedAt || o.createdAt || Date.now()).toLocaleDateString("en-CA", {
+                timeZone: "Asia/Kolkata",
+              }) === yesterday
+          )
+          .reduce((sum, o) => sum + (o.totalRupees || 0), 0);
+      }
+      const windowDays = timeframe === "WEEKLY" ? 7 : 30;
+      const startPrior = nowMs - 2 * windowDays * 24 * 60 * 60 * 1000;
+      const endPrior = nowMs - windowDays * 24 * 60 * 60 * 1000;
+      return orders
+        .filter((o) => {
+          if (!isOrderPaid(o)) return false;
+          const t = new Date(o.rawCreatedAt || o.createdAt || Date.now()).getTime();
+          return t >= startPrior && t < endPrior;
+        })
+        .reduce((sum, o) => sum + (o.totalRupees || 0), 0);
+    })();
+
+    const revDelta =
+      prevWindowPaidTotal > 0
+        ? `${timeframeStats.grossRevenue >= prevWindowPaidTotal ? "+" : ""}${Math.round(
+            ((timeframeStats.grossRevenue - prevWindowPaidTotal) / prevWindowPaidTotal) * 100
+          )}%`
+        : timeframeStats.grossRevenue > 0
+        ? "+100%"
+        : "0%";
+
+    // 2. SESSIONS: Real 24h Hourly Velocity (Dine-in Tables vs Counter/QR Takeaway)
+    const desktop = [new Array(25).fill(0), new Array(25).fill(0), new Array(25).fill(0)];
+    const mobile = [new Array(25).fill(0), new Array(25).fill(0), new Array(25).fill(0)];
+
+    let currentPeriodOrdersCount = 0;
+    let priorPeriodOrdersCount = 0;
+
+    orders.forEach((o) => {
+      if (o.status === "CANCELLED" || o.status === "REJECTED") return;
+      const dt = new Date(o.rawCreatedAt || o.createdAt || Date.now());
+      if (isNaN(dt.getTime())) return;
+
+      const hour = Math.min(24, Math.max(0, getISTHour(dt)));
+      const ageMs = nowMs - dt.getTime();
+      const dayAge = ageMs / (24 * 60 * 60 * 1000);
+
+      const periodIdx = dayAge < 1 ? 0 : dayAge <= 7 ? 1 : dayAge <= 14 ? 2 : -1;
+      if (periodIdx === 0) currentPeriodOrdersCount++;
+      if (periodIdx === 1) priorPeriodOrdersCount++;
+
+      if (periodIdx !== -1) {
+        const isDineIn = Boolean(
+          o.tableLabel &&
+            !/takeaway|counter|parcel|delivery/i.test(o.tableLabel) &&
+            !/takeaway/i.test(o.zone || "")
+        );
+
+        if (isDineIn) {
+          desktop[periodIdx][hour] += 1;
+        } else {
+          mobile[periodIdx][hour] += 1;
+        }
+      }
+    });
+
+    const sessionsDelta =
+      priorPeriodOrdersCount > 0
+        ? `${currentPeriodOrdersCount >= priorPeriodOrdersCount ? "+" : ""}${Math.round(
+            ((currentPeriodOrdersCount - priorPeriodOrdersCount) / priorPeriodOrdersCount) * 100
+          )}%`
+        : currentPeriodOrdersCount > 0
+        ? "+100%"
+        : "0%";
+
+    // 3. CATEGORIES: Real Menu Categories & Ordered Items Breakdown
+    const categoryMap = new Map<string, string>();
+    (overviewData?.menuItems || []).forEach((m) => {
+      categoryMap.set(m.name.trim().toLowerCase(), m.category);
+    });
+
+    const assignGroup = (itemName: string): string => {
+      const norm = itemName.trim().toLowerCase();
+      const cat = (categoryMap.get(norm) || "").toLowerCase();
+      if (cat.includes("coffee") || cat.includes("brew") || cat.includes("espresso")) return "coffee";
+      if (cat.includes("bake") || cat.includes("dessert") || cat.includes("pastry") || cat.includes("croissant")) return "bakery";
+      if (cat.includes("tea") || cat.includes("chai") || cat.includes("herbal")) return "tea";
+      if (cat.includes("food") || cat.includes("kitchen") || cat.includes("main") || cat.includes("breakfast") || cat.includes("sandwich")) return "kitchen";
+      if (cat.includes("beverage") || cat.includes("cooler") || cat.includes("cold") || cat.includes("shake") || cat.includes("tonic")) return "beverages";
+
+      // Intelligent keyword fallback
+      if (/coffee|latte|cappuccino|pour|aeropress|espresso|americano|flat white|cortado|mocha/i.test(itemName)) return "coffee";
+      if (/croissant|bun|babka|cake|cookie|brownie|danish|pastry|tart|muffin/i.test(itemName)) return "bakery";
+      if (/tea|chai|tisane|herbal|matcha/i.test(itemName)) return "tea";
+      if (/toast|sandwich|sourdough|egg|bowl|skillet|pasta|salad|shakshuka/i.test(itemName)) return "kitchen";
+      return "beverages";
+    };
+
+    let weeklyTotal = 0;
+    let monthlyTotal = 0;
+    let yearlyTotal = 0;
+
+    const itemPeriodMap = new Map<string, { name: string; group: string; values: [number, number, number] }>();
+
+    orders.forEach((o) => {
+      if (!isOrderPaid(o)) return;
+      const dt = new Date(o.rawCreatedAt || o.createdAt || Date.now());
+      if (isNaN(dt.getTime())) return;
+      const age = nowMs - dt.getTime();
+
+      const isWeekly = age >= 0 && age <= sevenDaysMs;
+      const isMonthly = age >= 0 && age <= thirtyDaysMs;
+      const isYearly = dt.getFullYear() === currentYear;
+
+      (o.itemsDetail || []).forEach((item) => {
+        const rev = item.subtotalRupees || (item.priceRupees * item.qty) || 0;
+        if (rev <= 0) return;
+
+        if (isWeekly) weeklyTotal += rev;
+        if (isMonthly) monthlyTotal += rev;
+        if (isYearly) yearlyTotal += rev;
+
+        const key = item.name.trim();
+        const existing = itemPeriodMap.get(key) || {
+          name: key,
+          group: assignGroup(key),
+          values: [0, 0, 0],
+        };
+
+        if (isWeekly) existing.values[0] += rev;
+        if (isMonthly) existing.values[1] += rev;
+        if (isYearly) existing.values[2] += rev;
+
+        itemPeriodMap.set(key, existing);
+      });
+    });
+
+    // If no orders have itemsDetail yet, seed with top menu items from catalog
+    let categoryItems = Array.from(itemPeriodMap.values());
+    if (categoryItems.length === 0) {
+      const seedItems = (overviewData?.menuItems || []).slice(0, 10);
+      categoryItems = seedItems.map((m) => ({
+        name: m.name,
+        group: assignGroup(m.name),
+        values: [0, 0, 0],
+      }));
+    }
+
+    // Seating Zone Table from real orders
+    const zoneMap = new Map<string, [number, number, number]>();
+    orders.forEach((o) => {
+      if (!isOrderPaid(o)) return;
+      const dt = new Date(o.rawCreatedAt || o.createdAt || Date.now());
+      if (isNaN(dt.getTime())) return;
+      const age = nowMs - dt.getTime();
+      const zoneName = o.zone || o.tableLabel || "Main Café";
+
+      const cur = zoneMap.get(zoneName) || [0, 0, 0];
+      const rev = o.totalRupees || 0;
+      if (age >= 0 && age <= sevenDaysMs) cur[0] += rev;
+      if (age >= 0 && age <= thirtyDaysMs) cur[1] += rev;
+      if (dt.getFullYear() === currentYear) cur[2] += rev;
+      zoneMap.set(zoneName, cur);
+    });
+
+    const tableRows =
+      zoneMap.size > 0
+        ? Array.from(zoneMap.entries()).map(([label, vals]) => ({
+            label,
+            values: [`₹${vals[0].toLocaleString("en-IN")}`, `₹${vals[1].toLocaleString("en-IN")}`, `₹${vals[2].toLocaleString("en-IN")}`],
+          }))
+        : [
+            { label: "Tapovan Riverside Terrace", values: ["₹0", "₹0", "₹0"] },
+            { label: "Indoor Reading Lounge", values: ["₹0", "₹0", "₹0"] },
+            { label: "Garden Deck", values: ["₹0", "₹0", "₹0"] },
+          ];
+
+    // 4. RADAR TELEMETRY: Today, Weekly, Monthly, Yearly Timeframes
+    const istToday = now.toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+    const currentMonth = now.getMonth();
+
+    // --- A. TODAY (12 two-hour intervals across the 24-hour cycle) ---
+    const todayIntervals = ["12a", "2a", "4a", "6a", "8a", "10a", "12p", "2p", "4p", "6p", "8p", "10p"];
+    const todayValues = new Array(12).fill(0);
+    let todayOrdersCount = 0;
+    let todayPaidCount = 0;
+    const todayPayModes = { UPI: 0, CASH: 0, CARD: 0 };
+
+    orders.forEach((o) => {
+      const dt = new Date(o.rawCreatedAt || o.createdAt || Date.now());
+      if (isNaN(dt.getTime())) return;
+      const istDay = dt.toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+      if (istDay !== istToday) return;
+      todayOrdersCount++;
+
+      if (isOrderPaid(o)) {
+        todayPaidCount++;
+        const h = getISTHour(dt);
+        const slot = Math.min(11, Math.max(0, Math.floor(h / 2)));
+        todayValues[slot] += o.totalRupees || 0;
+
+        const m = (o.paymentMethod || "").toUpperCase();
+        if (m.includes("CASH")) todayPayModes.CASH++;
+        else if (m.includes("CARD")) todayPayModes.CARD++;
+        else todayPayModes.UPI++;
+      }
+    });
+
+    const todayTotalRev = todayValues.reduce((a, b) => a + b, 0);
+    const todayPeakIdx = todayValues.indexOf(Math.max(...todayValues, 0));
+    const todayPeakSlotLabel = todayIntervals[todayPeakIdx] || "8a";
+    const todayPeakVal = todayValues[todayPeakIdx] || 0;
+    const todayTopPay =
+      todayPayModes.UPI >= todayPayModes.CASH && todayPayModes.UPI >= todayPayModes.CARD
+        ? "UPI Direct QR"
+        : todayPayModes.CASH >= todayPayModes.CARD
+        ? "Counter Cash"
+        : "Card / NFC";
+
+    // --- B. WEEKLY (7 Days of the week: Sun to Sat) ---
+    const weekDays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+    const weekValues = new Array(7).fill(0);
+    let weekOrdersCount = 0;
+    let weekPaidCount = 0;
+
+    orders.forEach((o) => {
+      const dt = new Date(o.rawCreatedAt || o.createdAt || Date.now());
+      if (isNaN(dt.getTime())) return;
+      const age = nowMs - dt.getTime();
+      if (age < 0 || age > sevenDaysMs) return;
+      weekOrdersCount++;
+
+      if (isOrderPaid(o)) {
+        weekPaidCount++;
+        const dayIdx = dt.getDay();
+        weekValues[dayIdx] += o.totalRupees || 0;
+      }
+    });
+
+    const weekTotalRev = weekValues.reduce((a, b) => a + b, 0);
+    const weekBusiestDayIdx = weekValues.indexOf(Math.max(...weekValues, 0));
+    const weekBusiestDay = weekDays[weekBusiestDayIdx] || "Sunday";
+
+    // --- C. MONTHLY (5 Weeks of the Month) ---
+    const monthWeeks = ["Wk 1 (1-7)", "Wk 2 (8-14)", "Wk 3 (15-21)", "Wk 4 (22-28)", "Wk 5 (29-31)"];
+    const monthValues = new Array(5).fill(0);
+    let monthOrdersCount = 0;
+    let monthPaidCount = 0;
+    const monthZoneSales = new Map<string, number>();
+
+    orders.forEach((o) => {
+      const dt = new Date(o.rawCreatedAt || o.createdAt || Date.now());
+      if (isNaN(dt.getTime())) return;
+      if (dt.getFullYear() !== currentYear || dt.getMonth() !== currentMonth) return;
+      monthOrdersCount++;
+
+      if (isOrderPaid(o)) {
+        monthPaidCount++;
+        const day = dt.getDate();
+        const slot = day <= 7 ? 0 : day <= 14 ? 1 : day <= 21 ? 2 : day <= 28 ? 3 : 4;
+        monthValues[slot] += o.totalRupees || 0;
+
+        const z = o.zone || o.tableLabel || "Main Café";
+        monthZoneSales.set(z, (monthZoneSales.get(z) || 0) + (o.totalRupees || 0));
+      }
+    });
+
+    const monthTotalRev = monthValues.reduce((a, b) => a + b, 0);
+    const monthTopZone =
+      Array.from(monthZoneSales.entries()).sort((a, b) => b[1] - a[1])[0]?.[0] || "Dine-in Tables";
+
+    // --- D. YEARLY (12 Months of the Year: Jan to Dec) ---
+    const yearMonths = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    const yearValues = new Array(12).fill(0);
+    let yearOrdersCount = 0;
+    let yearPaidCount = 0;
+    const yearZoneSales = new Map<string, number>();
+
+    orders.forEach((o) => {
+      const dt = new Date(o.rawCreatedAt || o.createdAt || Date.now());
+      if (isNaN(dt.getTime())) return;
+      if (dt.getFullYear() !== currentYear) return;
+      yearOrdersCount++;
+
+      if (isOrderPaid(o)) {
+        yearPaidCount++;
+        const m = dt.getMonth();
+        yearValues[m] += o.totalRupees || 0;
+
+        const z = o.zone || o.tableLabel || "Main Café";
+        yearZoneSales.set(z, (yearZoneSales.get(z) || 0) + (o.totalRupees || 0));
+      }
+    });
+
+    const yearTotalRev = yearValues.reduce((a, b) => a + b, 0);
+    const activeMonths = yearValues.filter((v) => v > 0).length || 1;
+    const yearTopZone =
+      Array.from(yearZoneSales.entries()).sort((a, b) => b[1] - a[1])[0]?.[0] || "Dine-in Tables";
+
+    return {
+      currency: "₹",
+      revenue: {
+        label: timeframe === "TODAY" ? "Today's Gross Revenue" : `${timeframe} Gross Revenue`,
+        value: timeframeStats.grossRevenue,
+        delta: revDelta,
+        note: (
+          <span>
+            Avg. Ticket: <strong className="text-[#241F1C] dark:text-white font-medium">₹{timeframeStats.avgOrderRupees}</strong> · {timeframeStats.paidOrdersCount} paid
+          </span>
+        ),
+        caption: "Trailing 30-Day Daily Orders Ledger (₹)",
+        series,
+      },
+      sessions: {
+        label: "Real-Time Station Orders & Velocity",
+        value: timeframeStats.ordersCount,
+        delta: sessionsDelta,
+        note: "Live Hourly Order Flow: Dine-in Tables vs Counter/QR Takeaway",
+        desktop,
+        mobile,
+        labels: {
+          desktop: "Dine-in Tables",
+          mobile: "Counter / QR Takeaway",
+          prior: "Prior Weeks",
+          current: "Today",
+        },
+      },
+      categories: {
+        title: "Sales by Menu Category",
+        groups: [
+          { id: "coffee", name: "Artisanal Coffee", color: "#F2C84B", ink: "dark" },
+          { id: "bakery", name: "Bakes & Viennoiserie", color: "#FF5A1F", ink: "dark" },
+          { id: "tea", name: "Himalayan Herbal & Chai", color: "#3BF08C", ink: "dark" },
+          { id: "kitchen", name: "Kitchen Mains & Bowls", color: "#8B3DFF", ink: "light" },
+          { id: "beverages", name: "Cold Brews & Tonics", color: "#22D3EE", ink: "dark" },
+        ],
+        periods: [
+          {
+            label: "Weekly",
+            total: weeklyTotal,
+            delta: weeklyTotal > 0 ? "+100%" : "0%",
+            compare: "Past 7 days orders",
+          },
+          {
+            label: "Monthly",
+            total: monthlyTotal,
+            delta: monthlyTotal > 0 ? "+100%" : "0%",
+            compare: "Past 30 days orders",
+          },
+          {
+            label: "Yearly",
+            total: yearlyTotal,
+            delta: yearlyTotal > 0 ? "+100%" : "0%",
+            compare: `Calendar Year ${currentYear}`,
+          },
+        ],
+        items: categoryItems,
+        table: {
+          columns: ["Seating Zone", "Weekly", "Monthly", "Yearly"],
+          rows: tableRows,
+        },
+      },
+      seasonality: {
+        title: "Operational Radar Trajectory",
+        years: [
+          {
+            label: "Today",
+            axis: todayIntervals,
+            values: todayValues,
+            stats: [
+              { label: "Peak Slot", value: todayPeakVal, delta: todayPeakSlotLabel, note: "highest 2h slot" },
+              { label: "Today Total", value: todayTotalRev, delta: `${todayPaidCount} orders`, note: "paid revenue" },
+            ],
+            rows: [
+              { label: "Today's Orders", value: `${todayOrdersCount} orders` },
+              { label: "Average Ticket", value: `₹${todayPaidCount > 0 ? Math.round(todayTotalRev / todayPaidCount) : 0}` },
+              { label: "Leading Payment", value: todayTopPay },
+            ],
+          },
+          {
+            label: "Weekly",
+            axis: weekDays,
+            values: weekValues,
+            stats: [
+              { label: "Daily Avg", value: Math.round(weekTotalRev / 7), delta: `${weekOrdersCount} orders`, note: "7-day average" },
+              { label: "Week Total", value: weekTotalRev, delta: "+100%", note: `${weekPaidCount} paid tickets` },
+            ],
+            rows: [
+              { label: "Busiest Day", value: weekBusiestDay },
+              { label: "Weekly Orders", value: `${weekOrdersCount} orders` },
+              { label: "Average Ticket", value: `₹${weekPaidCount > 0 ? Math.round(weekTotalRev / weekPaidCount) : 0}` },
+            ],
+          },
+          {
+            label: "Monthly",
+            axis: monthWeeks,
+            values: monthValues,
+            stats: [
+              { label: "Weekly Avg", value: Math.round(monthTotalRev / 4), delta: `${monthOrdersCount} orders`, note: "this month" },
+              { label: "Month Total", value: monthTotalRev, delta: "+100%", note: `${monthPaidCount} paid tickets` },
+            ],
+            rows: [
+              { label: "Monthly Orders", value: `${monthOrdersCount} orders` },
+              { label: "Average Ticket", value: `₹${monthPaidCount > 0 ? Math.round(monthTotalRev / monthPaidCount) : 0}` },
+              { label: "Top Seating Zone", value: monthTopZone },
+            ],
+          },
+          {
+            label: "Yearly",
+            axis: yearMonths,
+            values: yearValues,
+            stats: [
+              { label: "Monthly Avg", value: Math.round(yearTotalRev / 12), delta: `${yearOrdersCount} orders`, note: `active ${activeMonths} mos` },
+              { label: "Year Total", value: yearTotalRev, delta: "+100%", note: `${yearPaidCount} paid tickets` },
+            ],
+            rows: [
+              { label: "Annual Orders", value: `${yearOrdersCount} orders` },
+              { label: "Average Ticket", value: `₹${yearPaidCount > 0 ? Math.round(yearTotalRev / yearPaidCount) : 0}` },
+              { label: "Top Seating Zone", value: yearTopZone },
+            ],
+          },
+        ],
+      },
+      colors: {
+        revenue: ["#F2C84B", "#10B981"],
+        desktop: ["#A855F7", "#3B82F6"],
+        mobile: ["#F59E0B", "#EC4899"],
+        radar: "#10B981",
+      },
+      credit: false,
+    };
+  }, [orders, timeframe, timeframeStats, overviewData]);
+
   // Dynamic Menu Stock Management (simulated local persistence)
   const [soldOutItems, setSoldOutItems] = useState<Record<string, boolean>>({
     item_croissant_butter: true, // example 1 item sold out
@@ -1423,6 +1917,7 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
                       src="/admin-logo.png"
                       alt="smol café admin logo"
                       fill
+                      sizes="32px"
                       priority
                       className="object-contain drop-shadow-md dark:hidden block"
                     />
@@ -1430,6 +1925,7 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
                       src="/admin-logo-dark.png"
                       alt="smol café admin logo night mode"
                       fill
+                      sizes="32px"
                       priority
                       className="object-contain drop-shadow-[0_0_12px_rgba(168,85,247,0.5)] hidden dark:block"
                     />
@@ -1522,6 +2018,7 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
                 src="/admin-logo.png"
                 alt="smol café admin logo"
                 fill
+                sizes="(max-width: 768px) 80px, (max-width: 1024px) 96px, 112px"
                 priority
                 className="object-contain drop-shadow-md dark:hidden block hover:scale-105 transition-transform duration-200"
               />
@@ -1529,6 +2026,7 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
                 src="/admin-logo-dark.png"
                 alt="smol café admin logo night mode"
                 fill
+                sizes="(max-width: 768px) 80px, (max-width: 1024px) 96px, 112px"
                 priority
                 className="object-contain drop-shadow-[0_0_16px_rgba(168,85,247,0.5)] hidden dark:block hover:scale-105 transition-transform duration-200"
               />
@@ -1608,6 +2106,7 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
                   src="/admin-logo.png"
                   alt="smol café admin logo"
                   fill
+                  sizes="28px"
                   priority
                   className="object-contain dark:hidden block"
                 />
@@ -1615,6 +2114,7 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
                   src="/admin-logo-dark.png"
                   alt="smol café admin logo night mode"
                   fill
+                  sizes="28px"
                   priority
                   className="object-contain drop-shadow-[0_0_8px_rgba(168,85,247,0.4)] hidden dark:block"
                 />
@@ -1661,32 +2161,60 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
 
         {/* Tab 1: OVERVIEW DASHBOARD & CHARTS */}
         {activeTab === "overview" && (
-          <div className="p-6 space-y-6 max-w-7xl">
-            {/* Overview Header with Export Button */}
+          <div className="p-4 sm:p-6 2xl:p-8 3xl:p-10 space-y-6 w-full">
+            {/* Overview Header with View Toggle & Export Button */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#C9AE8B]/30 dark:border-stone-800 pb-4">
               <div>
-                <h2 className="text-xl font-bold font-serif text-[#241F1C] dark:text-white">
+                <h2 className="text-xl sm:text-2xl 2xl:text-3xl font-bold font-serif text-[#241F1C] dark:text-white">
                   Executive Operations Overview
                 </h2>
-                <p className="font-serif italic text-xs text-[#725039] dark:text-[#C9AE8B]">
+                <p className="font-serif italic text-xs 2xl:text-sm text-[#725039] dark:text-[#C9AE8B]">
                   Live operational pulse, daily gross sales, and station velocities
                 </p>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                {/* View Switcher: Bento Grid vs Classic Station Charts */}
+                <div className="inline-flex rounded-xl bg-[#EFE7DC] dark:bg-[#120F0E] p-1 border border-[#C9AE8B]/40 dark:border-stone-800 shadow-xs">
+                  <button
+                    type="button"
+                    onClick={() => setOverviewViewMode("bento")}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 2xl:px-4 2xl:py-2 rounded-lg font-mono text-xs 2xl:text-sm font-bold transition cursor-pointer ${
+                      overviewViewMode === "bento"
+                        ? "bg-[#B72E35] text-white shadow-xs"
+                        : "text-[#725039] dark:text-[#C9AE8B] hover:text-[#241F1C] dark:hover:text-white"
+                    }`}
+                  >
+                    <LayoutGrid className="h-3.5 w-3.5 2xl:h-4 2xl:w-4" />
+                    <span>Executive Bento</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setOverviewViewMode("classic")}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 2xl:px-4 2xl:py-2 rounded-lg font-mono text-xs 2xl:text-sm font-bold transition cursor-pointer ${
+                      overviewViewMode === "classic"
+                        ? "bg-[#B72E35] text-white shadow-xs"
+                        : "text-[#725039] dark:text-[#C9AE8B] hover:text-[#241F1C] dark:hover:text-white"
+                    }`}
+                  >
+                    <BarChart3 className="h-3.5 w-3.5 2xl:h-4 2xl:w-4" />
+                    <span>Station Charts</span>
+                  </button>
+                </div>
+
                 <button
                   type="button"
                   onClick={handleExportOverview}
-                  className="flex items-center gap-1.5 rounded-xl border border-[#C9AE8B]/60 dark:border-stone-700 bg-[#FAF4EB] dark:bg-stone-900 px-3 py-1.5 text-xs font-bold text-[#725039] dark:text-stone-300 hover:bg-[#F3E7D3] dark:hover:bg-stone-800 transition shadow-xs cursor-pointer"
+                  className="flex items-center gap-1.5 rounded-xl border border-[#C9AE8B]/60 dark:border-stone-700 bg-[#FAF4EB] dark:bg-stone-900 px-3 py-1.5 2xl:px-4 2xl:py-2 text-xs 2xl:text-sm font-bold text-[#725039] dark:text-stone-300 hover:bg-[#F3E7D3] dark:hover:bg-stone-800 transition shadow-xs cursor-pointer"
                   title="Export orders ledger to CSV"
                 >
-                  <Download className="h-3.5 w-3.5 text-[#B72E35] dark:text-[#F2C84B]" />
+                  <Download className="h-3.5 w-3.5 2xl:h-4 2xl:w-4 text-[#B72E35] dark:text-[#F2C84B]" />
                   <span>Export Report (CSV)</span>
                 </button>
               </div>
             </div>
 
             {/* 6 Hero KPI Metric Cards */}
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3.5">
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3.5 2xl:gap-5">
               {[
                 {
                   label:
@@ -1741,23 +2269,39 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
               ].map((kpi, idx) => (
                 <div
                   key={idx}
-                  className="rounded-2xl border border-[#C9AE8B]/40 dark:border-stone-800 bg-[#FAF4EB] dark:bg-[#1A1715] p-4 shadow-sm space-y-1 transition-colors"
+                  className="rounded-2xl border border-[#C9AE8B]/40 dark:border-stone-800 bg-[#FAF4EB] dark:bg-[#1A1715] p-4 2xl:p-5 shadow-sm space-y-1.5 transition-colors"
                 >
-                  <span className="block font-mono text-[9px] uppercase font-bold text-[#725039] dark:text-stone-400">
+                  <span className="block font-mono text-[9px] 2xl:text-[11px] uppercase font-bold text-[#725039] dark:text-stone-400">
                     {kpi.label}
                   </span>
                   <div
-                    className="font-serif text-xl sm:text-2xl font-black tracking-tight truncate"
+                    className="font-serif text-xl sm:text-2xl 2xl:text-3xl font-black tracking-tight truncate"
                     style={{ color: kpi.color }}
                   >
                     {kpi.value}
                   </div>
-                  <span className="block text-[10px] text-[#8C6D53] dark:text-stone-500 font-mono truncate">{kpi.trend}</span>
+                  <span className="block text-[10px] 2xl:text-xs text-[#8C6D53] dark:text-stone-500 font-mono truncate">{kpi.trend}</span>
                 </div>
               ))}
             </div>
 
-            {/* Timeframe Scope Filter Bar (Today | Weekly | Monthly | Yearly) */}
+            {overviewViewMode === "bento" ? (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono text-xs font-bold uppercase tracking-wider text-[#725039] dark:text-[#C9AE8B]">
+                      Executive Bento Analytics
+                    </span>
+                    <span className="text-[11px] font-mono text-stone-500 hidden sm:inline">
+                      (Live SVG telemetry · Trailing revenue trajectory, customer footfall waves, menu category treemap &amp; seasonal cycle)
+                    </span>
+                  </div>
+                </div>
+                <AnalyticsBento {...bentoData} className="w-full" />
+              </div>
+            ) : (
+              <>
+                {/* Timeframe Scope Filter Bar (Today | Weekly | Monthly | Yearly) */}
             <div className="flex flex-wrap items-center justify-between gap-3 bg-[#FAF4EB] dark:bg-[#1A1715] p-3 rounded-2xl border border-[#C9AE8B]/40 dark:border-stone-800 shadow-xs">
               <div className="flex items-center gap-2">
                 <span className="font-mono text-xs font-bold uppercase tracking-wider text-[#725039] dark:text-[#C9AE8B]">
@@ -2148,6 +2692,8 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
                 </div>
               </div>
             </div>
+              </>
+            )}
           </div>
         )}
 
