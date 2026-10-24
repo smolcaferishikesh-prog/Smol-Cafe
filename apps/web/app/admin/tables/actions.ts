@@ -443,61 +443,102 @@ export async function updateTableAction(
 /**
  * Delete a dining table
  */
-export async function deleteTableAction(tableId: string): Promise<{
+export async function deleteTableAction(tableId: string, knownLabel?: string): Promise<{
   success: boolean;
   message?: string;
 }> {
   try {
     const supabase = createAdminClient();
 
-    // 0. Fetch table details to get label for tombstone persistence & broadcast
-    let tableLabel = "";
-    try {
-      const { data: tbl } = await supabase
-        .from("dining_tables")
-        .select("id, label")
-        .eq("id", tableId)
-        .maybeSingle();
-      if (tbl?.label) {
-        tableLabel = tbl.label;
+    let resolvedTableId = tableId;
+    let tableLabel = knownLabel?.trim() || "";
+
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(tableId);
+
+    // 0. Fetch table details to get label or resolve real UUID if tableId was temporary
+    if (isUuid) {
+      try {
+        const { data: tbl } = await supabase
+          .from("dining_tables")
+          .select("id, label")
+          .eq("id", tableId)
+          .maybeSingle();
+        if (tbl?.label) {
+          tableLabel = tbl.label;
+        }
+      } catch {
+        // ignore
       }
-    } catch {
-      // ignore
+    } else if (tableLabel) {
+      // Resolve actual UUID from database by matching label
+      try {
+        const { data: tbl } = await supabase
+          .from("dining_tables")
+          .select("id, label")
+          .eq("label", tableLabel)
+          .maybeSingle();
+        if (tbl?.id) {
+          resolvedTableId = tbl.id;
+          if (tbl.label) tableLabel = tbl.label;
+        }
+      } catch {
+        // ignore
+      }
     }
 
     // Record to persistent deleted store immediately (prevent resurrection)
-    recordDeletedTable(tableId, tableLabel);
-
-    // 1. Close or delete any existing table sessions for this table
-    try {
-      await supabase
-        .from("table_sessions")
-        .delete()
-        .eq("table_id", tableId);
-    } catch {
-      // Fallback: try closing if delete is restricted
-      await supabase
-        .from("table_sessions")
-        .update({ status: "CLOSED", closed_at: new Date().toISOString() })
-        .eq("table_id", tableId);
+    if (resolvedTableId) {
+      recordDeletedTable(resolvedTableId, tableLabel);
+    }
+    if (tableId && tableId !== resolvedTableId) {
+      recordDeletedTable(tableId, tableLabel);
     }
 
-    // 2. Remove associated QR tokens
-    await supabase.from("table_qr_tokens").delete().eq("table_id", tableId);
+    const targetUuid = isUuid
+      ? tableId
+      : /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(resolvedTableId)
+      ? resolvedTableId
+      : null;
 
-    // 3. Delete the table itself
-    const { error: deleteError } = await supabase
-      .from("dining_tables")
-      .delete()
-      .eq("id", tableId);
+    if (targetUuid) {
+      // 1. Close or delete any existing table sessions for this table
+      const { error: sessionDelError } = await supabase
+        .from("table_sessions")
+        .delete()
+        .eq("table_id", targetUuid);
 
-    if (deleteError) {
-      return { success: false, message: deleteError.message };
+      if (sessionDelError) {
+        // Fallback: try closing if delete is restricted by foreign keys
+        await supabase
+          .from("table_sessions")
+          .update({ status: "CLOSED", closed_at: new Date().toISOString() })
+          .eq("table_id", targetUuid);
+      }
+
+      // 2. Remove associated QR tokens
+      await supabase.from("table_qr_tokens").delete().eq("table_id", targetUuid);
+
+      // 3. Delete the table itself
+      const { error: deleteError } = await supabase
+        .from("dining_tables")
+        .delete()
+        .eq("id", targetUuid);
+
+      if (deleteError) {
+        // If hard delete fails due to historical orders, deactivate table so it never shows
+        await supabase
+          .from("dining_tables")
+          .update({ active: false })
+          .eq("id", targetUuid);
+      }
     }
 
     // 4. Clean up runtime memory map
     if (globalThis.__SMOL_TABLE_SECTIONS_MAP__) {
       delete globalThis.__SMOL_TABLE_SECTIONS_MAP__[tableId];
+      if (resolvedTableId) {
+        delete globalThis.__SMOL_TABLE_SECTIONS_MAP__[resolvedTableId];
+      }
       if (tableLabel) {
         delete globalThis.__SMOL_TABLE_SECTIONS_MAP__[tableLabel];
       }
@@ -505,6 +546,7 @@ export async function deleteTableAction(tableId: string): Promise<{
 
     try {
       revalidatePath("/admin/tables");
+      revalidatePath("/smol-backdoor/admin");
       revalidatePath("/");
     } catch {
       // Non-fatal if context is absent
@@ -514,9 +556,9 @@ export async function deleteTableAction(tableId: string): Promise<{
 
     broadcastSyncEvent({
       type: "TABLE_DELETED",
-      tableId,
+      tableId: resolvedTableId || tableId,
       tableLabel,
-      metadata: { id: tableId, label: tableLabel },
+      metadata: { id: resolvedTableId || tableId, label: tableLabel },
       timestamp: Date.now(),
     });
 

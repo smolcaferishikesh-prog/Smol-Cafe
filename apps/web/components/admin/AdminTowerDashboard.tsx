@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import Image from "next/image";
@@ -91,6 +91,8 @@ import {
   type AdminOverviewData,
   type AdminOrderRecord,
   type AdminPaymentRecord,
+  type AdminBestSeller,
+  type AdminPaymentSplit,
 } from "@/app/admin/actions";
 import {
   getRoleCredentialsAction,
@@ -551,6 +553,58 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
   // Timeframe Scope State (Today, Weekly, Monthly, Yearly)
   const [timeframe, setTimeframe] = useState<"TODAY" | "WEEKLY" | "MONTHLY" | "YEARLY">("TODAY");
 
+  // Helper for dynamic, human-readable Y-axis scaling matching actual currency values
+  const getNiceYAxisScale = (maxVal: number): {
+    scaleMax: number;
+    labels: string[];
+  } => {
+    if (maxVal <= 0) {
+      return {
+        scaleMax: 600,
+        labels: ["₹600", "₹400", "₹200", "₹0"],
+      };
+    }
+
+    const formatCurrency = (val: number): string => {
+      if (val >= 100000) {
+        const l = val / 100000;
+        return `₹${l % 1 === 0 ? l.toFixed(0) : l.toFixed(1)}L`;
+      }
+      if (val >= 1000) {
+        const k = val / 1000;
+        return `₹${k % 1 === 0 ? k.toFixed(0) : k.toFixed(1)}k`;
+      }
+      return `₹${Math.round(val)}`;
+    };
+
+    const target = maxVal * 1.25;
+    const power = Math.pow(10, Math.floor(Math.log10(target)));
+    const fraction = target / power;
+
+    let factor = 1.5;
+    if (fraction <= 1.2) factor = 1.2;
+    else if (fraction <= 1.5) factor = 1.5;
+    else if (fraction <= 2.4) factor = 2.4;
+    else if (fraction <= 3.0) factor = 3.0;
+    else if (fraction <= 4.5) factor = 4.5;
+    else if (fraction <= 6.0) factor = 6.0;
+    else if (fraction <= 9.0) factor = 9.0;
+    else factor = 12.0;
+
+    const scaleMax = Math.round(factor * power);
+    const step = scaleMax / 3;
+
+    return {
+      scaleMax,
+      labels: [
+        formatCurrency(scaleMax),
+        formatCurrency(Math.round(step * 2)),
+        formatCurrency(Math.round(step)),
+        "₹0",
+      ],
+    };
+  };
+
   // Dynamic Bezier Path Builder for Organic Revenue Trajectory
   const buildSmoothSpline = (pts: Array<{ x: number; y: number }>): string => {
     if (pts.length === 0) return "M 0,125 L 520,125";
@@ -564,9 +618,19 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
       const p3 = pts[i + 2] || p2;
 
       const cp1x = p1.x + (p2.x - p0.x) / 6;
-      const cp1y = p1.y + (p2.y - p0.y) / 6;
+      let cp1y = p1.y + (p2.y - p0.y) / 6;
       const cp2x = p2.x - (p3.x - p1.x) / 6;
-      const cp2y = p2.y - (p3.y - p1.y) / 6;
+      let cp2y = p2.y - (p3.y - p1.y) / 6;
+
+      // Prevent negative revenue dip: clamp control points so spline never dips below baseline (y = 125)
+      // If both adjacent points are at baseline (0 revenue), keep the segment perfectly flat
+      if (p1.y >= 124.5 && p2.y >= 124.5) {
+        cp1y = 125;
+        cp2y = 125;
+      } else {
+        cp1y = Math.min(125, Math.max(8, cp1y));
+        cp2y = Math.min(125, Math.max(8, cp2y));
+      }
 
       path += ` C ${cp1x.toFixed(1)},${cp1y.toFixed(1)} ${cp2x.toFixed(1)},${cp2y.toFixed(1)} ${p2.x.toFixed(1)},${p2.y.toFixed(1)}`;
     }
@@ -575,17 +639,49 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
 
   // Dynamic Timeframe Data Sets strictly computed from real customer orders
   const getTimeframeData = () => {
-    const validOrders = orders.filter((o) => o.status !== "CANCELLED" && o.status !== "REJECTED");
     const isOrderPaid = (o: AdminOrderRecord) =>
       o.status !== "CANCELLED" &&
       o.status !== "REJECTED" &&
-      Boolean(o.paymentStatus?.startsWith("PAID") || o.paymentMethod === "UPI" || o.paymentMethod === "CASH" || o.paymentMethod === "CARD") &&
+      Boolean(
+        o.paymentStatus?.startsWith("PAID") ||
+        o.paymentMethod === "UPI" ||
+        o.paymentMethod === "CASH" ||
+        o.paymentMethod === "CARD" ||
+        o.paymentMethod === "ONLINE"
+      ) &&
       o.paymentMethod !== "COMPLIMENTARY" &&
       o.paymentMethod !== "PENDING" &&
       o.paymentStatus !== "UNPAID (PENDING)" &&
       o.paymentStatus !== "COMPLIMENTARY";
 
+    const getISTDate = (d: Date | string | number) => {
+      const dateObj = typeof d === "object" ? d : new Date(d);
+      return dateObj.toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+    };
+    const getISTHour = (d: Date | string | number) => {
+      const dateObj = typeof d === "object" ? d : new Date(d);
+      const str = new Intl.DateTimeFormat("en-IN", {
+        timeZone: "Asia/Kolkata",
+        hour: "numeric",
+        hour12: false,
+      }).format(dateObj);
+      return parseInt(str, 10);
+    };
+
+    const now = new Date();
+    const istToday = getISTDate(now);
+    const nowMs = now.getTime();
+    const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
+
     if (timeframe === "WEEKLY") {
+      const weeklyOrders = orders.filter((o) => {
+        if (o.status === "CANCELLED" || o.status === "REJECTED") return false;
+        const dt = new Date(o.rawCreatedAt || o.createdAt || Date.now());
+        if (isNaN(dt.getTime())) return false;
+        const age = nowMs - dt.getTime();
+        return age >= 0 && age <= sevenDaysMs;
+      });
+
       const days = [
         { label: "Sun", dayIdx: 0 },
         { label: "Mon", dayIdx: 1 },
@@ -597,7 +693,7 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
       ];
 
       const buckets = days.map((d) => {
-        const dayOrders = orders.filter((o) => {
+        const dayOrders = weeklyOrders.filter((o) => {
           const dt = new Date(o.rawCreatedAt || o.createdAt || Date.now());
           return dt.getDay() === d.dayIdx;
         });
@@ -611,18 +707,19 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
         };
       });
 
-      const totalOrdersCount = orders.length;
-      const totalRev = orders.filter(isOrderPaid).reduce((sum, o) => sum + (o.totalRupees || 0), 0);
-      const maxRev = Math.max(...buckets.map((b) => b.revenue), 100);
+      const totalOrdersCount = weeklyOrders.length;
+      const totalRev = weeklyOrders.filter(isOrderPaid).reduce((sum, o) => sum + (o.totalRupees || 0), 0);
+      const maxRev = Math.max(...buckets.map((b) => b.revenue), 0);
+      const { scaleMax, labels: yAxisLabels } = getNiceYAxisScale(maxRev);
 
       const pts = buckets.map((b, i) => ({
         x: 40 + i * 73,
-        y: Math.max(10, Math.min(125, 125 - Math.round((b.revenue / maxRev) * 105))),
+        y: Math.max(10, Math.min(125, totalRev > 0 ? 125 - Math.round((b.revenue / scaleMax) * 115) : 125)),
       }));
 
       const baselinePts = pts.map((p) => ({
         x: p.x,
-        y: Math.min(125, Math.max(15, p.y * 1.06 + 5)),
+        y: totalRev > 0 && p.y < 125 ? Math.min(125, Math.max(12, p.y * 1.05 + 4)) : 125,
       }));
 
       let peakIdx = 0;
@@ -633,14 +730,6 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
           peakIdx = idx;
         }
       });
-
-      const yMax = Math.max(maxRev, 1000);
-      const yAxisLabels = [
-        `₹${Math.round((yMax * 1.2) / 1000)}k`,
-        `₹${Math.round((yMax * 0.8) / 1000)}k`,
-        `₹${Math.round((yMax * 0.4) / 1000)}k`,
-        "₹0",
-      ];
 
       return {
         subtitleOrders: "7-Day Daily Ticket Volume (Sun – Sat)",
@@ -657,10 +746,18 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
         startX: 40,
         stepX: 73,
         capsuleWidth: 26,
+        hasRevenue: totalRev > 0,
       };
     }
 
     if (timeframe === "MONTHLY") {
+      const monthlyOrders = orders.filter((o) => {
+        if (o.status === "CANCELLED" || o.status === "REJECTED") return false;
+        const dt = new Date(o.rawCreatedAt || o.createdAt || Date.now());
+        if (isNaN(dt.getTime())) return false;
+        return dt.getFullYear() === now.getFullYear() && dt.getMonth() === now.getMonth();
+      });
+
       const weeks = [
         { label: "Week 1", min: 1, max: 7 },
         { label: "Week 2", min: 8, max: 14 },
@@ -669,7 +766,7 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
       ];
 
       const buckets = weeks.map((w) => {
-        const weekOrders = orders.filter((o) => {
+        const weekOrders = monthlyOrders.filter((o) => {
           const dt = new Date(o.rawCreatedAt || o.createdAt || Date.now());
           const dom = dt.getDate();
           return dom >= w.min && dom <= w.max;
@@ -684,18 +781,19 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
         };
       });
 
-      const totalOrdersCount = orders.length;
-      const totalRev = orders.filter(isOrderPaid).reduce((sum, o) => sum + (o.totalRupees || 0), 0);
-      const maxRev = Math.max(...buckets.map((b) => b.revenue), 100);
+      const totalOrdersCount = monthlyOrders.length;
+      const totalRev = monthlyOrders.filter(isOrderPaid).reduce((sum, o) => sum + (o.totalRupees || 0), 0);
+      const maxRev = Math.max(...buckets.map((b) => b.revenue), 0);
+      const { scaleMax, labels: yAxisLabels } = getNiceYAxisScale(maxRev);
 
       const pts = buckets.map((b, i) => ({
         x: 65 + i * 130,
-        y: Math.max(10, Math.min(125, 125 - Math.round((b.revenue / maxRev) * 105))),
+        y: Math.max(10, Math.min(125, totalRev > 0 ? 125 - Math.round((b.revenue / scaleMax) * 115) : 125)),
       }));
 
       const baselinePts = pts.map((p) => ({
         x: p.x,
-        y: Math.min(125, Math.max(15, p.y * 1.06 + 5)),
+        y: totalRev > 0 && p.y < 125 ? Math.min(125, Math.max(12, p.y * 1.05 + 4)) : 125,
       }));
 
       let peakIdx = 0;
@@ -706,14 +804,6 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
           peakIdx = idx;
         }
       });
-
-      const yMax = Math.max(maxRev, 1000);
-      const yAxisLabels = [
-        `₹${(yMax * 1.2 >= 100000 ? (yMax * 1.2 / 100000).toFixed(1) + "L" : Math.round(yMax * 1.2 / 1000) + "k")}`,
-        `₹${(yMax * 0.8 >= 100000 ? (yMax * 0.8 / 100000).toFixed(1) + "L" : Math.round(yMax * 0.8 / 1000) + "k")}`,
-        `₹${(yMax * 0.4 >= 100000 ? (yMax * 0.4 / 100000).toFixed(1) + "L" : Math.round(yMax * 0.4 / 1000) + "k")}`,
-        "₹0",
-      ];
 
       return {
         subtitleOrders: "4-Week Monthly Ticket Aggregate",
@@ -730,13 +820,21 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
         startX: 65,
         stepX: 130,
         capsuleWidth: 28,
+        hasRevenue: totalRev > 0,
       };
     }
 
     if (timeframe === "YEARLY") {
+      const yearlyOrders = orders.filter((o) => {
+        if (o.status === "CANCELLED" || o.status === "REJECTED") return false;
+        const dt = new Date(o.rawCreatedAt || o.createdAt || Date.now());
+        if (isNaN(dt.getTime())) return false;
+        return dt.getFullYear() === now.getFullYear();
+      });
+
       const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
       const buckets = monthNames.map((mName, mIdx) => {
-        const monthOrders = orders.filter((o) => {
+        const monthOrders = yearlyOrders.filter((o) => {
           const dt = new Date(o.rawCreatedAt || o.createdAt || Date.now());
           return dt.getMonth() === mIdx;
         });
@@ -750,18 +848,19 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
         };
       });
 
-      const totalOrdersCount = orders.length;
-      const totalRev = orders.filter(isOrderPaid).reduce((sum, o) => sum + (o.totalRupees || 0), 0);
-      const maxRev = Math.max(...buckets.map((b) => b.revenue), 100);
+      const totalOrdersCount = yearlyOrders.length;
+      const totalRev = yearlyOrders.filter(isOrderPaid).reduce((sum, o) => sum + (o.totalRupees || 0), 0);
+      const maxRev = Math.max(...buckets.map((b) => b.revenue), 0);
+      const { scaleMax, labels: yAxisLabels } = getNiceYAxisScale(maxRev);
 
       const pts = buckets.map((b, i) => ({
         x: 28 + i * 42,
-        y: Math.max(10, Math.min(125, 125 - Math.round((b.revenue / maxRev) * 105))),
+        y: Math.max(10, Math.min(125, totalRev > 0 ? 125 - Math.round((b.revenue / scaleMax) * 115) : 125)),
       }));
 
       const baselinePts = pts.map((p) => ({
         x: p.x,
-        y: Math.min(125, Math.max(15, p.y * 1.06 + 5)),
+        y: totalRev > 0 && p.y < 125 ? Math.min(125, Math.max(12, p.y * 1.05 + 4)) : 125,
       }));
 
       let peakIdx = 0;
@@ -772,14 +871,6 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
           peakIdx = idx;
         }
       });
-
-      const yMax = Math.max(maxRev, 1000);
-      const yAxisLabels = [
-        `₹${(yMax * 1.2 >= 100000 ? (yMax * 1.2 / 100000).toFixed(1) + "L" : Math.round(yMax * 1.2 / 1000) + "k")}`,
-        `₹${(yMax * 0.8 >= 100000 ? (yMax * 0.8 / 100000).toFixed(1) + "L" : Math.round(yMax * 0.8 / 1000) + "k")}`,
-        `₹${(yMax * 0.4 >= 100000 ? (yMax * 0.4 / 100000).toFixed(1) + "L" : Math.round(yMax * 0.4 / 1000) + "k")}`,
-        "₹0",
-      ];
 
       return {
         subtitleOrders: "Annual Monthly Order Volume (12 Months)",
@@ -796,10 +887,18 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
         startX: 28,
         stepX: 42,
         capsuleWidth: 16,
+        hasRevenue: totalRev > 0,
       };
     }
 
     // Default: TODAY
+    const todayOrders = orders.filter((o) => {
+      if (o.status === "CANCELLED" || o.status === "REJECTED") return false;
+      const dt = new Date(o.rawCreatedAt || o.createdAt || Date.now());
+      if (isNaN(dt.getTime())) return false;
+      return getISTDate(dt) === istToday;
+    });
+
     const hourSlots = [
       { label: "8a", h: 8 }, { label: "9a", h: 9 }, { label: "10a", h: 10 },
       { label: "11a", h: 11 }, { label: "12p", h: 12 }, { label: "1p", h: 13 },
@@ -809,9 +908,9 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
     ];
 
     const buckets = hourSlots.map((slot) => {
-      const slotOrders = orders.filter((o) => {
+      const slotOrders = todayOrders.filter((o) => {
         const dt = new Date(o.rawCreatedAt || o.createdAt || Date.now());
-        const h = dt.getHours();
+        const h = getISTHour(dt);
         if (slot.h === 8) return h <= 8;
         if (slot.h === 21) return h >= 21;
         return h === slot.h;
@@ -826,18 +925,19 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
       };
     });
 
-    const totalOrdersCount = orders.length;
-    const totalRev = orders.filter(isOrderPaid).reduce((sum, o) => sum + (o.totalRupees || 0), 0);
-    const maxRev = Math.max(...buckets.map((b) => b.revenue), 100);
+    const totalOrdersCount = todayOrders.length;
+    const totalRev = todayOrders.filter(isOrderPaid).reduce((sum, o) => sum + (o.totalRupees || 0), 0);
+    const maxRev = Math.max(...buckets.map((b) => b.revenue), 0);
+    const { scaleMax, labels: yAxisLabels } = getNiceYAxisScale(maxRev);
 
     const pts = buckets.map((b, i) => ({
       x: 28 + i * 35,
-      y: Math.max(10, Math.min(125, 125 - Math.round((b.revenue / maxRev) * 105))),
+      y: Math.max(10, Math.min(125, totalRev > 0 ? 125 - Math.round((b.revenue / scaleMax) * 115) : 125)),
     }));
 
     const baselinePts = pts.map((p) => ({
       x: p.x,
-      y: Math.min(125, Math.max(15, p.y * 1.06 + 5)),
+      y: totalRev > 0 && p.y < 125 ? Math.min(125, Math.max(12, p.y * 1.05 + 4)) : 125,
     }));
 
     let peakIdx = 0;
@@ -849,17 +949,9 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
       }
     });
 
-    const yMax = Math.max(maxRev, 1000);
-    const yAxisLabels = [
-      `₹${Math.round((yMax * 1.2) / 1000)}k`,
-      `₹${Math.round((yMax * 0.8) / 1000)}k`,
-      `₹${Math.round((yMax * 0.4) / 1000)}k`,
-      "₹0",
-    ];
-
     return {
       subtitleOrders: "Real-time Hourly Customer Velocity (8AM – 10PM)",
-      badgeOrders: `Live · ${totalOrdersCount} Orders`,
+      badgeOrders: totalOrdersCount === 0 ? "0 Orders Today" : `Live · ${totalOrdersCount} Orders`,
       buckets,
       subtitleRevenue: "Live Velocity Wave from Actual Placed Orders",
       badgeRevenue: `₹${totalRev.toLocaleString("en-IN")} Today`,
@@ -868,12 +960,138 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
       curveYellow: buildSmoothSpline(baselinePts),
       curvePurple: buildSmoothSpline(pts),
       peakX: pts[peakIdx]?.x ?? 255,
-      peakY: pts[peakIdx]?.y ?? 10,
+      peakY: pts[peakIdx]?.y ?? 125,
       startX: 28,
       stepX: 35,
       capsuleWidth: 18,
+      hasRevenue: totalRev > 0,
     };
   };
+
+  // Timeframe-scoped orders and aggregates for KPI cards, Best Sellers, and Payment Split
+  const timeframeStats = useMemo(() => {
+    const isOrderPaid = (o: AdminOrderRecord) =>
+      o.status !== "CANCELLED" &&
+      o.status !== "REJECTED" &&
+      Boolean(
+        o.paymentStatus?.startsWith("PAID") ||
+        o.paymentMethod === "UPI" ||
+        o.paymentMethod === "CASH" ||
+        o.paymentMethod === "CARD" ||
+        o.paymentMethod === "ONLINE"
+      ) &&
+      o.paymentMethod !== "COMPLIMENTARY" &&
+      o.paymentMethod !== "PENDING" &&
+      o.paymentStatus !== "UNPAID (PENDING)" &&
+      o.paymentStatus !== "COMPLIMENTARY";
+
+    const now = new Date();
+    const istToday = now.toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+    const nowMs = now.getTime();
+    const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
+
+    const scopedOrders = orders.filter((o) => {
+      if (o.status === "CANCELLED" || o.status === "REJECTED") return false;
+      const dt = new Date(o.rawCreatedAt || o.createdAt || Date.now());
+      if (isNaN(dt.getTime())) return false;
+      const istDay = dt.toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+
+      if (timeframe === "TODAY") {
+        return istDay === istToday;
+      }
+      if (timeframe === "WEEKLY") {
+        const age = nowMs - dt.getTime();
+        return age >= 0 && age <= sevenDaysMs;
+      }
+      if (timeframe === "MONTHLY") {
+        return dt.getFullYear() === now.getFullYear() && dt.getMonth() === now.getMonth();
+      }
+      if (timeframe === "YEARLY") {
+        return dt.getFullYear() === now.getFullYear();
+      }
+      return true;
+    });
+
+    const ordersCount = scopedOrders.length;
+    const grossRevenue = scopedOrders
+      .filter(isOrderPaid)
+      .reduce((sum, o) => sum + (o.totalRupees || 0), 0);
+    const avgOrderRupees = ordersCount > 0 ? Math.round(grossRevenue / ordersCount) : 0;
+
+    // Item tally for best sellers in this timeframe
+    const itemSales = new Map<string, { qty: number; rev: number }>();
+    for (const o of scopedOrders) {
+      for (const item of (o.itemsDetail || [])) {
+        const current = itemSales.get(item.name) || { qty: 0, rev: 0 };
+        current.qty += item.qty;
+        current.rev += item.subtotalRupees;
+        itemSales.set(item.name, current);
+      }
+    }
+
+    const sortedItems = Array.from(itemSales.entries())
+      .sort((a, b) => b[1].qty - a[1].qty)
+      .slice(0, 5);
+
+    const maxQty = sortedItems.length > 0 ? sortedItems[0][1].qty : 1;
+    const bestSellers: AdminBestSeller[] = sortedItems.map(([name, data]) => ({
+      name,
+      sales: data.qty,
+      rev: `₹${data.rev.toLocaleString("en-IN")}`,
+      pct: Math.min(100, Math.max(15, Math.round((data.qty / maxQty) * 100))),
+    }));
+
+    const topSeller = bestSellers[0] || {
+      name: timeframe === "TODAY" ? "No sales today" : "No sales in period",
+      sales: 0,
+    };
+
+    // Payment split in this timeframe
+    const payCounts = { UPI: 0, CASH: 0, CARD: 0 };
+    let paidOrdersCount = 0;
+    for (const o of scopedOrders) {
+      if (!isOrderPaid(o)) continue;
+      paidOrdersCount++;
+      const m = (o.paymentMethod || "").toUpperCase();
+      const st = (o.paymentStatus || "").toUpperCase();
+      if (m.includes("CASH") || st.includes("CASH")) {
+        payCounts.CASH++;
+      } else if (m.includes("CARD") || st.includes("CARD") || m.includes("ONLINE") || st.includes("ONLINE")) {
+        payCounts.CARD++;
+      } else {
+        payCounts.UPI++;
+      }
+    }
+
+    const totalPaid = paidOrdersCount > 0 ? paidOrdersCount : 1;
+    const paymentSplit: AdminPaymentSplit[] = [
+      {
+        mode: "UPI Direct QR",
+        pct: paidOrdersCount > 0 ? `${Math.round((payCounts.UPI / totalPaid) * 100)}%` : "0%",
+        color: "#48BB78",
+      },
+      {
+        mode: "Counter Cash",
+        pct: paidOrdersCount > 0 ? `${Math.round((payCounts.CASH / totalPaid) * 100)}%` : "0%",
+        color: "#ED8936",
+      },
+      {
+        mode: "Card / NFC",
+        pct: paidOrdersCount > 0 ? `${Math.round((payCounts.CARD / totalPaid) * 100)}%` : "0%",
+        color: "#4299E1",
+      },
+    ];
+
+    return {
+      ordersCount,
+      grossRevenue,
+      avgOrderRupees,
+      topSeller,
+      bestSellers,
+      paymentSplit,
+      paidOrdersCount,
+    };
+  }, [orders, timeframe]);
 
   // Dynamic Menu Stock Management (simulated local persistence)
   const [soldOutItems, setSoldOutItems] = useState<Record<string, boolean>>({
@@ -1066,6 +1284,25 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
               return;
             }
           }
+        }
+
+        if (ev.type === "TABLE_DELETED") {
+          const targetId = ev.tableId || (ev.metadata?.id as string);
+          const targetLabel = (ev.tableLabel || (ev.metadata?.label as string) || "").trim().toLowerCase();
+          setOverviewData((prev) => {
+            if (!prev) return prev;
+            const updatedTables = (prev.tables || []).filter(
+              (t) => (targetId ? t.id !== targetId : true) && (targetLabel ? t.label.trim().toLowerCase() !== targetLabel : true)
+            );
+            return {
+              ...prev,
+              tables: updatedTables,
+              kpis: {
+                ...prev.kpis,
+                totalTablesCount: Math.max(0, updatedTables.length),
+              },
+            };
+          });
         }
 
         void refreshData(true);
@@ -1452,14 +1689,28 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3.5">
               {[
                 {
-                  label: "TODAY'S ORDERS",
-                  value: `${overviewData?.kpis.todaysOrders ?? orders.length}`,
-                  trend: "Live synchronized",
+                  label:
+                    timeframe === "TODAY"
+                      ? "TODAY'S ORDERS"
+                      : timeframe === "WEEKLY"
+                      ? "WEEKLY ORDERS"
+                      : timeframe === "MONTHLY"
+                      ? "MONTHLY ORDERS"
+                      : "ANNUAL ORDERS",
+                  value: `${timeframeStats.ordersCount}`,
+                  trend:
+                    timeframe === "TODAY"
+                      ? "Live synchronized"
+                      : timeframe === "WEEKLY"
+                      ? "Past 7 days"
+                      : timeframe === "MONTHLY"
+                      ? "This month"
+                      : "This calendar year",
                   color: "#F2C84B",
                 },
                 {
                   label: "GROSS REVENUE",
-                  value: `₹${(overviewData?.kpis.grossRevenueRupees ?? 0).toLocaleString("en-IN")}`,
+                  value: `₹${timeframeStats.grossRevenue.toLocaleString("en-IN")}`,
                   trend: "Paid & Verified",
                   color: "#48BB78",
                 },
@@ -1477,14 +1728,14 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
                 },
                 {
                   label: "AVERAGE ORDER",
-                  value: `₹${overviewData?.kpis.avgOrderRupees ?? 0}`,
+                  value: `₹${timeframeStats.avgOrderRupees}`,
                   trend: "Per ticket avg",
                   color: "#4299E1",
                 },
                 {
                   label: "TOP SELLER",
-                  value: `${overviewData?.kpis.topSellerName ?? "Flat White"}`,
-                  trend: `${overviewData?.kpis.topSellerUnits ?? 0} sold`,
+                  value: `${timeframeStats.topSeller.name}`,
+                  trend: `${timeframeStats.topSeller.sales} sold`,
                   color: "#9F7AEA",
                 },
               ].map((kpi, idx) => (
@@ -1794,15 +2045,17 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
                             className="transition-all duration-300"
                           />
 
-                          <circle
-                            cx={tfData.peakX}
-                            cy={tfData.peakY}
-                            r="5"
-                            fill="#754CFF"
-                            stroke="#FFFFFF"
-                            strokeWidth="2.5"
-                            className="animate-pulse"
-                          />
+                          {tfData.hasRevenue && (
+                            <circle
+                              cx={tfData.peakX}
+                              cy={tfData.peakY}
+                              r="5"
+                              fill="#754CFF"
+                              stroke="#FFFFFF"
+                              strokeWidth="2.5"
+                              className="animate-pulse"
+                            />
+                          )}
                         </svg>
                       </div>
                     </div>
@@ -1822,29 +2075,35 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               {/* Chart 3: Best-Selling Items Breakdown */}
               <div className="rounded-3xl border border-[#C9AE8B]/40 dark:border-stone-800 bg-[#FAF4EB] dark:bg-[#1A1715] p-5 shadow-sm space-y-4 transition-colors">
-                <h3 className="font-serif text-base font-bold text-[#241F1C] dark:text-white">Best-Selling Items</h3>
+                <div className="flex items-center justify-between">
+                  <h3 className="font-serif text-base font-bold text-[#241F1C] dark:text-white">Best-Selling Items</h3>
+                  <span className="text-[11px] font-mono text-[#8C6D53] dark:text-stone-400">
+                    {timeframe === "TODAY" ? "Today" : timeframe === "WEEKLY" ? "Past 7 Days" : timeframe === "MONTHLY" ? "This Month" : "This Year"}
+                  </span>
+                </div>
                 <div className="space-y-3">
-                  {(overviewData?.bestSellers || [
-                    { name: "Artisanal Flat White", sales: 14, rev: "₹2,520", pct: 90 },
-                    { name: "Bun Makkhan", sales: 12, rev: "₹1,080", pct: 75 },
-                    { name: "Sourdough Mushroom Melt", sales: 8, rev: "₹2,240", pct: 55 },
-                    { name: "Iced Cascara Cold Brew", sales: 6, rev: "₹1,320", pct: 40 },
-                  ]).map((item, i) => (
-                    <div key={i} className="space-y-1">
-                      <div className="flex justify-between text-xs">
-                        <span className="font-bold text-[#241F1C] dark:text-stone-200">{item.name}</span>
-                        <span className="font-mono text-[#725039] dark:text-stone-400">
-                          {item.sales} sold • {item.rev}
-                        </span>
-                      </div>
-                      <div className="h-2 w-full rounded-full bg-[#E8DCB8] dark:bg-stone-800 overflow-hidden">
-                        <div
-                          className="h-full rounded-full bg-[#B72E35]"
-                          style={{ width: `${item.pct}%` }}
-                        />
-                      </div>
+                  {timeframeStats.bestSellers.length === 0 ? (
+                    <div className="py-8 text-center text-xs font-mono text-stone-500">
+                      No items sold in this period yet.
                     </div>
-                  ))}
+                  ) : (
+                    timeframeStats.bestSellers.map((item, i) => (
+                      <div key={i} className="space-y-1">
+                        <div className="flex justify-between text-xs">
+                          <span className="font-bold text-[#241F1C] dark:text-stone-200">{item.name}</span>
+                          <span className="font-mono text-[#725039] dark:text-stone-400">
+                            {item.sales} sold • {item.rev}
+                          </span>
+                        </div>
+                        <div className="h-2 w-full rounded-full bg-[#E8DCB8] dark:bg-stone-800 overflow-hidden">
+                          <div
+                            className="h-full rounded-full bg-[#B72E35]"
+                            style={{ width: `${item.pct}%` }}
+                          />
+                        </div>
+                      </div>
+                    ))
+                  )}
                 </div>
               </div>
 
@@ -1870,13 +2129,14 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
 
                 {/* Payment Methods Split */}
                 <div className="rounded-3xl border border-[#C9AE8B]/40 dark:border-stone-800 bg-[#FAF4EB] dark:bg-[#1A1715] p-5 shadow-sm space-y-3 transition-colors">
-                  <h3 className="font-serif text-sm font-bold text-[#241F1C] dark:text-white">Payment Split</h3>
+                  <div className="flex items-center justify-between">
+                    <h3 className="font-serif text-sm font-bold text-[#241F1C] dark:text-white">Payment Split</h3>
+                    <span className="text-[10px] font-mono text-[#8C6D53] dark:text-stone-400">
+                      {timeframeStats.paidOrdersCount} Paid
+                    </span>
+                  </div>
                   <div className="space-y-2.5 text-xs">
-                    {(overviewData?.paymentSplit || [
-                      { mode: "UPI Direct QR", pct: "70%", color: "#48BB78" },
-                      { mode: "Counter Cash", pct: "20%", color: "#ED8936" },
-                      { mode: "Card / NFC", pct: "10%", color: "#4299E1" },
-                    ]).map((p, idx) => (
+                    {timeframeStats.paymentSplit.map((p, idx) => (
                       <div key={idx} className="flex items-center justify-between">
                         <span className="text-[#5C4533] dark:text-stone-300">{p.mode}</span>
                         <span className="font-mono font-bold" style={{ color: p.color }}>
@@ -2155,7 +2415,9 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
         })()}
 
         {/* Tab 3: TABLES & SECTIONS MANAGEMENT */}
-        {activeTab === "tables" && <TableManager />}
+        <div className={activeTab === "tables" ? "block" : "hidden"}>
+          <TableManager />
+        </div>
 
         {/* Tab 4: MENU MANAGEMENT & DISH EDITOR */}
         {activeTab === "menu" && (
@@ -3826,7 +4088,9 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
                         filter="url(#purpleGlowAnalytics)"
                       />
 
-                      <circle cx={tfData.peakX} cy={tfData.peakY} r="5" fill="#754CFF" stroke="#FFFFFF" strokeWidth="2.5" className="animate-pulse" />
+                      {tfData.hasRevenue && (
+                        <circle cx={tfData.peakX} cy={tfData.peakY} r="5" fill="#754CFF" stroke="#FFFFFF" strokeWidth="2.5" className="animate-pulse" />
+                      )}
                     </svg>
                   </div>
                 </div>
