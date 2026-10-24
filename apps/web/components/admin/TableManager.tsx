@@ -3,6 +3,7 @@
 import React, { useState, useMemo, useEffect } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import QRCode from "qrcode";
 import {
   Armchair,
@@ -230,6 +231,72 @@ function printHtmlContent(htmlContent: string, title: string) {
   }, 350);
 }
 
+const SESSION_DELETED_KEY = "smol_deleted_tables_v1";
+
+function getSessionDeletedStore(): { ids: string[]; labels: string[] } {
+  if (typeof window === "undefined") return { ids: [], labels: [] };
+  try {
+    const raw = sessionStorage.getItem(SESSION_DELETED_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      return {
+        ids: Array.isArray(parsed.ids) ? parsed.ids : [],
+        labels: Array.isArray(parsed.labels) ? parsed.labels : [],
+      };
+    }
+  } catch {}
+  return { ids: [], labels: [] };
+}
+
+function addSessionDeletedTable(id: string, label: string) {
+  if (typeof window === "undefined") return;
+  try {
+    const store = getSessionDeletedStore();
+    const idSet = new Set(store.ids);
+    const labelSet = new Set(store.labels.map((l) => l.toLowerCase()));
+    if (id && id.trim()) idSet.add(id.trim());
+    if (label && label.trim()) {
+      labelSet.add(label.trim().toLowerCase());
+      normalizeTableLabel(label).forEach((v) => labelSet.add(v.toLowerCase()));
+    }
+    sessionStorage.setItem(
+      SESSION_DELETED_KEY,
+      JSON.stringify({
+        ids: Array.from(idSet),
+        labels: Array.from(labelSet),
+      })
+    );
+  } catch {}
+}
+
+function clearSessionDeletedTable(id?: string, label?: string) {
+  if (typeof window === "undefined") return;
+  try {
+    const store = getSessionDeletedStore();
+    let updatedIds = store.ids;
+    let updatedLabels = store.labels;
+    if (id) {
+      updatedIds = updatedIds.filter((item) => item !== id.trim());
+    }
+    if (label) {
+      const vars = new Set(normalizeTableLabel(label).map((v) => v.toLowerCase()));
+      vars.add(label.trim().toLowerCase());
+      updatedLabels = updatedLabels.filter((item) => !vars.has(item.toLowerCase()));
+    }
+    sessionStorage.setItem(
+      SESSION_DELETED_KEY,
+      JSON.stringify({
+        ids: updatedIds,
+        labels: updatedLabels,
+      })
+    );
+  } catch {}
+}
+
+// Module-level in-memory cache for instant 0ms tab switching
+let __cachedTablesMemory: DiningTableRecord[] | null = null;
+let __cachedSectionsMemory: string[] | null = null;
+
 interface TableManagerProps {
   initialTables?: DiningTableRecord[];
   initialSections?: string[];
@@ -239,12 +306,38 @@ export const TableManager: React.FC<TableManagerProps> = ({
   initialTables = [],
   initialSections = [],
 }) => {
-  const [tables, setTables] = useState<DiningTableRecord[]>(initialTables);
-  const [sections, setSections] = useState<string[]>(
-    initialSections.length > 0
-      ? initialSections
-      : ["smol-cafe", "smol-lounge", "smol-terrace"]
-  );
+  const router = useRouter();
+
+  // Instant 0ms memory initialization:
+  const [tables, setTables] = useState<DiningTableRecord[]>(() => {
+    const sessionStore = getSessionDeletedStore();
+    const isNotDeleted = (t: DiningTableRecord) =>
+      !sessionStore.ids.includes(t.id) && !sessionStore.labels.includes(t.label.trim().toLowerCase());
+
+    if (initialTables && initialTables.length > 0) {
+      const filtered = initialTables.filter(isNotDeleted);
+      __cachedTablesMemory = filtered;
+      return filtered;
+    }
+    if (__cachedTablesMemory && __cachedTablesMemory.length > 0) {
+      return __cachedTablesMemory.filter(isNotDeleted);
+    }
+    return [];
+  });
+
+  const [sections, setSections] = useState<string[]>(() => {
+    if (initialSections && initialSections.length > 0) return initialSections;
+    if (__cachedSectionsMemory && __cachedSectionsMemory.length > 0) return __cachedSectionsMemory;
+    return ["smol-cafe", "smol-lounge", "smol-terrace"];
+  });
+
+  // Track whether we are doing the initial fetch and have zero cached tables
+  const [isInitialLoading, setIsInitialLoading] = useState<boolean>(() => {
+    if (initialTables && initialTables.length > 0) return false;
+    if (__cachedTablesMemory && __cachedTablesMemory.length > 0) return false;
+    return true;
+  });
+
   const [selectedSection, setSelectedSection] = useState<string>("ALL");
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [mounted, setMounted] = useState(false);
@@ -268,6 +361,7 @@ export const TableManager: React.FC<TableManagerProps> = ({
         // ignore
       }
     }
+    clearSessionDeletedTable(id, label);
   }, []);
 
   useEffect(() => {
@@ -276,13 +370,16 @@ export const TableManager: React.FC<TableManagerProps> = ({
 
   const refreshTables = React.useCallback(async () => {
     try {
+      const sessionStore = getSessionDeletedStore();
       const res = await fetchTablesAndSectionsAction();
       if (res.success && res.tables) {
         setTables((prev) => {
           const serverTables = res.tables.filter(
             (t) =>
               !deletedIdsRef.current.has(t.id) &&
-              !deletedLabelsRef.current.has(t.label.trim().toLowerCase())
+              !deletedLabelsRef.current.has(t.label.trim().toLowerCase()) &&
+              !sessionStore.ids.includes(t.id) &&
+              !sessionStore.labels.includes(t.label.trim().toLowerCase())
           );
           const serverIds = new Set(serverTables.map((t) => t.id));
           const serverLabels = new Set(serverTables.map((t) => t.label.trim().toLowerCase()));
@@ -293,27 +390,40 @@ export const TableManager: React.FC<TableManagerProps> = ({
               !serverIds.has(t.id) &&
               !serverLabels.has(t.label.trim().toLowerCase()) &&
               !deletedIdsRef.current.has(t.id) &&
-              !deletedLabelsRef.current.has(t.label.trim().toLowerCase())
+              !deletedLabelsRef.current.has(t.label.trim().toLowerCase()) &&
+              !sessionStore.ids.includes(t.id) &&
+              !sessionStore.labels.includes(t.label.trim().toLowerCase())
           );
 
-          return [...serverTables, ...localPending];
+          const combined = [...serverTables, ...localPending];
+          __cachedTablesMemory = combined;
+          return combined;
         });
         if (res.sections && res.sections.length > 0) {
           setSections(res.sections);
+          __cachedSectionsMemory = res.sections;
         }
       }
     } catch {
       // ignore network errors
+    } finally {
+      setIsInitialLoading(false);
     }
   }, []);
 
   React.useEffect(() => {
+    const sessionStore = getSessionDeletedStore();
+    sessionStore.ids.forEach((id) => deletedIdsRef.current.add(id));
+    sessionStore.labels.forEach((l) => deletedLabelsRef.current.add(l));
+
     if (initialTables && initialTables.length > 0) {
       setTables((prev) => {
         const serverTables = initialTables.filter(
           (t) =>
             !deletedIdsRef.current.has(t.id) &&
-            !deletedLabelsRef.current.has(t.label.trim().toLowerCase())
+            !deletedLabelsRef.current.has(t.label.trim().toLowerCase()) &&
+            !sessionStore.ids.includes(t.id) &&
+            !sessionStore.labels.includes(t.label.trim().toLowerCase())
         );
         const serverIds = new Set(serverTables.map((t) => t.id));
         const serverLabels = new Set(serverTables.map((t) => t.label.trim().toLowerCase()));
@@ -324,11 +434,15 @@ export const TableManager: React.FC<TableManagerProps> = ({
             !serverIds.has(t.id) &&
             !serverLabels.has(t.label.trim().toLowerCase()) &&
             !deletedIdsRef.current.has(t.id) &&
-            !deletedLabelsRef.current.has(t.label.trim().toLowerCase())
+            !deletedLabelsRef.current.has(t.label.trim().toLowerCase()) &&
+            !sessionStore.ids.includes(t.id) &&
+            !sessionStore.labels.includes(t.label.trim().toLowerCase())
         );
 
         return [...serverTables, ...localPending];
       });
+      // Always refresh from server in background to ensure fresh data
+      refreshTables();
     } else {
       refreshTables();
     }
@@ -421,6 +535,7 @@ export const TableManager: React.FC<TableManagerProps> = ({
         const targetLabel = event.tableLabel || (event.metadata?.label as string);
         if (targetId) deletedIdsRef.current.add(targetId);
         if (targetLabel) deletedLabelsRef.current.add(targetLabel.trim().toLowerCase());
+        addSessionDeletedTable(targetId || "", targetLabel || "");
 
         setTables((prev) =>
           prev.filter((t) => {
@@ -461,6 +576,7 @@ export const TableManager: React.FC<TableManagerProps> = ({
   const [isAddModalOpen, setIsAddModalOpen] = useState<boolean>(false);
   const [editingTable, setEditingTable] = useState<DiningTableRecord | null>(null);
   const [deletingTable, setDeletingTable] = useState<DiningTableRecord | null>(null);
+  const [isDeletingTable, setIsDeletingTable] = useState<boolean>(false);
   const [isSectionsModalOpen, setIsSectionsModalOpen] = useState<boolean>(false);
   const [inspectingTag, setInspectingTag] = useState<TableJsonTag | null>(null);
   const [viewingQrTable, setViewingQrTable] = useState<DiningTableRecord | null>(null);
@@ -992,48 +1108,56 @@ export const TableManager: React.FC<TableManagerProps> = ({
     }
   };
 
-  // Delete Table (0ms instant optimistic update)
+  // Delete Table (Awaits database deletion with persistent tombstone)
   const handleConfirmDelete = async () => {
-    if (!deletingTable) return;
+    if (!deletingTable || isDeletingTable) return;
     const target = deletingTable;
-    const previousTables = tables;
 
+    setIsDeletingTable(true);
     deletedIdsRef.current.add(target.id);
     deletedLabelsRef.current.add(target.label.trim().toLowerCase());
+    addSessionDeletedTable(target.id, target.label);
 
-    // 1. Instant 0ms Optimistic removal & modal close
-    setTables((prev) =>
-      prev.filter(
-        (t) =>
-          t.id !== target.id &&
-          t.label.trim().toLowerCase() !== target.label.trim().toLowerCase()
-      )
-    );
-    setDeletingTable(null);
-    setFeedback({ type: "success", text: `Table ${target.label} deleted successfully.` });
-
-    broadcastSyncEvent({
-      type: "TABLE_DELETED",
-      tableId: target.id,
-      tableLabel: target.label,
-      metadata: { id: target.id, label: target.label },
-    });
-
-    // 2. Background database deletion
     try {
-      const res = await deleteTableAction(target.id);
-      if (!res.success) {
-        // Rollback on genuine failure
+      const res = await deleteTableAction(target.id, target.label);
+      if (res.success) {
+        // Remove from local table state
+        setTables((prev) =>
+          prev.filter(
+            (t) =>
+              t.id !== target.id &&
+              t.label.trim().toLowerCase() !== target.label.trim().toLowerCase()
+          )
+        );
+        setDeletingTable(null);
+        setFeedback({ type: "success", text: res.message || `Table ${target.label} deleted successfully.` });
+
+        broadcastSyncEvent({
+          type: "TABLE_DELETED",
+          tableId: target.id,
+          tableLabel: target.label,
+          metadata: { id: target.id, label: target.label },
+        });
+
+        try {
+          router.refresh();
+        } catch {}
+      } else {
+        // Rollback
         deletedIdsRef.current.delete(target.id);
         deletedLabelsRef.current.delete(target.label.trim().toLowerCase());
-        setTables(previousTables);
+        clearSessionDeletedTable(target.id, target.label);
         setFeedback({ type: "error", text: res.message || "Could not delete table." });
+        setDeletingTable(null);
       }
     } catch {
       deletedIdsRef.current.delete(target.id);
       deletedLabelsRef.current.delete(target.label.trim().toLowerCase());
-      setTables(previousTables);
+      clearSessionDeletedTable(target.id, target.label);
       setFeedback({ type: "error", text: "Error deleting table." });
+      setDeletingTable(null);
+    } finally {
+      setIsDeletingTable(false);
     }
   };
 
@@ -1196,7 +1320,9 @@ export const TableManager: React.FC<TableManagerProps> = ({
               <span className="text-[10.5px] sm:text-[11px] font-mono uppercase text-[#725039] dark:text-stone-400">Total Tables</span>
               <Armchair className="h-4 w-4 text-[#B72E35] dark:text-[#F2C84B]" />
             </div>
-            <p className="mt-1 text-xl sm:text-2xl font-serif font-bold text-[#241F1C] dark:text-white">{stats.total}</p>
+            <p className="mt-1 text-xl sm:text-2xl font-serif font-bold text-[#241F1C] dark:text-white">
+              {isInitialLoading && tables.length === 0 ? "—" : stats.total}
+            </p>
           </div>
 
           <div className="rounded-2xl border border-[#C9AE8B]/40 dark:border-stone-800 bg-[#FAF4EB] dark:bg-[#1C1815] p-3 sm:p-3.5 shadow-xs">
@@ -1205,7 +1331,7 @@ export const TableManager: React.FC<TableManagerProps> = ({
               <span className="h-2.5 w-2.5 rounded-full bg-emerald-500 animate-pulse" />
             </div>
             <p className="mt-1 text-xl sm:text-2xl font-serif font-bold text-emerald-700 dark:text-emerald-400 truncate">
-              {stats.occupied} <span className="text-xs font-mono font-normal text-stone-500">active</span>
+              {isInitialLoading && tables.length === 0 ? "—" : stats.occupied} <span className="text-xs font-mono font-normal text-stone-500">active</span>
             </p>
           </div>
 
@@ -1215,7 +1341,7 @@ export const TableManager: React.FC<TableManagerProps> = ({
               <Users className="h-4 w-4 text-[#725039] dark:text-stone-400" />
             </div>
             <p className="mt-1 text-xl sm:text-2xl font-serif font-bold text-[#241F1C] dark:text-white truncate">
-              {stats.totalSeats} <span className="text-xs font-mono font-normal text-stone-500">seats</span>
+              {isInitialLoading && tables.length === 0 ? "—" : stats.totalSeats} <span className="text-xs font-mono font-normal text-stone-500">seats</span>
             </p>
           </div>
 
@@ -1275,7 +1401,31 @@ export const TableManager: React.FC<TableManagerProps> = ({
         </div>
 
         {/* Tables Floor Grid */}
-        {filteredTables.length === 0 ? (
+        {isInitialLoading && filteredTables.length === 0 ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-3 sm:gap-4 animate-pulse">
+            {[1, 2, 3, 4].map((n) => (
+              <div
+                key={n}
+                className="h-60 rounded-3xl border border-[#C9AE8B]/30 dark:border-stone-800 bg-[#FAF4EB]/60 dark:bg-[#1A1715]/60 p-5 flex flex-col justify-between"
+              >
+                <div className="space-y-3">
+                  <div className="flex justify-between items-center">
+                    <div className="h-6 w-16 bg-[#C9AE8B]/20 dark:bg-stone-800 rounded-lg" />
+                    <div className="h-4 w-12 bg-[#C9AE8B]/20 dark:bg-stone-800 rounded-full" />
+                  </div>
+                  <div className="h-4 w-24 bg-[#C9AE8B]/15 dark:bg-stone-800 rounded-md" />
+                  <div className="h-3 w-28 bg-[#C9AE8B]/10 dark:bg-stone-800 rounded-md mt-3" />
+                </div>
+                <div className="space-y-2 pt-4 border-t border-[#C9AE8B]/20 dark:border-stone-800">
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="h-7 bg-[#C9AE8B]/20 dark:bg-stone-800 rounded-xl" />
+                    <div className="h-7 bg-[#C9AE8B]/20 dark:bg-stone-800 rounded-xl" />
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : filteredTables.length === 0 ? (
           <div className="text-center py-16 rounded-3xl border border-dashed border-[#C9AE8B]/50 dark:border-stone-800 bg-[#FAF4EB]/40 dark:bg-stone-900/40 p-6">
             <Armchair className="h-10 w-10 text-stone-400 mx-auto mb-2 opacity-50" />
             <p className="font-serif text-base font-bold text-[#241F1C] dark:text-white">No Tables Found</p>
@@ -1882,18 +2032,26 @@ export const TableManager: React.FC<TableManagerProps> = ({
             <div className="flex items-center justify-end gap-2 pt-2">
               <button
                 type="button"
-                onClick={() => setDeletingTable(null)}
-                className="rounded-xl px-3.5 py-1.5 text-xs font-mono text-stone-600 dark:text-stone-400 hover:bg-black/5"
+                onClick={() => !isDeletingTable && setDeletingTable(null)}
+                disabled={isDeletingTable}
+                className="rounded-xl px-3.5 py-1.5 text-xs font-mono text-stone-600 dark:text-stone-400 hover:bg-black/5 disabled:opacity-40"
               >
                 Cancel
               </button>
               <button
                 type="button"
                 onClick={handleConfirmDelete}
-                disabled={isLoading}
-                className="rounded-xl bg-rose-600 hover:bg-rose-700 px-4 py-1.5 text-xs font-mono font-bold text-white shadow-md disabled:opacity-50"
+                disabled={isDeletingTable}
+                className="inline-flex items-center gap-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 px-4 py-1.5 text-xs font-mono font-bold text-white shadow-md disabled:opacity-50"
               >
-                {isLoading ? "Deleting..." : "Confirm Delete"}
+                {isDeletingTable ? (
+                  <>
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    <span>Deleting...</span>
+                  </>
+                ) : (
+                  <span>Confirm Delete</span>
+                )}
               </button>
             </div>
           </div>

@@ -183,11 +183,18 @@ export async function fetchAdminOverviewAction(forceRefresh = false): Promise<{
     const sessionToTableMap = new Map<string, string>();
     const activeTableIds = new Set<string>();
 
+    const getISTDateString = (d: Date) =>
+      d.toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+    const istTodayString = getISTDateString(new Date());
+
     for (const s of tableSessions) {
       const label = tableMap.get(s.table_id) || "01";
       sessionToTableMap.set(s.id, label);
       if (s.status === "ACTIVE" || s.status === "OPEN") {
-        activeTableIds.add(label);
+        const sessionAgeMs = Date.now() - new Date(s.opened_at || s.created_at || Date.now()).getTime();
+        if (sessionAgeMs <= 18 * 60 * 60 * 1000) {
+          activeTableIds.add(label);
+        }
       }
     }
 
@@ -254,9 +261,13 @@ export async function fetchAdminOverviewAction(forceRefresh = false): Promise<{
 
     // 4. Map Orders and compute aggregates
     let grossRevenuePaise = 0;
+    let todayOrdersCount = 0;
+    let todayGrossRevenuePaise = 0;
     let pendingKdsTickets = 0;
     const itemSalesCount = new Map<string, { qty: number; revenuePaise: number }>();
+    const todayItemSalesCount = new Map<string, { qty: number; revenuePaise: number }>();
     const paymentMethodCounts: Record<string, number> = { UPI: 0, CASH: 0, CARD: 0 };
+    const todayPaymentMethodCounts: Record<string, number> = { UPI: 0, CASH: 0, CARD: 0 };
     const hourlyCounts: Record<string, number> = {
       "8a": 0, "9a": 0, "10a": 0, "11a": 0, "12p": 0,
       "1p": 0, "2p": 0, "3p": 0, "4p": 0, "5p": 0,
@@ -269,6 +280,9 @@ export async function fetchAdminOverviewAction(forceRefresh = false): Promise<{
     for (let orderIndex = 0; orderIndex < orders.length; orderIndex++) {
       const o = orders[orderIndex];
       const orderDate = new Date(o.created_at || Date.now());
+      const orderAgeMs = Date.now() - orderDate.getTime();
+      const isTodayOrder = getISTDateString(orderDate) === istTodayString;
+
       // Table label resolution
       let tableLabel = "01";
       if (o.table_session_id) {
@@ -283,8 +297,13 @@ export async function fetchAdminOverviewAction(forceRefresh = false): Promise<{
         }
       }
 
-      // Add to active tables if order is not completed/cancelled
-      if (o.status !== "COMPLETED" && o.status !== "CANCELLED" && o.status !== "REJECTED") {
+      // Add to active tables only if order is actively in progress and recent (< 14 hours)
+      if (
+        o.status !== "COMPLETED" &&
+        o.status !== "CANCELLED" &&
+        o.status !== "REJECTED" &&
+        orderAgeMs <= 14 * 60 * 60 * 1000
+      ) {
         activeTableIds.add(tableLabel);
       }
 
@@ -356,6 +375,21 @@ export async function fetchAdminOverviewAction(forceRefresh = false): Promise<{
       }
 
       if (o.status !== "CANCELLED" && o.status !== "REJECTED") {
+        if (isTodayOrder) {
+          todayOrdersCount++;
+          if (isPaid) {
+            todayGrossRevenuePaise += o.total_snapshot || 0;
+            todayPaymentMethodCounts[paymentCategory] = (todayPaymentMethodCounts[paymentCategory] || 0) + 1;
+          }
+          // Tally today's items
+          for (const item of orderItems) {
+            const current = todayItemSalesCount.get(item.name) || { qty: 0, revenuePaise: 0 };
+            current.qty += item.qty;
+            current.revenuePaise += item.subtotalRupees * 100;
+            todayItemSalesCount.set(item.name, current);
+          }
+        }
+
         // ONLY verified collected funds count towards Gross Revenue (never unpaid or complimentary)
         if (isPaid) {
           grossRevenuePaise += o.total_snapshot || 0;
@@ -366,36 +400,47 @@ export async function fetchAdminOverviewAction(forceRefresh = false): Promise<{
         for (const item of orderItems) {
           const current = itemSalesCount.get(item.name) || { qty: 0, revenuePaise: 0 };
           current.qty += item.qty;
-          current.revenuePaise += (item.subtotalRupees * 100);
+          current.revenuePaise += item.subtotalRupees * 100;
           itemSalesCount.set(item.name, current);
         }
       }
 
-      // KDS pending count
-      if (o.status === "SUBMITTED" || o.status === "ACCEPTED" || o.status === "PREPARING") {
+      // KDS pending count: only active pipeline orders from recent window (< 14h)
+      if (
+        (o.status === "SUBMITTED" || o.status === "ACCEPTED" || o.status === "PREPARING") &&
+        orderAgeMs <= 14 * 60 * 60 * 1000
+      ) {
         pendingKdsTickets++;
       }
 
-      // Hourly slot calculated from actual order date timestamp
-      const orderHour = orderDate.getHours();
-      let slotHour = "12p";
-      if (orderHour <= 8) slotHour = "8a";
-      else if (orderHour === 9) slotHour = "9a";
-      else if (orderHour === 10) slotHour = "10a";
-      else if (orderHour === 11) slotHour = "11a";
-      else if (orderHour === 12) slotHour = "12p";
-      else if (orderHour === 13) slotHour = "1p";
-      else if (orderHour === 14) slotHour = "2p";
-      else if (orderHour === 15) slotHour = "3p";
-      else if (orderHour === 16) slotHour = "4p";
-      else if (orderHour === 17) slotHour = "5p";
-      else if (orderHour === 18) slotHour = "6p";
-      else if (orderHour === 19) slotHour = "7p";
-      else if (orderHour === 20) slotHour = "8p";
-      else slotHour = "9p";
+      // Hourly slot calculated ONLY for TODAY'S orders using IST timezone
+      if (isTodayOrder) {
+        const istHourStr = new Intl.DateTimeFormat("en-IN", {
+          timeZone: "Asia/Kolkata",
+          hour: "numeric",
+          hour12: false,
+        }).format(orderDate);
+        const orderHour = parseInt(istHourStr, 10);
 
-      if (hourlyCounts[slotHour] !== undefined) {
-        hourlyCounts[slotHour]++;
+        let slotHour = "12p";
+        if (orderHour <= 8) slotHour = "8a";
+        else if (orderHour === 9) slotHour = "9a";
+        else if (orderHour === 10) slotHour = "10a";
+        else if (orderHour === 11) slotHour = "11a";
+        else if (orderHour === 12) slotHour = "12p";
+        else if (orderHour === 13) slotHour = "1p";
+        else if (orderHour === 14) slotHour = "2p";
+        else if (orderHour === 15) slotHour = "3p";
+        else if (orderHour === 16) slotHour = "4p";
+        else if (orderHour === 17) slotHour = "5p";
+        else if (orderHour === 18) slotHour = "6p";
+        else if (orderHour === 19) slotHour = "7p";
+        else if (orderHour === 20) slotHour = "8p";
+        else slotHour = "9p";
+
+        if (hourlyCounts[slotHour] !== undefined) {
+          hourlyCounts[slotHour]++;
+        }
       }
 
       const relativeTime = formatRelativeTime(orderDate);
@@ -464,6 +509,22 @@ export async function fetchAdminOverviewAction(forceRefresh = false): Promise<{
       rev: `₹${Math.round(data.revenuePaise / 100).toLocaleString("en-IN")}`,
       pct: Math.min(100, Math.max(15, Math.round((data.qty / maxSalesQty) * 100))),
     }));
+
+    const sortedTodayItems = Array.from(todayItemSalesCount.entries())
+      .sort((a, b) => b[1].qty - a[1].qty)
+      .slice(0, 5);
+
+    const maxTodaySalesQty = sortedTodayItems.length > 0 ? sortedTodayItems[0][1].qty : 1;
+    const todayBestSellers: AdminBestSeller[] = sortedTodayItems.map(([name, data]) => ({
+      name,
+      sales: data.qty,
+      rev: `₹${Math.round(data.revenuePaise / 100).toLocaleString("en-IN")}`,
+      pct: Math.min(100, Math.max(15, Math.round((data.qty / maxTodaySalesQty) * 100))),
+    }));
+
+    const todayTopSeller = todayBestSellers[0] || { name: "No sales today", sales: 0 };
+    const todayGrossRevenueRupees = Math.round(todayGrossRevenuePaise / 100);
+    const todayAvgOrderRupees = todayOrdersCount > 0 ? Math.round(todayGrossRevenueRupees / todayOrdersCount) : 0;
 
     const topSeller = bestSellers[0] || { name: "No Orders Yet", sales: 0 };
 
@@ -634,22 +695,22 @@ export async function fetchAdminOverviewAction(forceRefresh = false): Promise<{
 
     const overviewData: AdminOverviewData = {
       kpis: {
-        todaysOrders: mappedOrders.length,
-        grossRevenueRupees,
+        todaysOrders: todayOrdersCount,
+        grossRevenueRupees: todayGrossRevenueRupees,
         activeTablesCount: Math.min(realTotalTables, activeTableIds.size),
         totalTablesCount: realTotalTables,
         pendingKdsCount: pendingKdsTickets,
-        avgOrderRupees,
-        topSellerName: topSeller.name,
-        topSellerUnits: topSeller.sales,
+        avgOrderRupees: todayAvgOrderRupees,
+        topSellerName: todayTopSeller.name,
+        topSellerUnits: todayTopSeller.sales,
       },
       orders: mappedOrders,
       payments: mappedPayments,
       hourlyTrend,
-      bestSellers,
+      bestSellers: todayOrdersCount > 0 ? todayBestSellers : [],
       zoneUtilization,
       paymentSplit,
-      cumulativeRevenuePoints: [0, Math.round(grossRevenueRupees * 0.25), Math.round(grossRevenueRupees * 0.6), grossRevenueRupees],
+      cumulativeRevenuePoints: [0, Math.round(todayGrossRevenueRupees * 0.25), Math.round(todayGrossRevenueRupees * 0.6), todayGrossRevenueRupees],
       menuItems: allMenuItems,
       menuCategories,
       tables: mappedTables,

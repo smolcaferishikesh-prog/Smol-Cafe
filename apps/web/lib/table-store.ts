@@ -144,8 +144,8 @@ export function filterDeletedTables<T extends { id?: string; label?: string }>(t
   return tables.filter((t) => {
     // 1. If explicit table ID is in tombstone, filter it out
     if (t.id && deletedIds.has(t.id)) return false;
-    // 2. Only check label tombstones for fallback mock tables or non-UUID records
-    if (t.label && (!t.id || t.id.startsWith("mock_") || t.id.startsWith("tbl_"))) {
+    // 2. Also check label tombstones so newly created tables with mismatched IDs or variations are filtered
+    if (t.label) {
       const vars = normalizeTableLabel(t.label);
       if (vars.some((v) => deletedLabels.has(v))) return false;
     }
