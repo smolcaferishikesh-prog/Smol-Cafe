@@ -571,27 +571,6 @@ const MenuContentInner: React.FC<MenuClientViewProps> = ({
             </svg>
           </button>
         </div>
-
-        {/* Quick Table Switcher Bar for guests */}
-        {!tableLabel && (
-          <div className="mx-auto mt-2.5 flex max-w-md items-center justify-between rounded-xl border border-amber-200/80 dark:border-amber-900/40 bg-amber-50/70 dark:bg-amber-950/20 px-3 py-1.5 text-xs text-amber-900 dark:text-amber-200">
-            <span className="text-[11px] font-medium">Seated at:</span>
-            <div className="flex items-center gap-1.5 overflow-x-auto">
-              {[1, 2, 3, 4, 5, 6].map((num) => {
-                const label = num.toString().padStart(2, "0");
-                return (
-                  <Link
-                    key={num}
-                    href={`/t/table-${label}`}
-                    className="rounded-lg border border-amber-300 dark:border-amber-700/50 bg-white dark:bg-[#251E1A] px-2 py-0.5 text-[11px] font-bold shadow-xs hover:bg-amber-100 dark:hover:bg-amber-900/40"
-                  >
-                    T{label}
-                  </Link>
-                );
-              })}
-            </div>
-          </div>
-        )}
       </header>
       {/* Main Menu List */}
       <main className="mx-auto max-w-md px-4 pt-4 pb-[calc(11rem+env(safe-area-inset-bottom,0px))] space-y-6">
@@ -660,10 +639,8 @@ const MenuContentInner: React.FC<MenuClientViewProps> = ({
 
 export const MenuClientView: React.FC<MenuClientViewProps> = (props) => {
   return (
-    <CartProvider>
-      <Suspense fallback={<MenuLoading />}>
-        <MenuContentInner {...props} />
-      </Suspense>
-    </CartProvider>
+    <Suspense fallback={<MenuLoading />}>
+      <MenuContentInner {...props} />
+    </Suspense>
   );
 };

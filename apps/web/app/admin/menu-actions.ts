@@ -13,7 +13,12 @@ import {
   savePersistedMenuStore,
   type MenuItemWithDetails,
 } from "@/lib/queries/menu";
-import { MOCK_CATEGORIES } from "@/lib/mock-db/seedData";
+import {
+  MOCK_CATEGORIES,
+  MOCK_MENU_ITEMS,
+  MOCK_MENU_VERSIONS,
+  MOCK_MENU_PRICES,
+} from "@/lib/mock-db/seedData";
 
 const isUuid = (val?: string) => Boolean(val && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val));
 
@@ -56,26 +61,12 @@ export async function fetchAdminMenuCatalogAction(): Promise<{
   items: AdminMenuItem[];
 }> {
   try {
-    const supabase = createAdminClient();
-
-    // Query categories from Supabase first
-    const { data: dbCategories } = await supabase
-      .from("menu_categories")
-      .select("id, name, sort_order")
-      .order("sort_order", { ascending: true });
-
-    let categories: AdminCategoryOption[] = [];
-    if (dbCategories && dbCategories.length > 0) {
-      categories = dbCategories.map((c) => ({ id: c.id, name: c.name }));
-    } else {
-      categories = MOCK_CATEGORIES.map((c) => ({ id: c.id, name: c.name }));
-    }
-
     const catalog = await getMenuCatalog(true);
 
-    if (categories.length === 0) {
-      categories = catalog.map((cat) => ({ id: cat.id, name: cat.name }));
-    }
+    const categories: AdminCategoryOption[] = catalog.map((cat) => ({
+      id: cat.id,
+      name: cat.name,
+    }));
 
     const items: AdminMenuItem[] = [];
     catalog.forEach((cat) => {
@@ -578,26 +569,107 @@ export async function resetToMasterMenuAction(): Promise<{ success: boolean; mes
   try {
     const supabase = createAdminClient();
 
-    // 1. Restore all archived items in Supabase
+    // 1. Mark existing Supabase items as ARCHIVED so previous non-master items are deactivated
     try {
       await supabase
         .from("menu_items")
-        .update({ status: "ACTIVE", updated_at: new Date().toISOString() })
-        .eq("status", "ARCHIVED");
+        .update({ status: "ARCHIVED", updated_at: new Date().toISOString() })
+        .neq("status", "ARCHIVED");
     } catch (dbErr) {
-      console.warn("Notice restoring Supabase items:", dbErr);
+      console.warn("Notice archiving existing Supabase items:", dbErr);
     }
 
-    // 2. Clear deletedStore so items are visible again
+    // 2. Upsert the 10 official categories
+    try {
+      for (const cat of MOCK_CATEGORIES) {
+        await supabase.from("menu_categories").upsert({
+          id: cat.id,
+          location_id: cat.location_id,
+          name: cat.name,
+          sort_order: cat.sort_order,
+          updated_at: new Date().toISOString(),
+        });
+      }
+
+      // Clean up any extra categories not in the official 10
+      const officialCatIds = MOCK_CATEGORIES.map((c) => c.id);
+      const { data: allCats } = await supabase.from("menu_categories").select("id");
+      if (allCats) {
+        const extraCats = allCats.filter((c) => !officialCatIds.includes(c.id));
+        for (const ec of extraCats) {
+          try {
+            await supabase.from("menu_categories").delete().eq("id", ec.id);
+          } catch {}
+        }
+      }
+    } catch (catErr) {
+      console.warn("Notice syncing categories:", catErr);
+    }
+
+    // 3. Upsert official menu items into Supabase
+    try {
+      for (const item of MOCK_MENU_ITEMS) {
+        const isDrink = [
+          "Tea",
+          "Coffee Classics",
+          "Flavoured & Sweet Coffee",
+          "Specialty Drinks & Refreshers",
+        ].some((catName) => {
+          const cat = MOCK_CATEGORIES.find((c) => c.id === item.category_id);
+          return cat?.name === catName;
+        });
+
+        await supabase.from("menu_items").upsert({
+          id: item.id,
+          category_id: item.category_id,
+          name: item.name,
+          status: item.status || "AVAILABLE",
+          metadata: item.metadata,
+          station_id: isDrink ? "COLD_BAR" : "HOT_KITCHEN",
+          base_prep_seconds: 300,
+          updated_at: new Date().toISOString(),
+        });
+      }
+
+      // Upsert versions and prices
+      for (const ver of MOCK_MENU_VERSIONS) {
+        await supabase.from("menu_item_versions").upsert({
+          id: ver.id,
+          menu_item_id: ver.menu_item_id,
+          description: ver.description,
+          image_url: ver.image_url,
+          metadata: ver.metadata,
+        });
+      }
+
+      for (const prc of MOCK_MENU_PRICES) {
+        await supabase.from("menu_prices").upsert({
+          id: prc.id,
+          menu_item_id: prc.menu_item_id,
+          amount_paise: prc.amount_paise,
+          currency: prc.currency || "INR",
+          effective_from: prc.effective_from || new Date().toISOString(),
+          effective_to: null,
+        });
+      }
+    } catch (itemErr) {
+      console.warn("Notice seeding Supabase master items:", itemErr);
+    }
+
+    // 4. Clear memory and disk stores (custom items, overrides, deleted items)
     const deletedStore = getDeletedItemsStore();
     deletedStore.clear();
+
+    const customStore = getCustomItemsStore();
+    customStore.length = 0;
 
     const overridesStore = getMenuOverridesStore();
     Object.keys(overridesStore).forEach((key) => delete overridesStore[key]);
 
-    // Save to disk
+    // Save empty stores to disk
     savePersistedMenuStore();
 
+    // 5. Broadcast sync event across network
     broadcastSyncEvent({
       type: "ITEM_AVAILABILITY_CHANGED",
       stockStatus: "AVAILABLE",
@@ -614,13 +686,15 @@ export async function resetToMasterMenuAction(): Promise<{ success: boolean; mes
       revalidatePath("/");
       revalidatePath("/admin/menu");
       revalidatePath("/menu");
+      revalidatePath("/drinks");
+      revalidatePath("/smol-menu");
     } catch {}
 
     invalidateAdminOverviewCache();
 
     return {
       success: true,
-      message: "Smol Café master menu restored successfully.",
+      message: "Smol Café master menu restored successfully with official PDF items & prices.",
     };
   } catch (err: any) {
     console.error("resetToMasterMenuAction error:", err);

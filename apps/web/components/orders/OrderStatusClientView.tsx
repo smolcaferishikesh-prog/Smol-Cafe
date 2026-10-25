@@ -7,7 +7,7 @@ import { fetchActiveOrdersAction, type CustomerOrderDetails } from "@/app/orders
 import type { OrderStatus } from "@smol-cafe/db";
 import { OrderCard } from "./OrderCard";
 import { ConversationDeckModal } from "./ConversationDeckModal";
-import { Bell, BellRing, CheckCircle2, Sparkles, Receipt, ExternalLink } from "lucide-react";
+import { Bell, BellRing, CheckCircle2, Sparkles, Receipt, ExternalLink, QrCode, Home } from "lucide-react";
 import { useSupabaseRealtime } from "@/hooks/useSupabaseRealtime";
 import { subscribeToSyncEvents } from "@/lib/sync-events";
 import { createTableJsonTag } from "@/lib/table-tag";
@@ -16,7 +16,7 @@ import { UpiPaymentDrawer } from "@/components/payment/UpiPaymentDrawer";
 import { ThemeToggle } from "@/components/common/ThemeToggle";
 import { PastBillsModal } from "./PastBillsModal";
 import { CallStaffHelpModal } from "@/components/common/CallStaffHelpModal";
-import { fetchActiveTablesAction } from "@/app/t/actions";
+import { TableScannerModal } from "@/components/table/TableScannerModal";
 import { soundManager } from "@/lib/sound";
 import { SMOL_CAFE_MAPS_URL } from "@/lib/constants";
 
@@ -35,26 +35,9 @@ export const OrderStatusClientView: React.FC<OrderStatusClientViewProps> = ({
   locationName = "Rishikesh",
   hasSession,
   guestName = "",
-  availableTables,
 }) => {
   const [orders, setOrders] = useState<CustomerOrderDetails[]>(initialOrders);
-  const [tablesList, setTablesList] = useState<string[]>(
-    availableTables && availableTables.length > 0 ? availableTables : []
-  );
-
-  useEffect(() => {
-    if (availableTables && availableTables.length > 0) {
-      setTablesList(availableTables);
-    } else {
-      fetchActiveTablesAction()
-        .then((data) => {
-          if (data && data.length > 0) {
-            setTablesList(data.map((t) => t.label));
-          }
-        })
-        .catch(() => {});
-    }
-  }, [availableTables]);
+  const [isScannerOpen, setIsScannerOpen] = useState(false);
 
   const ordersRef = useRef<CustomerOrderDetails[]>(orders);
   useEffect(() => {
@@ -252,40 +235,96 @@ export const OrderStatusClientView: React.FC<OrderStatusClientViewProps> = ({
 
   if (!hasSession) {
     return (
-      <div className="flex min-h-screen flex-col items-center justify-center bg-[#FDFBF7] px-6 py-12 text-center text-[#1C1917] dark:bg-[#141211] dark:text-[#FDFBF7]">
-        <div className="w-full max-w-md rounded-3xl border border-stone-200/80 bg-white/80 p-8 shadow-xl dark:border-stone-800 dark:bg-stone-900/80">
-          <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-amber-100 dark:bg-amber-900/30 text-3xl">
-            🪑
+      <div className="relative min-h-[100dvh] flex flex-col justify-between items-center bg-[#F3E7D3] dark:bg-[#151110] text-[#241F1C] dark:text-[#FAF4EB] px-4 py-6 transition-colors duration-200 select-none overflow-x-hidden">
+        {/* Floating Theme Toggle (Day / Night switch) */}
+        <div className="absolute top-4 right-4 z-40">
+          <ThemeToggle variant="icon" />
+        </div>
+
+        {/* Subtle Ambient Glow */}
+        <div className="pointer-events-none absolute -top-24 left-1/2 -translate-x-1/2 h-72 w-72 rounded-full bg-[#B72E35]/10 dark:bg-[#754CFF]/15 blur-3xl" />
+
+        {/* Top Brand Logo */}
+        <div className="pt-2 sm:pt-4 flex flex-col items-center z-10">
+          <div className="relative transition-transform duration-300 hover:scale-105 flex flex-col items-center">
+            <Image
+              src="/table-header-logo.png"
+              alt="smol café"
+              width={112}
+              height={164}
+              className="w-16 sm:w-20 h-auto object-contain select-none dark:hidden animate-logo-moving-light drop-shadow-[0_6px_12px_rgba(114,80,57,0.15)]"
+              priority
+            />
+            <Image
+              src="/table-header-logo-dark.png?v=6"
+              alt="smol café"
+              width={198}
+              height={244}
+              className="w-16 sm:w-20 h-auto object-contain select-none hidden dark:block animate-logo-moving-dark"
+              priority
+            />
           </div>
-          <h2 className="text-2xl font-bold tracking-tight">No Active Table Session</h2>
-          <p className="mt-2 text-xs text-stone-600 dark:text-stone-400">
-            Please scan the QR code on your table stand or tap a table below to view live orders:
+        </div>
+
+        {/* Center Card */}
+        <div className="w-full max-w-sm rounded-[2rem] border border-[#C9AE8B]/40 dark:border-white/10 bg-[#FAF4EB]/95 dark:bg-[#1C1715]/95 backdrop-blur-xl p-6 sm:p-8 text-center shadow-2xl shadow-[#725039]/10 dark:shadow-[0_20px_50px_rgba(0,0,0,0.6)] my-auto relative overflow-hidden z-10">
+          {/* Top highlight bar */}
+          <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-transparent via-[#B72E35] dark:via-[#F2C84B] to-transparent opacity-80" />
+
+          {/* QR Icon Badge */}
+          <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-2xl bg-[#B72E35]/10 dark:bg-[#F2C84B]/15 border border-[#B72E35]/20 dark:border-[#F2C84B]/25">
+            <QrCode className="h-8 w-8 text-[#B72E35] dark:text-[#F2C84B]" />
+          </div>
+
+          {/* Heading */}
+          <h1 className="font-serif text-2xl sm:text-[1.65rem] font-bold tracking-tight text-[#241F1C] dark:text-[#FAF4EB] leading-tight">
+            No Active Table Session
+          </h1>
+
+          {/* Subtitle Message */}
+          <p className="mt-3 text-xs sm:text-sm leading-relaxed text-[#725039] dark:text-[#C9AE8B] font-sans">
+            Please scan the QR code on your table stand to view your active orders and live round updates.
           </p>
-          <div className="mt-4 flex flex-wrap justify-center gap-2 max-h-40 overflow-y-auto">
-            {(tablesList.length > 0
-              ? tablesList
-              : Array.from({ length: 14 }, (_, i) => (i + 1).toString().padStart(2, "0"))
-            ).map((label) => {
-              return (
-                <a
-                  key={label}
-                  href={`/t/table-${label}`}
-                  className="rounded-xl border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs font-bold text-amber-900 shadow-xs hover:bg-amber-100 dark:border-amber-700 dark:bg-stone-800 dark:text-amber-200"
-                >
-                  Table {label}
-                </a>
-              );
-            })}
-          </div>
-          <div className="mt-5">
-            <Link
-              href="/home"
-              className="inline-flex w-full items-center justify-center rounded-xl bg-stone-900 py-3 text-sm font-semibold text-white transition hover:bg-stone-800 dark:bg-stone-100 dark:text-stone-900"
+
+          {/* Action Buttons */}
+          <div className="mt-6 space-y-2.5">
+            <button
+              type="button"
+              onClick={() => setIsScannerOpen(true)}
+              className="w-full flex items-center justify-center gap-2 rounded-xl bg-[#B72E35] hover:bg-[#9B2228] text-white py-3.5 px-5 text-sm font-bold shadow-md hover:shadow-lg transition-all active:scale-[0.98] cursor-pointer"
             >
-              Back to Home
+              <QrCode className="h-4 w-4" />
+              <span>Scan Table QR</span>
+            </button>
+
+            <Link
+              href="/"
+              className="w-full flex items-center justify-center gap-2 rounded-xl border border-[#C9AE8B]/40 dark:border-white/10 bg-[#F3E7D3]/60 dark:bg-[#2A2420] hover:bg-[#F3E7D3] dark:hover:bg-[#322A26] py-3.5 px-5 text-sm font-bold text-[#241F1C] dark:text-[#FAF4EB] shadow-xs transition-all active:scale-[0.98]"
+            >
+              <Home className="h-4 w-4 text-[#725039] dark:text-[#C9AE8B]" />
+              <span>Back to Home</span>
             </Link>
           </div>
         </div>
+
+        {/* Footer Brand Tagline */}
+        <div className="pt-4 pb-2 text-center text-[#725039]/70 dark:text-[#C9AE8B]/60 font-mono text-[11px] tracking-wide uppercase z-10">
+          <p>smol café · good coffee · brighter days</p>
+          <p className="text-[10px] opacity-75 mt-0.5">tapovan, rishikesh</p>
+        </div>
+
+        {/* Camera QR Scanner Modal */}
+        {isScannerOpen && (
+          <TableScannerModal
+            currentTable=""
+            onClose={() => setIsScannerOpen(false)}
+            onSelectTable={(tableLabel) => {
+              setIsScannerOpen(false);
+              const clean = tableLabel.replace(/^(?:table|t)[-\s_]*/i, "").trim().padStart(2, "0");
+              window.location.href = `/t/table-${clean}`;
+            }}
+          />
+        )}
       </div>
     );
   }

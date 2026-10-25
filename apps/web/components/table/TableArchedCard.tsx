@@ -75,20 +75,26 @@ export const TableArchedCard: React.FC<TableArchedCardProps> = ({
         </svg>
 
         {/* Content Positioned Inside the Arched Dome */}
-        <div className="absolute inset-0 flex flex-col items-center justify-start pt-7 sm:pt-8 pointer-events-none">
+        <div className="absolute inset-0 flex flex-col items-center justify-start pt-[13.5%] pointer-events-none">
           {/* "TABLE" label in Walnut */}
-          <span className="font-serif text-[12px] sm:text-[13px] font-semibold tracking-[0.24em] text-[#725039] dark:text-[#C9AE8B] uppercase">
+          <span className="font-serif text-[11px] sm:text-[12px] font-semibold tracking-[0.24em] text-[#725039] dark:text-[#C9AE8B] uppercase">
             TABLE
           </span>
 
           {/* Table Number in Espresso Ink */}
-          <span className="font-serif text-[50px] sm:text-[54px] leading-none font-bold text-[#241F1C] dark:text-[#FAF4EB] tracking-tight mt-0.5">
+          <span
+            className={`font-serif leading-none font-bold text-[#241F1C] dark:text-[#FAF4EB] tracking-tight mt-0.5 ${
+              tableNumber.length > 5
+                ? "text-[26px] sm:text-[30px]"
+                : "text-[44px] sm:text-[48px]"
+            }`}
+          >
             {tableNumber}
           </span>
 
           {/* "2 Guests" Pill Badge in Botanical Dusty Pool Deep Tone */}
-          <div className="mt-2 flex items-center justify-center">
-            <div className="inline-flex items-center gap-1.5 rounded-full bg-[#2E5550] dark:bg-[#1E3E3A] px-3.5 py-0.5 text-[11px] font-medium text-[#F3E7D3] shadow-xs">
+          <div className="mt-1.5 flex items-center justify-center">
+            <div className="inline-flex items-center gap-1.5 rounded-full bg-[#2E5550] dark:bg-[#1E3E3A] px-3.5 py-0.5 text-[10.5px] font-medium text-[#F3E7D3] shadow-xs">
               <Users className="w-3.5 h-3.5 text-[#F3E7D3]/95" />
               <span>{guestCount} Guests</span>
             </div>

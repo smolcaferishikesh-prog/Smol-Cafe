@@ -50,7 +50,6 @@ export const AppDrawer: React.FC<AppDrawerProps> = ({
         { name: "Smol Menu", href: "/menu", icon: BookOpen, desc: "Artisanal comfort items & pairings" },
         { name: "Your Table", href: "/table", icon: Armchair, desc: `Table ${tableLabel || "01"} seated round` },
         { name: "Live Order Status", href: "/orders", icon: Package, desc: "Live kitchen brewing tracker" },
-        { name: "Settle Up / Bill", href: "/bill", icon: Receipt, desc: "UPI, Cards, Wallets & digital receipt" },
         { name: "Café Jukebox", href: "/music", icon: Music, desc: "Now playing, song requests & votes" },
         { name: "Community Events", href: "/events", icon: Calendar, desc: "Jam sessions, chess & game nights" },
         { name: "Smol Loyalty Pass (Coming Soon)", href: "/profile", icon: Gift, desc: "Smol Club Rewards & Patron Pass launching soon" },

@@ -7,6 +7,7 @@ import { InstallAppPrompt } from "@/components/common/InstallAppPrompt";
 import { OfflineSyncBanner } from "@/components/common/OfflineSyncBanner";
 import { BottomNavBar } from "@/components/navigation/BottomNavBar";
 import { AppSplashScreen } from "@/components/common/AppSplashScreen";
+import { CartProvider } from "@/context/CartContext";
 
 interface LayoutShellProps {
   children: React.ReactNode;
@@ -97,7 +98,7 @@ export const LayoutShell: React.FC<LayoutShellProps> = ({ children }) => {
   }, []);
 
   return (
-    <>
+    <CartProvider>
       <AppSplashScreen />
       {/* Offline sync banner disabled as requested */}
       {/* <OfflineSyncBanner /> */}
@@ -105,6 +106,6 @@ export const LayoutShell: React.FC<LayoutShellProps> = ({ children }) => {
       {children}
       {showBottomNavBar && <BottomNavBar />}
       <InstallAppPrompt />
-    </>
+    </CartProvider>
   );
 };

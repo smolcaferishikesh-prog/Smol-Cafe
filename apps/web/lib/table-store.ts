@@ -4,6 +4,8 @@ import path from "path";
 export interface PersistedTablesStore {
   deletedTableIds: string[];
   deletedTableLabels: string[];
+  tableSectionsMap?: Record<string, string>;
+  customSections?: string[];
 }
 
 const isServer = typeof window === "undefined";
@@ -25,6 +27,8 @@ function loadPersistedStore(): PersistedTablesStore {
   const defaultStore: PersistedTablesStore = {
     deletedTableIds: [],
     deletedTableLabels: [],
+    tableSectionsMap: {},
+    customSections: [],
   };
 
   if (!isServer) return defaultStore;
@@ -39,6 +43,8 @@ function loadPersistedStore(): PersistedTablesStore {
       return {
         deletedTableIds: Array.isArray(parsed.deletedTableIds) ? parsed.deletedTableIds : [],
         deletedTableLabels: Array.isArray(parsed.deletedTableLabels) ? parsed.deletedTableLabels : [],
+        tableSectionsMap: typeof parsed.tableSectionsMap === "object" && parsed.tableSectionsMap !== null ? parsed.tableSectionsMap : {},
+        customSections: Array.isArray(parsed.customSections) ? parsed.customSections : [],
       };
     }
   } catch (err) {
@@ -159,4 +165,75 @@ export function filterDeletedTables<T extends { id?: string; label?: string }>(t
 export function getDeletedTableLabels(): string[] {
   const store = loadPersistedStore();
   return store.deletedTableLabels;
+}
+
+/**
+ * Get persisted table sections map
+ */
+export function getPersistedSectionsMap(): Record<string, string> {
+  const store = loadPersistedStore();
+  return store.tableSectionsMap || {};
+}
+
+/**
+ * Get persisted custom sections list
+ */
+export function getPersistedCustomSections(): string[] {
+  const store = loadPersistedStore();
+  return store.customSections || [];
+}
+
+/**
+ * Record a table's assigned section in persistent store
+ */
+export function recordTableSection(tableId: string, label: string, section: string): void {
+  const store = loadPersistedStore();
+  const map = { ...(store.tableSectionsMap || {}) };
+  const cleanSec = section?.trim() || "smol-cafe";
+  if (tableId && tableId.trim()) map[tableId.trim()] = cleanSec;
+  if (label && label.trim()) {
+    map[label.trim()] = cleanSec;
+    const cleanNum = label.trim().padStart(2, "0");
+    map[cleanNum] = cleanSec;
+  }
+  const existingCustom = store.customSections || [];
+  const customSections = cleanSec && !existingCustom.includes(cleanSec)
+    ? [...existingCustom, cleanSec]
+    : existingCustom;
+
+  savePersistedStore({
+    ...store,
+    tableSectionsMap: map,
+    customSections,
+  });
+}
+
+/**
+ * Record a newly created custom section
+ */
+export function recordCustomSection(section: string): void {
+  const clean = section?.trim();
+  if (!clean) return;
+  const store = loadPersistedStore();
+  const existing = store.customSections || [];
+  if (!existing.includes(clean)) {
+    savePersistedStore({
+      ...store,
+      customSections: [...existing, clean],
+    });
+  }
+}
+
+/**
+ * Remove a custom section
+ */
+export function deleteCustomSectionFromStore(section: string): void {
+  const clean = section?.trim().toLowerCase();
+  if (!clean) return;
+  const store = loadPersistedStore();
+  const filtered = (store.customSections || []).filter((s) => s.toLowerCase() !== clean);
+  savePersistedStore({
+    ...store,
+    customSections: filtered,
+  });
 }

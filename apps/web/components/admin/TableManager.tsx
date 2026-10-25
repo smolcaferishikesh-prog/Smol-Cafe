@@ -455,7 +455,7 @@ export const TableManager: React.FC<TableManagerProps> = ({
         const meta = event.metadata || {};
         const label = event.tableLabel || (meta.label as string) || "";
         const id = event.tableId || (meta.id as string) || `tbl_${Date.now()}`;
-        const section = (meta.section as string) || "smol-cafe";
+        const section = (meta.section as string) || undefined;
         const seats = Number(meta.seats) || 2;
         const active = meta.active !== undefined ? Boolean(meta.active) : true;
 
@@ -470,7 +470,7 @@ export const TableManager: React.FC<TableManagerProps> = ({
           if (matchIdx >= 0) {
             return prev.map((t, idx) =>
               idx === matchIdx
-                ? { ...t, id: id || t.id, label: label || t.label, section, seats, active }
+                ? { ...t, id: id || t.id, label: label || t.label, section: section || t.section, seats, active }
                 : t
             );
           }
@@ -483,7 +483,7 @@ export const TableManager: React.FC<TableManagerProps> = ({
               label,
               seats,
               active,
-              section,
+              section: section || "smol-cafe",
               isOccupied: false,
             },
           ];

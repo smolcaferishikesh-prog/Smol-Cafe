@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useMemo, useCallback } from "react";
+import { createPortal } from "react-dom";
 import {
   ChefHat,
   Search,
@@ -32,6 +33,7 @@ interface KitchenMenuManagerProps {
 }
 
 export const KitchenMenuManager: React.FC<KitchenMenuManagerProps> = () => {
+  const [mounted, setMounted] = useState<boolean>(false);
   const [items, setItems] = useState<KitchenMenuItem[]>([]);
   const [, setIngredients] = useState<KitchenIngredientItem[]>([]);
   const [stations, setStations] = useState<string[]>([]);
@@ -42,7 +44,9 @@ export const KitchenMenuManager: React.FC<KitchenMenuManagerProps> = () => {
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [feedback, setFeedback] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
-
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   // Dish Add / Edit Modal state for Kitchen Chefs
   const [isDishModalOpen, setIsDishModalOpen] = useState<boolean>(false);
@@ -56,6 +60,17 @@ export const KitchenMenuManager: React.FC<KitchenMenuManagerProps> = () => {
   const [dishStatus, setDishStatus] = useState<"AVAILABLE" | "SOLD_OUT">("AVAILABLE");
   const [dishImageUrl, setDishImageUrl] = useState<string>("");
   const [isSavingDish, setIsSavingDish] = useState<boolean>(false);
+
+  // Prevent background scrolling when Dish Add/Edit modal is open
+  useEffect(() => {
+    if (isDishModalOpen) {
+      const originalOverflow = document.body.style.overflow;
+      document.body.style.overflow = "hidden";
+      return () => {
+        document.body.style.overflow = originalOverflow;
+      };
+    }
+  }, [isDishModalOpen]);
 
   // Load menu items on mount
   const loadData = useCallback(async () => {
@@ -817,219 +832,235 @@ export const KitchenMenuManager: React.FC<KitchenMenuManagerProps> = () => {
       {/* ========================================================================= */}
       {/* CHEF ADD / EDIT DISH MODAL                                               */}
       {/* ========================================================================= */}
-      {isDishModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-fade-in">
-          <div className="relative w-full max-w-md rounded-3xl border border-[#C9AE8B]/50 dark:border-stone-700 bg-[#FAF4EB] dark:bg-[#1A1715] p-6 shadow-2xl space-y-4">
-            <div className="flex items-center justify-between border-b border-[#C9AE8B]/30 dark:border-stone-800 pb-3">
-              <div>
-                <h3 className="font-serif text-lg font-bold text-[#241F1C] dark:text-white">
-                  {editingDish ? `Edit Dish: ${editingDish.name}` : "Add New Kitchen Dish"}
-                </h3>
-                <p className="text-[11px] font-mono text-stone-500">
-                  Updates price and details live across Customer Menu &amp; Kitchen Board
-                </p>
-              </div>
-              <button
-                onClick={() => setIsDishModalOpen(false)}
-                className="text-stone-400 hover:text-stone-600 cursor-pointer"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-
-            <form onSubmit={handleSaveDish} className="space-y-4">
-              {/* Dish Name */}
-              <div>
-                <label className="block text-xs font-mono font-bold text-[#241F1C] dark:text-stone-300 mb-1">
-                  Dish Name *
-                </label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. Masala French Toast"
-                  value={dishName}
-                  onChange={(e) => setDishName(e.target.value)}
-                  className="w-full rounded-xl border border-[#C9AE8B]/50 dark:border-stone-700 bg-white dark:bg-stone-900 p-3 text-xs font-mono text-[#241F1C] dark:text-white focus:outline-none focus:ring-2 focus:ring-[#B72E35]"
-                />
-              </div>
-
-              {/* Category & Price */}
-              <div className="grid grid-cols-2 gap-3">
+      {mounted && isDishModalOpen && createPortal(
+        <div
+          className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-4 bg-black/75 backdrop-blur-sm animate-fade-in"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setIsDishModalOpen(false);
+          }}
+        >
+          <div
+            className="relative w-full max-w-lg rounded-3xl border border-[#C9AE8B]/50 dark:border-stone-700 bg-[#FAF4EB] dark:bg-[#1A1715] shadow-2xl overflow-hidden my-auto flex flex-col max-h-[92vh]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <form onSubmit={handleSaveDish} className="flex flex-col h-full max-h-[92vh] overflow-hidden">
+              {/* Pinned Sticky Header */}
+              <div className="flex items-center justify-between border-b border-[#C9AE8B]/30 dark:border-stone-800 p-4 sm:p-5 shrink-0 bg-[#FAF4EB] dark:bg-[#1A1715]">
                 <div>
-                  <label className="block text-xs font-mono font-bold text-[#241F1C] dark:text-stone-300 mb-1">
-                    Category
-                  </label>
-                  <select
-                    value={dishCategory}
-                    onChange={(e) => setDishCategory(e.target.value)}
-                    className="w-full rounded-xl border border-[#C9AE8B]/50 dark:border-stone-700 bg-white dark:bg-stone-900 p-2.5 text-xs font-mono text-[#241F1C] dark:text-white focus:outline-none focus:ring-2 focus:ring-[#B72E35]"
-                  >
-                    {Array.from(new Set(items.map((i) => i.category))).map((cat) => (
-                      <option key={cat} value={cat}>
-                        {cat}
-                      </option>
-                    ))}
-                  </select>
+                  <h3 className="font-serif text-lg font-bold text-[#241F1C] dark:text-white">
+                    {editingDish ? `Edit Dish: ${editingDish.name}` : "Add New Kitchen Dish"}
+                  </h3>
+                  <p className="text-[11px] font-mono text-stone-500">
+                    Updates price and details live across Customer Menu &amp; Kitchen Board
+                  </p>
                 </div>
-
-                <div>
-                  <label className="block text-xs font-mono font-bold text-[#241F1C] dark:text-stone-300 mb-1">
-                    Price (₹) *
-                  </label>
-                  <input
-                    type="number"
-                    required
-                    min={0}
-                    step={1}
-                    placeholder="240"
-                    value={dishPrice}
-                    onChange={(e) =>
-                      setDishPrice(e.target.value === "" ? "" : Number(e.target.value))
-                    }
-                    className="w-full rounded-xl border border-[#C9AE8B]/50 dark:border-stone-700 bg-white dark:bg-stone-900 p-2.5 text-xs font-mono font-bold text-[#241F1C] dark:text-white focus:outline-none focus:ring-2 focus:ring-[#B72E35]"
-                  />
-                </div>
-              </div>
-
-              {/* Dietary & Stock Status */}
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-mono font-bold text-[#241F1C] dark:text-stone-300 mb-1">
-                    Dietary
-                  </label>
-                  <select
-                    value={dishDietary}
-                    onChange={(e) => setDishDietary(e.target.value as "veg" | "non-veg" | "vegan" | "egg" | "beverage")}
-                    className="w-full rounded-xl border border-[#C9AE8B]/50 dark:border-stone-700 bg-white dark:bg-stone-900 p-2.5 text-xs font-mono text-[#241F1C] dark:text-white focus:outline-none focus:ring-2 focus:ring-[#B72E35]"
-                  >
-                    <option value="veg">Vegetarian</option>
-                    <option value="vegan">Vegan</option>
-                    <option value="egg">Contains Egg</option>
-                    <option value="beverage">Beverage</option>
-                    <option value="non-veg">Non-Veg</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-mono font-bold text-[#241F1C] dark:text-stone-300 mb-1">
-                    Stock Status
-                  </label>
-                  <select
-                    value={dishStatus}
-                    onChange={(e) => setDishStatus(e.target.value as "AVAILABLE" | "SOLD_OUT")}
-                    className="w-full rounded-xl border border-[#C9AE8B]/50 dark:border-stone-700 bg-white dark:bg-stone-900 p-2.5 text-xs font-mono text-[#241F1C] dark:text-white focus:outline-none focus:ring-2 focus:ring-[#B72E35]"
-                  >
-                    <option value="AVAILABLE">In Stock</option>
-                    <option value="SOLD_OUT">Out Of Stock</option>
-                  </select>
-                </div>
-              </div>
-
-              {/* Description */}
-              <div>
-                <label className="block text-xs font-mono font-bold text-[#241F1C] dark:text-stone-300 mb-1">
-                  Description / Core Ingredients
-                </label>
-                <textarea
-                  rows={2}
-                  value={dishDescription}
-                  onChange={(e) => setDishDescription(e.target.value)}
-                  placeholder="Brioche bread, cinnamon, whipped vanilla mascarpone, maple drizzle"
-                  className="w-full rounded-xl border border-[#C9AE8B]/50 dark:border-stone-700 bg-white dark:bg-stone-900 p-2.5 text-xs font-mono text-[#241F1C] dark:text-white focus:outline-none focus:ring-2 focus:ring-[#B72E35]"
-                />
-              </div>
-
-              {/* Suggestions / Pairings (Pairs with) */}
-              <div className="p-3 rounded-xl bg-amber-50/70 dark:bg-amber-950/20 border border-amber-200/80 dark:border-amber-900/40 space-y-2">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs font-mono font-bold text-amber-900 dark:text-amber-200 flex items-center gap-1.5">
-                    <Sparkles className="w-3.5 h-3.5 text-amber-600" />
-                    <span>Customer Suggestions &amp; Best Pairing (Pairs With)</span>
-                  </label>
-                  <span className="text-[10px] text-amber-700/80 dark:text-amber-400 font-mono">
-                    Shown on Menu &amp; Upsell
-                  </span>
-                </div>
-
-                <input
-                  type="text"
-                  placeholder="e.g. Smol Chai / Adrak Chai, Triple Decker, Classic Cold Coffee"
-                  value={dishBestPairing}
-                  onChange={(e) => setDishBestPairing(e.target.value)}
-                  className="w-full rounded-xl border border-amber-200 dark:border-amber-800/60 bg-white dark:bg-stone-900 p-2.5 text-xs font-mono text-[#241F1C] dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500/40"
-                />
-
-                {/* Quick Suggestion Chips */}
-                <div className="space-y-1">
-                  <span className="text-[10px] uppercase font-mono font-semibold text-amber-800/80 dark:text-amber-400">
-                    Quick suggestions:
-                  </span>
-                  <div className="flex flex-wrap gap-1.5">
-                    {[
-                      "Smol Chai",
-                      "Classic Cold Coffee",
-                      "Triple Decker",
-                      "Buransh Fizz",
-                      "Masala Chaas",
-                      "Brownie / Affogato",
-                      "Cappuccino",
-                      "Fresh Lime Soda",
-                    ].map((chip) => {
-                      const isSelected = dishBestPairing.toLowerCase().includes(chip.toLowerCase());
-                      return (
-                        <button
-                          key={chip}
-                          type="button"
-                          onClick={() => {
-                            if (isSelected) {
-                              const regex = new RegExp(`\\s*\\/?\\s*${chip}`, "gi");
-                              setDishBestPairing((prev) => prev.replace(regex, "").replace(/^[\s\/]+|[\s\/]+$/g, ""));
-                            } else {
-                              setDishBestPairing((prev) =>
-                                prev.trim() ? `${prev.trim()} / ${chip}` : chip
-                              );
-                            }
-                          }}
-                          className={`text-[10.5px] px-2 py-0.5 rounded-md font-mono font-medium transition cursor-pointer ${
-                            isSelected
-                              ? "bg-amber-600 text-white shadow-xs"
-                              : "bg-white dark:bg-stone-800 text-amber-900 dark:text-amber-200 border border-amber-200/80 dark:border-amber-800 hover:bg-amber-100 dark:hover:bg-amber-900/40"
-                          }`}
-                        >
-                          + {chip}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              </div>
-
-              {/* Photo / Image Selection with Camera & Upload Support */}
-              <DishImagePicker
-                imageUrl={dishImageUrl}
-                onChange={setDishImageUrl}
-                dishName={dishName}
-              />
-
-              <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#C9AE8B]/20 dark:border-stone-800">
                 <button
                   type="button"
                   onClick={() => setIsDishModalOpen(false)}
-                  className="rounded-xl px-4 py-2 text-xs font-mono text-stone-600 dark:text-stone-400 hover:bg-black/5 cursor-pointer"
+                  className="text-stone-400 hover:text-stone-600 dark:hover:text-stone-200 p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 cursor-pointer transition"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              {/* Scrollable Form Body */}
+              <div className="p-4 sm:p-5 overflow-y-auto flex-1 space-y-4 overscroll-contain">
+                {/* Dish Name */}
+                <div>
+                  <label className="block text-xs font-mono font-bold text-[#241F1C] dark:text-stone-300 mb-1">
+                    Dish Name *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. Masala French Toast"
+                    value={dishName}
+                    onChange={(e) => setDishName(e.target.value)}
+                    className="w-full rounded-xl border border-[#C9AE8B]/50 dark:border-stone-700 bg-white dark:bg-stone-900 p-3 text-xs font-mono text-[#241F1C] dark:text-white focus:outline-none focus:ring-2 focus:ring-[#B72E35]"
+                  />
+                </div>
+
+                {/* Category & Price */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-mono font-bold text-[#241F1C] dark:text-stone-300 mb-1">
+                      Category
+                    </label>
+                    <select
+                      value={dishCategory}
+                      onChange={(e) => setDishCategory(e.target.value)}
+                      className="w-full rounded-xl border border-[#C9AE8B]/50 dark:border-stone-700 bg-white dark:bg-stone-900 p-2.5 text-xs font-mono text-[#241F1C] dark:text-white focus:outline-none focus:ring-2 focus:ring-[#B72E35]"
+                    >
+                      {Array.from(new Set(items.map((i) => i.category))).map((cat) => (
+                        <option key={cat} value={cat}>
+                          {cat}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-mono font-bold text-[#241F1C] dark:text-stone-300 mb-1">
+                      Price (₹) *
+                    </label>
+                    <input
+                      type="number"
+                      required
+                      min={0}
+                      step={1}
+                      placeholder="240"
+                      value={dishPrice}
+                      onChange={(e) =>
+                        setDishPrice(e.target.value === "" ? "" : Number(e.target.value))
+                      }
+                      className="w-full rounded-xl border border-[#C9AE8B]/50 dark:border-stone-700 bg-white dark:bg-stone-900 p-2.5 text-xs font-mono font-bold text-[#241F1C] dark:text-white focus:outline-none focus:ring-2 focus:ring-[#B72E35]"
+                    />
+                  </div>
+                </div>
+
+                {/* Dietary & Stock Status */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-mono font-bold text-[#241F1C] dark:text-stone-300 mb-1">
+                      Dietary
+                    </label>
+                    <select
+                      value={dishDietary}
+                      onChange={(e) => setDishDietary(e.target.value as "veg" | "non-veg" | "vegan" | "egg" | "beverage")}
+                      className="w-full rounded-xl border border-[#C9AE8B]/50 dark:border-stone-700 bg-white dark:bg-stone-900 p-2.5 text-xs font-mono text-[#241F1C] dark:text-white focus:outline-none focus:ring-2 focus:ring-[#B72E35]"
+                    >
+                      <option value="veg">Vegetarian</option>
+                      <option value="vegan">Vegan</option>
+                      <option value="egg">Contains Egg</option>
+                      <option value="beverage">Beverage</option>
+                      <option value="non-veg">Non-Veg</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-mono font-bold text-[#241F1C] dark:text-stone-300 mb-1">
+                      Stock Status
+                    </label>
+                    <select
+                      value={dishStatus}
+                      onChange={(e) => setDishStatus(e.target.value as "AVAILABLE" | "SOLD_OUT")}
+                      className="w-full rounded-xl border border-[#C9AE8B]/50 dark:border-stone-700 bg-white dark:bg-stone-900 p-2.5 text-xs font-mono text-[#241F1C] dark:text-white focus:outline-none focus:ring-2 focus:ring-[#B72E35]"
+                    >
+                      <option value="AVAILABLE">In Stock</option>
+                      <option value="SOLD_OUT">Out Of Stock</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Description */}
+                <div>
+                  <label className="block text-xs font-mono font-bold text-[#241F1C] dark:text-stone-300 mb-1">
+                    Description / Core Ingredients
+                  </label>
+                  <textarea
+                    rows={2}
+                    value={dishDescription}
+                    onChange={(e) => setDishDescription(e.target.value)}
+                    placeholder="Brioche bread, cinnamon, whipped vanilla mascarpone, maple drizzle"
+                    className="w-full rounded-xl border border-[#C9AE8B]/50 dark:border-stone-700 bg-white dark:bg-stone-900 p-2.5 text-xs font-mono text-[#241F1C] dark:text-white focus:outline-none focus:ring-2 focus:ring-[#B72E35]"
+                  />
+                </div>
+
+                {/* Suggestions / Pairings (Pairs with) */}
+                <div className="p-3 rounded-xl bg-amber-50/70 dark:bg-amber-950/20 border border-amber-200/80 dark:border-amber-900/40 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-mono font-bold text-amber-900 dark:text-amber-200 flex items-center gap-1.5">
+                      <Sparkles className="w-3.5 h-3.5 text-amber-600" />
+                      <span>Customer Suggestions &amp; Best Pairing (Pairs With)</span>
+                    </label>
+                    <span className="text-[10px] text-amber-700/80 dark:text-amber-400 font-mono">
+                      Shown on Menu &amp; Upsell
+                    </span>
+                  </div>
+
+                  <input
+                    type="text"
+                    placeholder="e.g. Smol Chai / Adrak Chai, Triple Decker, Classic Cold Coffee"
+                    value={dishBestPairing}
+                    onChange={(e) => setDishBestPairing(e.target.value)}
+                    className="w-full rounded-xl border border-amber-200 dark:border-amber-800/60 bg-white dark:bg-stone-900 p-2.5 text-xs font-mono text-[#241F1C] dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500/40"
+                  />
+
+                  {/* Quick Suggestion Chips */}
+                  <div className="space-y-1">
+                    <span className="text-[10px] uppercase font-mono font-semibold text-amber-800/80 dark:text-amber-400">
+                      Quick suggestions:
+                    </span>
+                    <div className="flex flex-wrap gap-1.5">
+                      {[
+                        "Smol Chai",
+                        "Classic Cold Coffee",
+                        "Triple Decker",
+                        "Buransh Fizz",
+                        "Masala Chaas",
+                        "Brownie / Affogato",
+                        "Cappuccino",
+                        "Fresh Lime Soda",
+                      ].map((chip) => {
+                        const isSelected = dishBestPairing.toLowerCase().includes(chip.toLowerCase());
+                        return (
+                          <button
+                            key={chip}
+                            type="button"
+                            onClick={() => {
+                              if (isSelected) {
+                                const regex = new RegExp(`\\s*\\/?\\s*${chip}`, "gi");
+                                setDishBestPairing((prev) => prev.replace(regex, "").replace(/^[\s\/]+|[\s\/]+$/g, ""));
+                              } else {
+                                setDishBestPairing((prev) =>
+                                  prev.trim() ? `${prev.trim()} / ${chip}` : chip
+                                );
+                              }
+                            }}
+                            className={`text-[10.5px] px-2 py-0.5 rounded-md font-mono font-medium transition cursor-pointer ${
+                              isSelected
+                                ? "bg-amber-600 text-white shadow-xs"
+                                : "bg-white dark:bg-stone-800 text-amber-900 dark:text-amber-200 border border-amber-200/80 dark:border-amber-800 hover:bg-amber-100 dark:hover:bg-amber-900/40"
+                            }`}
+                          >
+                            + {chip}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Photo / Image Selection with Camera & Upload Support */}
+                <DishImagePicker
+                  imageUrl={dishImageUrl}
+                  onChange={setDishImageUrl}
+                  dishName={dishName}
+                />
+              </div>
+
+              {/* Pinned Sticky Footer */}
+              <div className="flex items-center justify-end gap-2 p-3.5 sm:p-4 border-t border-[#C9AE8B]/20 dark:border-stone-800 shrink-0 bg-[#FAF4EB] dark:bg-[#1A1715]">
+                <button
+                  type="button"
+                  onClick={() => setIsDishModalOpen(false)}
+                  className="rounded-xl px-4 py-2 text-xs font-mono text-stone-600 dark:text-stone-400 hover:bg-black/5 dark:hover:bg-white/5 cursor-pointer transition"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={isSavingDish}
-                  className="rounded-xl bg-[#B72E35] hover:bg-[#9B252B] px-5 py-2 text-xs font-mono font-bold text-white shadow-md transition disabled:opacity-50 cursor-pointer"
+                  className="rounded-xl bg-[#B72E35] hover:bg-[#9B252B] px-5 py-2 text-xs font-mono font-bold text-white shadow-md transition disabled:opacity-50 cursor-pointer flex items-center gap-1.5"
                 >
-                  {isSavingDish ? "Saving..." : editingDish ? "Save Dish" : "Create Dish"}
+                  {isSavingDish && <RefreshCw className="h-3 w-3 animate-spin" />}
+                  <span>{isSavingDish ? "Saving..." : editingDish ? "Save Dish" : "Create Dish"}</span>
                 </button>
               </div>
             </form>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

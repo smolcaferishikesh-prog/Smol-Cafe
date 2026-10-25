@@ -190,7 +190,7 @@ export function TableGuestOnboardingForm({
           name="guestName"
           value={name}
           onChange={(e) => setName(e.target.value)}
-          placeholder="Your Name (e.g. Sonu)"
+          placeholder="Your Name"
           required
           autoComplete="name"
           className="w-full pl-9 pr-3 py-2 sm:py-2.5 rounded-xl border border-[#C9AE8B]/60 dark:border-white/15 bg-[#FAF4EB] dark:bg-[#1E1815] text-[#241F1C] dark:text-[#FAF4EB] placeholder-[#725039]/60 dark:placeholder-[#C9AE8B]/50 font-serif text-xs sm:text-sm focus:outline-none focus:border-[#B72E35] dark:focus:border-[#F2C84B] focus:ring-2 focus:ring-[#B72E35]/20 shadow-xs transition-all"
@@ -260,7 +260,7 @@ export function TableGuestOnboardingForm({
               e.preventDefault();
             }
           }}
-          placeholder={selectedCountry.example.replace(/\D/g, "").slice(0, 10) || "9876543210"}
+          placeholder="Mobile Number"
           required
           maxLength={10}
           autoComplete="tel-national"
@@ -298,7 +298,7 @@ export function TableGuestOnboardingForm({
           type="button"
           onClick={handleSkip}
           disabled={isPending}
-          className="w-full mt-1.5 flex items-center justify-center gap-1.5 text-center text-[11px] sm:text-xs font-mono text-[#725039] dark:text-[#C9AE8B] hover:text-[#B72E35] dark:hover:text-[#F2C84B] transition-colors cursor-pointer disabled:opacity-60"
+          className="w-full mt-3.5 sm:mt-4 flex items-center justify-center gap-1.5 text-center text-[11px] sm:text-xs font-mono text-[#725039] dark:text-[#C9AE8B] hover:text-[#B72E35] dark:hover:text-[#F2C84B] transition-colors cursor-pointer disabled:opacity-60 py-1"
         >
           {isPending && <Loader2 className="h-3 w-3 animate-spin" />}
           {isPending ? "Setting up Guest Seat..." : "Skip & order as guest →"}

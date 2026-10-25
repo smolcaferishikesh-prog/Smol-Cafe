@@ -544,7 +544,7 @@ export async function fetchAdminOverviewAction(forceRefresh = false): Promise<{
     for (const t of diningTables) {
       const label = t.label;
       const cleanNum = (label || "").toString().padStart(2, "0");
-      const zName = TABLE_ZONES_CONFIG[cleanNum]?.zone || (t as any).section || "smol-cafe";
+      const zName = (t as any).section || TABLE_ZONES_CONFIG[cleanNum]?.zone || "smol-cafe";
       if (!zoneTableCounts[zName]) {
         zoneTableCounts[zName] = { total: 0, occupied: 0 };
       }

@@ -237,7 +237,7 @@ export const EventsClientView: React.FC<EventsClientViewProps> = ({ initialEvent
                   required
                   value={guestName}
                   onChange={(e) => setGuestName(e.target.value)}
-                  placeholder="e.g. Sonu Singh"
+                  placeholder="Full Name"
                   className="w-full rounded-xl border border-[#D8CEBF] bg-[#FCF8F2] px-3 py-2 text-xs text-[#1C1917] placeholder-[#A89D91] focus:outline-hidden focus:ring-1 focus:ring-[#A62B34]"
                 />
               </div>
@@ -253,7 +253,7 @@ export const EventsClientView: React.FC<EventsClientViewProps> = ({ initialEvent
                   maxLength={10}
                   value={guestPhone}
                   onChange={(e) => setGuestPhone(e.target.value.replace(/\D/g, "").slice(0, 10))}
-                  placeholder="9876543210"
+                  placeholder="Mobile Number"
                   className="w-full rounded-xl border border-[#D8CEBF] bg-[#FCF8F2] px-3 py-2 text-xs text-[#1C1917] placeholder-[#A89D91] focus:outline-hidden focus:ring-1 focus:ring-[#A62B34]"
                 />
               </div>

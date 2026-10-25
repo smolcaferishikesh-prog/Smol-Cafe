@@ -1,6 +1,6 @@
 import Image from "next/image";
-import { resolveQrToken, clearTableSession, activateTableAndRedirectAction, fetchActiveTablesAction } from "../actions";
-import { AlertTriangle } from "lucide-react";
+import { resolveQrToken, clearTableSession, activateTableAndRedirectAction } from "../actions";
+import { AlertTriangle, Home } from "lucide-react";
 import { TableActionBar } from "@/components/table/TableActionBar";
 import { TableGuestOnboardingForm } from "@/components/table/TableGuestOnboardingForm";
 import { ThemeToggle } from "@/components/common/ThemeToggle";
@@ -42,60 +42,85 @@ export default async function TableEntryPage({ params }: PageProps) {
   const { tableToken } = await params;
   const result = await resolveQrToken(tableToken, true);
 
-  // 1. Invalid or Revoked QR Error Screen (Strictly on-brand colors)
+  // 1. Invalid or Revoked QR Error Screen (Refined smol café brand aesthetic)
   if (!result.success || !result.session) {
-    const activeTables = await fetchActiveTablesAction().catch(() => []);
-
     return (
-      <div className="flex min-h-[100dvh] flex-col items-center justify-center bg-[#F3E7D3] dark:bg-[#241F1C] px-6 py-8 text-[#241F1C] dark:text-[#F3E7D3]">
-        <div className="w-full max-w-md rounded-3xl border border-[#C9AE8B]/40 dark:border-white/10 bg-[#FAF4EB] dark:bg-[#2A2420] p-8 text-center shadow-lg backdrop-blur-md">
-          <div className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-2xl bg-[#F2C84B]/20 dark:bg-[#F2C84B]/10">
+      <div className="relative min-h-[100dvh] flex flex-col justify-between items-center bg-[#F3E7D3] dark:bg-[#151110] text-[#241F1C] dark:text-[#FAF4EB] px-4 py-6 transition-colors duration-200 select-none overflow-x-hidden">
+        {/* Floating Theme Toggle (Day / Night switch) */}
+        <div className="absolute top-4 right-4 z-40">
+          <ThemeToggle variant="icon" />
+        </div>
+
+        {/* Subtle Ambient Glow */}
+        <div className="pointer-events-none absolute -top-24 left-1/2 -translate-x-1/2 h-72 w-72 rounded-full bg-[#B72E35]/10 dark:bg-[#754CFF]/15 blur-3xl" />
+
+        {/* Top Brand Logo */}
+        <div className="pt-2 sm:pt-4 flex flex-col items-center z-10">
+          <div className="relative transition-transform duration-300 hover:scale-105 flex flex-col items-center">
+            <Image
+              src="/table-header-logo.png"
+              alt="smol café"
+              width={112}
+              height={164}
+              className="w-16 sm:w-20 h-auto object-contain select-none dark:hidden animate-logo-moving-light drop-shadow-[0_6px_12px_rgba(114,80,57,0.15)]"
+              priority
+            />
+            <Image
+              src="/table-header-logo-dark.png?v=6"
+              alt="smol café"
+              width={198}
+              height={244}
+              className="w-16 sm:w-20 h-auto object-contain select-none hidden dark:block animate-logo-moving-dark"
+              priority
+            />
+          </div>
+        </div>
+
+        {/* Center Error Card */}
+        <div className="w-full max-w-sm rounded-[2rem] border border-[#C9AE8B]/40 dark:border-white/10 bg-[#FAF4EB]/95 dark:bg-[#1C1715]/95 backdrop-blur-xl p-6 sm:p-8 text-center shadow-2xl shadow-[#725039]/10 dark:shadow-[0_20px_50px_rgba(0,0,0,0.6)] my-auto relative overflow-hidden z-10">
+          {/* Top highlight bar */}
+          <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-transparent via-[#B72E35] dark:via-[#F2C84B] to-transparent opacity-80" />
+
+          {/* Warning Icon Badge */}
+          <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-2xl bg-[#B72E35]/10 dark:bg-[#F2C84B]/15 border border-[#B72E35]/20 dark:border-[#F2C84B]/25">
             <AlertTriangle className="h-8 w-8 text-[#B72E35] dark:text-[#F2C84B]" />
           </div>
 
-          <h1 className="font-serif text-2xl font-bold tracking-tight text-[#241F1C] dark:text-[#F3E7D3]">
+          {/* Heading */}
+          <h1 className="font-serif text-2xl sm:text-[1.65rem] font-bold tracking-tight text-[#241F1C] dark:text-[#FAF4EB] leading-tight">
             This QR isn&apos;t working, please call staff
           </h1>
 
-          <p className="mt-3 text-sm leading-relaxed text-[#725039] dark:text-[#C9AE8B] font-sans">
+          {/* Subtitle Message */}
+          <p className="mt-3 text-xs sm:text-sm leading-relaxed text-[#725039] dark:text-[#C9AE8B] font-sans">
             {result.message ||
-              "We couldn&apos;t connect this QR code to an active table session. Please wave to a team member or ask at the counter."}
+              "This table does not exist or has been removed. Please wave to a team member or ask at the counter."}
           </p>
 
-          <div className="mt-8 space-y-4">
-            <div className="rounded-xl border border-[#C9AE8B]/40 dark:border-white/10 bg-[#F3E7D3]/60 dark:bg-[#1C1715] p-3.5 text-xs text-[#725039] dark:text-[#C9AE8B] font-mono">
-              Token:{" "}
-              <span className="font-mono text-[#241F1C] dark:text-[#F3E7D3] font-bold">{tableToken}</span>
-            </div>
-
-            {activeTables.length > 0 && (
-              <div className="space-y-2 text-center pt-2">
-                <p className="text-xs font-semibold text-[#725039] dark:text-[#C9AE8B]">
-                  Or select your table:
-                </p>
-                <div className="flex flex-wrap gap-2 justify-center max-h-36 overflow-y-auto">
-                  {activeTables.map((t) => (
-                    <a
-                      key={t.label}
-                      href={`/t/table-${t.label}`}
-                      className="rounded-lg border border-[#C9AE8B]/60 bg-white dark:bg-[#1C1715] px-2.5 py-1 text-xs font-bold text-[#241F1C] dark:text-[#F3E7D3] hover:bg-[#B72E35] hover:text-white transition"
-                    >
-                      Table {t.label}
-                    </a>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            <form action={clearTableSession}>
-              <button
-                type="submit"
-                className="w-full rounded-xl bg-[#241F1C] py-3.5 text-sm font-semibold text-[#F3E7D3] shadow-sm transition hover:bg-[#1D1815] active:scale-[0.99] dark:bg-[#F3E7D3] dark:text-[#241F1C] dark:hover:bg-[#FAF4EB] cursor-pointer"
-              >
-                Back to Home
-              </button>
-            </form>
+          {/* Token chip */}
+          <div className="mt-6 rounded-xl border border-[#C9AE8B]/40 dark:border-white/10 bg-[#F3E7D3]/60 dark:bg-[#151110] px-4 py-2.5 flex items-center justify-between text-xs">
+            <span className="font-mono text-[#725039] dark:text-[#C9AE8B]">Scanned Token</span>
+            <span className="font-mono font-bold text-[#241F1C] dark:text-[#FAF4EB] bg-[#FAF4EB] dark:bg-[#2A2420] px-2.5 py-0.5 rounded-md border border-[#C9AE8B]/30 dark:border-white/5">
+              {tableToken}
+            </span>
           </div>
+
+          {/* Primary Action Button: Redirects to / (http://localhost:3000/) */}
+          <form action={clearTableSession} className="mt-6">
+            <button
+              type="submit"
+              className="w-full flex items-center justify-center gap-2 rounded-xl bg-[#241F1C] hover:bg-[#1D1815] dark:bg-[#FAF4EB] dark:hover:bg-white py-3.5 px-5 text-sm font-bold text-[#FAF4EB] dark:text-[#241F1C] shadow-md hover:shadow-lg transition-all active:scale-[0.98] cursor-pointer"
+            >
+              <Home className="h-4 w-4" />
+              <span>Back to Home</span>
+            </button>
+          </form>
+        </div>
+
+        {/* Footer Brand Tagline */}
+        <div className="pt-4 pb-2 text-center text-[#725039]/70 dark:text-[#C9AE8B]/60 font-mono text-[11px] tracking-wide uppercase z-10">
+          <p>smol café · good coffee · brighter days</p>
+          <p className="text-[10px] opacity-75 mt-0.5">tapovan, rishikesh</p>
         </div>
       </div>
     );
