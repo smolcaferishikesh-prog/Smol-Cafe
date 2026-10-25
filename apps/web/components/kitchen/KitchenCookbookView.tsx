@@ -22,6 +22,16 @@ import {
   ShieldAlert,
   Save,
   Trash2,
+  ChevronRight,
+  ChevronDown,
+  MoreVertical,
+  Info,
+  Lightbulb,
+  ShieldCheck,
+  LayoutGrid,
+  Coffee,
+  Leaf,
+  UtensilsCrossed,
 } from "lucide-react";
 import { type KitchenMenuItem, fetchKitchenMenuCatalogAction } from "@/app/kitchen/menu-actions";
 
@@ -266,7 +276,7 @@ const DEFAULT_RECIPES: Record<string, RecipeDetail> = {
 export const KitchenCookbookView: React.FC = () => {
   const [menuItems, setMenuItems] = useState<KitchenMenuItem[]>([]);
   const [recipes, setRecipes] = useState<Record<string, RecipeDetail>>(DEFAULT_RECIPES);
-  const [selectedRecipeId, setSelectedRecipeId] = useState<string>("item_pour_over");
+  const [selectedRecipeId, setSelectedRecipeId] = useState<string>("");
   const [selectedStation, setSelectedStation] = useState<string>("All Stations");
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [isEditing, setIsEditing] = useState<boolean>(false);
@@ -277,6 +287,11 @@ export const KitchenCookbookView: React.FC = () => {
   const [activeTimerSeconds, setActiveTimerSeconds] = useState<number | null>(null);
   const [timerRunning, setTimerRunning] = useState<boolean>(false);
   const [timerLabel, setTimerLabel] = useState<string>("");
+
+  // Interactive Checklist & Step Expansion
+  const [showChecklist, setShowChecklist] = useState<boolean>(false);
+  const [completedSteps, setCompletedSteps] = useState<Record<number, boolean>>({});
+  const [expandedSteps, setExpandedSteps] = useState<Record<number, boolean>>({});
 
   // Load recipes from localStorage on client
   useEffect(() => {
@@ -294,6 +309,10 @@ export const KitchenCookbookView: React.FC = () => {
         const res = await fetchKitchenMenuCatalogAction();
         if (res.success && res.items.length > 0) {
           setMenuItems(res.items);
+          setSelectedRecipeId((prev) => {
+            const hasPrev = res.items.some((i) => i.id === prev);
+            return hasPrev ? prev : res.items[0].id;
+          });
         }
       } catch {
         // safe
@@ -325,10 +344,21 @@ export const KitchenCookbookView: React.FC = () => {
   }, [timerRunning, activeTimerSeconds]);
 
   const activeRecipe = useMemo(() => {
+    // 1. Direct match by recipe ID
     if (recipes[selectedRecipeId]) return recipes[selectedRecipeId];
-    // Generate intelligent recipe template for un-seeded item
-    const fallbackItem = menuItems.find((i) => i.id === selectedRecipeId);
+
+    // 2. Match with selected menu item
+    const fallbackItem = menuItems.find((i) => i.id === selectedRecipeId) || menuItems[0];
     if (fallbackItem) {
+      // Check if any predefined recipe matches by dishName
+      const matchByName = Object.values(recipes).find(
+        (r) => r.dishName.trim().toLowerCase() === fallbackItem.name.trim().toLowerCase()
+      );
+      if (matchByName) {
+        return { ...matchByName, itemId: fallbackItem.id };
+      }
+
+      // Generate intelligent recipe template for the live menu item
       return {
         itemId: fallbackItem.id,
         dishName: fallbackItem.name,
@@ -339,21 +369,21 @@ export const KitchenCookbookView: React.FC = () => {
         servingWare: "Smol Café Ceramic Ware with Garnish",
         idealTemperature: "Warm / Fresh",
         ingredients: [
-          { name: fallbackItem.coreIngredients || "Artisanal Cafe Ingredients", quantity: "Standard batch", notes: "Fresh prep" },
+          { name: fallbackItem.coreIngredients || "Fresh Artisanal Ingredients", quantity: "Standard batch", notes: "Fresh prep" },
           { name: "House Seasoning / Butter", quantity: "1 portion", notes: "To taste" },
         ],
         steps: [
           {
             stepNumber: 1,
-            title: "Preparation & Inspection",
+            title: "Preparation & Station Setup",
             instruction: `Inspect ingredients for ${fallbackItem.name}. Ensure station equipment is pre-heated and sanitised.`,
             durationSeconds: 60,
             heatLevel: "Low Heat" as const,
           },
           {
             stepNumber: 2,
-            title: "Cooking & Sauté Phase",
-            instruction: "Cook according to station standard guidelines until aromatic, properly textured, and golden.",
+            title: "Cooking / Brew Phase",
+            instruction: "Prepare according to station standard guidelines until aromatic, properly textured, and golden.",
             durationSeconds: 180,
             heatLevel: "Medium Flame" as const,
           },
@@ -370,7 +400,8 @@ export const KitchenCookbookView: React.FC = () => {
         allergens: [fallbackItem.dietary || "Standard"],
       };
     }
-    return DEFAULT_RECIPES.item_pour_over;
+
+    return Object.values(recipes)[0] || DEFAULT_RECIPES.item_croissant_butter;
   }, [recipes, selectedRecipeId, menuItems]);
 
   const stations = useMemo(() => {
@@ -384,37 +415,30 @@ export const KitchenCookbookView: React.FC = () => {
   }, []);
 
   const allAvailableItems = useMemo(() => {
-    // Combine menu items + recipes
-    const map = new Map<string, { id: string; name: string; station: string; hasDetailedRecipe: boolean }>();
+    // Strictly driven by the live café menu catalog!
+    if (menuItems.length === 0) return [];
 
-    // Add predefined recipes first
-    Object.values(recipes).forEach((r) => {
-      map.set(r.itemId, {
-        id: r.itemId,
-        name: r.dishName,
-        station: r.station,
-        hasDetailedRecipe: true,
-      });
-    });
-
-    // Add remaining menu catalog items
-    menuItems.forEach((m) => {
-      if (!map.has(m.id)) {
-        map.set(m.id, {
+    return menuItems
+      .map((m) => {
+        const hasDetailedRecipe = Boolean(
+          recipes[m.id] ||
+          Object.values(recipes).some(
+            (r) => r.dishName.trim().toLowerCase() === m.name.trim().toLowerCase()
+          )
+        );
+        return {
           id: m.id,
           name: m.name,
           station: m.station,
-          hasDetailedRecipe: false,
-        });
-      }
-    });
-
-    return Array.from(map.values()).filter((item) => {
-      const matchStation = selectedStation === "All Stations" || item.station === selectedStation;
-      const matchSearch =
-        !searchQuery.trim() || item.name.toLowerCase().includes(searchQuery.toLowerCase());
-      return matchStation && matchSearch;
-    });
+          hasDetailedRecipe,
+        };
+      })
+      .filter((item) => {
+        const matchStation = selectedStation === "All Stations" || item.station === selectedStation;
+        const matchSearch =
+          !searchQuery.trim() || item.name.toLowerCase().includes(searchQuery.toLowerCase());
+        return matchStation && matchSearch;
+      });
   }, [recipes, menuItems, selectedStation, searchQuery]);
 
   const handleStartTimer = (seconds: number, title: string) => {
@@ -488,72 +512,103 @@ export const KitchenCookbookView: React.FC = () => {
   };
 
   return (
-    <div className="flex-1 flex flex-col xl:flex-row gap-4 p-3 sm:p-6 max-w-7xl mx-auto w-full">
+    <div className="flex-1 flex flex-col xl:flex-row gap-4 p-3 sm:p-5 max-w-[1560px] mx-auto w-full">
       {/* LEFT SIDEBAR: Search, Station Filters, Recipe List */}
-      <div className="w-full xl:w-80 shrink-0 flex flex-col gap-3">
+      <div className="w-full xl:w-[360px] shrink-0 flex flex-col gap-3">
         {/* Header Title Card */}
-        <div className="rounded-3xl border border-[#C9AE8B]/40 dark:border-stone-800 bg-[#FAF4EB] dark:bg-[#1E1A17] p-4 shadow-sm space-y-2">
-          <div className="flex items-start justify-between gap-2.5">
-            <div className="flex items-center gap-2 min-w-0">
-              <BookOpen className="h-5 w-5 text-[#B72E35] dark:text-[#A78BFA] shrink-0" />
-              <h2 className="font-serif text-base sm:text-lg font-bold text-[#241F1C] dark:text-white leading-tight">
-                Chef&apos;s Cookbook &amp; SOP
-              </h2>
+        <div className="relative overflow-hidden rounded-[26px] border border-[#E7DAC8] dark:border-stone-800 bg-[#FFFDF9] dark:bg-[#1C1715] p-5 shadow-[0_2px_12px_rgba(74,46,27,0.03)] space-y-2.5">
+          {/* Subtle Decorative Chef Watermark */}
+          <div className="pointer-events-none absolute -right-3 -bottom-3 text-[#725039]/5 dark:text-white/5 select-none">
+            <ChefHat className="h-28 w-28 -rotate-12" />
+          </div>
+
+          <div className="flex items-start justify-between gap-2.5 relative">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-red-50 dark:bg-red-950/40 border border-red-200/70 dark:border-red-900/40 text-[#B72E35]">
+                <ChefHat className="h-5 w-5" />
+              </div>
+              <div className="leading-tight">
+                <h2 className="font-serif text-lg font-bold text-[#241F1C] dark:text-white">
+                  Chef&apos;s
+                </h2>
+                <h2 className="font-serif text-lg font-bold text-[#241F1C] dark:text-white">
+                  Cookbook &amp; SOP
+                </h2>
+              </div>
             </div>
-            <span className="shrink-0 rounded-full bg-emerald-100 dark:bg-emerald-950/70 border border-emerald-300 dark:border-emerald-800 px-2 py-0.5 font-mono text-[10px] font-bold text-emerald-800 dark:text-emerald-300 whitespace-nowrap">
-              Staff Backup Manual
+
+            <span className="shrink-0 rounded-lg bg-emerald-50 dark:bg-emerald-950/70 border border-emerald-300 dark:border-emerald-800 px-2.5 py-1 font-mono text-[10px] font-bold text-emerald-800 dark:text-emerald-300 flex items-center gap-1 shadow-2xs">
+              <BookOpen className="h-3 w-3 text-emerald-700 dark:text-emerald-300" />
+              <span>Staff Backup Manual</span>
             </span>
           </div>
-          <p className="font-serif italic text-xs text-[#725039] dark:text-[#C9AE8B] leading-relaxed">
+
+          <p className="font-serif italic text-xs text-[#7A583E] dark:text-[#C9AE8B] leading-relaxed relative">
             Exact gram measurements, heat levels, sauté timings, and emergency substitution guides so any team member can step in and cook.
           </p>
         </div>
 
-        {/* Search & Station Pills */}
-        <div className="rounded-2xl border border-[#C9AE8B]/40 dark:border-stone-800 bg-[#FAF4EB] dark:bg-[#1E1A17] p-3 space-y-2.5 shadow-2xs">
-          <div className="relative flex items-center">
-            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-[#8C7E72] dark:text-stone-400 pointer-events-none" />
+        {/* Search & Station Pills Card */}
+        <div className="rounded-[22px] border border-[#E7DAC8] dark:border-stone-800 bg-[#FFFDF9] dark:bg-[#1C1715] p-3.5 space-y-3 shadow-[0_2px_12px_rgba(74,46,27,0.03)]">
+          {/* Search Input with ⌘ K */}
+          <div className="relative flex items-center rounded-xl border border-[#E4D7C5] dark:border-stone-700 bg-[#FAF6F0] dark:bg-stone-900/80 px-3 py-2">
+            <Search className="h-4 w-4 text-[#8C7E72] dark:text-stone-400 shrink-0 pointer-events-none" />
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search dish or beverage recipe..."
-              className="w-full pl-10 pr-8 py-2 rounded-xl border border-[#C9AE8B]/40 dark:border-stone-700 bg-white dark:bg-stone-900 text-xs font-medium text-[#241F1C] dark:text-stone-200 placeholder-[#8C7E72] dark:placeholder-stone-500 focus:outline-none focus:border-[#B72E35] focus:ring-1 focus:ring-[#B72E35]/30 transition shadow-2xs"
+              className="w-full bg-transparent pl-2.5 pr-8 text-xs font-medium text-[#241F1C] dark:text-stone-200 placeholder-[#8C7E72] dark:placeholder-stone-500 focus:outline-none"
             />
-            {searchQuery && (
+            {searchQuery ? (
               <button
                 type="button"
                 onClick={() => setSearchQuery("")}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-600 dark:hover:text-stone-200 p-0.5"
-                title="Clear search"
+                className="text-stone-400 hover:text-stone-600 dark:hover:text-stone-200 p-0.5"
+                title="Clear"
               >
                 ✕
               </button>
+            ) : (
+              <span className="shrink-0 rounded bg-[#EFE5D7] dark:bg-stone-800 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-[#7A583E] dark:text-stone-400">
+                ⌘ K
+              </span>
             )}
           </div>
 
-          {/* Station selector */}
-          <div className="flex flex-wrap gap-1.5 pt-1">
-            {stations.map((st) => (
-              <button
-                key={st}
-                onClick={() => setSelectedStation(st)}
-                className={`px-2.5 py-1 rounded-lg font-mono text-[11px] font-semibold transition cursor-pointer ${
-                  selectedStation === st
-                    ? "bg-[#B72E35] text-white shadow-2xs"
-                    : "bg-[#EFE7DC] dark:bg-stone-800 text-[#725039] dark:text-stone-300 hover:bg-[#E2D6C5]"
-                }`}
-              >
-                {st}
-              </button>
-            ))}
+          {/* Station Filter Pills */}
+          <div className="flex flex-wrap gap-2 pt-0.5">
+            {stations.map((st) => {
+              const isSelected = selectedStation === st;
+              let Icon = LayoutGrid;
+              if (st === "Brew Bar & Beverages") Icon = Coffee;
+              else if (st === "Hot Kitchen & Grill") Icon = Flame;
+              else if (st === "Bakery & Bakes") Icon = UtensilsCrossed;
+              else if (st === "Cold Prep & Bowls") Icon = Leaf;
+
+              return (
+                <button
+                  key={st}
+                  type="button"
+                  onClick={() => setSelectedStation(st)}
+                  className={`flex items-center gap-1.5 rounded-xl px-3 py-1.5 font-mono text-xs font-semibold transition cursor-pointer ${
+                    isSelected
+                      ? "bg-[#B72E35] text-white shadow-xs"
+                      : "bg-[#FAF6F0] dark:bg-stone-900/80 border border-[#EADCC9] dark:border-stone-800 text-[#6B4B35] dark:text-stone-300 hover:bg-[#F3EADB] dark:hover:bg-stone-800"
+                  }`}
+                >
+                  <Icon className="h-3.5 w-3.5 shrink-0" />
+                  <span>{st}</span>
+                </button>
+              );
+            })}
           </div>
         </div>
 
         {/* Recipes Directory List */}
-        <div className="flex-1 rounded-3xl border border-[#C9AE8B]/40 dark:border-stone-800 bg-[#FAF4EB] dark:bg-[#1E1A17] p-2 overflow-y-auto max-h-[480px] xl:max-h-[640px] space-y-1.5">
+        <div className="flex-1 rounded-[26px] border border-[#E7DAC8] dark:border-stone-800 bg-[#FFFDF9] dark:bg-[#1C1715] p-2.5 overflow-y-auto max-h-[500px] xl:max-h-[640px] space-y-2 shadow-[0_2px_12px_rgba(74,46,27,0.03)]">
           {allAvailableItems.length === 0 ? (
-            <p className="p-6 text-center font-serif italic text-xs text-[#8C7E72]">
+            <p className="p-8 text-center font-serif italic text-xs text-[#8C7E72]">
               No dishes found matching search
             </p>
           ) : (
@@ -562,34 +617,54 @@ export const KitchenCookbookView: React.FC = () => {
               return (
                 <button
                   key={item.id}
+                  type="button"
                   onClick={() => {
                     setSelectedRecipeId(item.id);
                     setIsEditing(false);
                     setEditedRecipe(null);
                   }}
-                  className={`w-full text-left p-2.5 rounded-2xl border transition cursor-pointer flex items-center justify-between ${
+                  className={`w-full text-left p-3 rounded-2xl border transition cursor-pointer flex items-center justify-between group ${
                     isSelected
-                      ? "bg-[#F3E7D3] dark:bg-stone-800/90 border-[#B72E35] shadow-xs"
-                      : "bg-white/70 dark:bg-stone-900/40 border-[#E2D7C7]/80 dark:border-stone-800 hover:bg-white dark:hover:bg-stone-900"
+                      ? "bg-[#FDF2F0] dark:bg-purple-950/20 border-2 border-[#B72E35] dark:border-purple-500 shadow-sm"
+                      : "bg-white dark:bg-stone-900/60 border border-[#EBDCC9] dark:border-stone-800 hover:bg-[#FAF6F0] dark:hover:bg-stone-800/80"
                   }`}
                 >
-                  <div className="min-w-0 pr-2">
-                    <span className="block font-serif text-xs font-bold text-[#241F1C] dark:text-stone-200 truncate">
-                      {item.name}
-                    </span>
-                    <span className="font-mono text-[10px] text-[#725039] dark:text-stone-400">
-                      {item.station}
-                    </span>
+                  <div className="flex items-center gap-2.5 min-w-0 pr-2">
+                    <div
+                      className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border transition ${
+                        isSelected
+                          ? "bg-white dark:bg-stone-900 border-[#B72E35]/30 text-[#B72E35] dark:text-purple-400 shadow-2xs"
+                          : "bg-[#FAF6F0] dark:bg-stone-800 border-[#E7DAC8] dark:border-stone-700 text-[#725039] dark:text-stone-400"
+                      }`}
+                    >
+                      <ChefHat className="h-4.5 w-4.5" />
+                    </div>
+                    <div className="min-w-0">
+                      <span className="block font-serif text-sm font-bold text-[#241F1C] dark:text-white truncate">
+                        {item.name}
+                      </span>
+                      <span className="font-mono text-[10.5px] text-[#7A583E] dark:text-[#C9AE8B]">
+                        {item.station}
+                      </span>
+                    </div>
                   </div>
-                  {item.hasDetailedRecipe ? (
-                    <span className="rounded-full bg-emerald-100 dark:bg-emerald-950/80 text-emerald-800 dark:text-emerald-300 px-2 py-0.5 font-mono text-[9px] font-bold shrink-0">
-                      SOP Ready
-                    </span>
-                  ) : (
-                    <span className="rounded-full bg-amber-100 dark:bg-amber-950/80 text-amber-800 dark:text-amber-300 px-2 py-0.5 font-mono text-[9px] font-bold shrink-0">
-                      Auto Guide
-                    </span>
-                  )}
+
+                  <div className="flex items-center gap-1 shrink-0">
+                    {item.hasDetailedRecipe ? (
+                      <span className="rounded-lg bg-emerald-100 dark:bg-emerald-950/80 border border-emerald-300 text-emerald-800 dark:text-emerald-300 px-2 py-0.5 font-mono text-[9px] font-bold">
+                        SOP Ready
+                      </span>
+                    ) : (
+                      <span className="rounded-lg bg-[#FEF3C7] dark:bg-amber-950/80 border border-amber-300 text-[#92400E] dark:text-amber-300 px-2 py-0.5 font-mono text-[9px] font-bold">
+                        Auto Guide
+                      </span>
+                    )}
+                    <ChevronRight
+                      className={`h-4 w-4 transition ${
+                        isSelected ? "text-[#B72E35] dark:text-purple-400 translate-x-0.5" : "text-[#A8988B] group-hover:translate-x-0.5"
+                      }`}
+                    />
+                  </div>
                 </button>
               );
             })
@@ -598,10 +673,15 @@ export const KitchenCookbookView: React.FC = () => {
       </div>
 
       {/* RIGHT MAIN PANEL: Active Recipe Manual & Interactive Sauté/Brew Guide */}
-      <div className="flex-1 flex flex-col rounded-3xl border border-[#C9AE8B]/40 dark:border-stone-800 bg-[#FAF4EB] dark:bg-[#1E1A17] p-4 sm:p-6 shadow-sm overflow-y-auto">
+      <div className="flex-1 flex flex-col rounded-[28px] border border-[#E7DAC8] dark:border-stone-800 bg-[#FFFDF9] dark:bg-[#1C1715] p-5 sm:p-7 shadow-[0_4px_20px_rgba(74,46,27,0.03)] overflow-y-auto relative space-y-6">
+        {/* Subtle Decorative Chef Watermark on Right Header */}
+        <div className="pointer-events-none absolute right-8 top-4 text-[#725039]/5 dark:text-white/5 select-none hidden sm:block">
+          <ChefHat className="h-44 w-44 -rotate-6" />
+        </div>
+
         {/* Floating Active Timer Widget */}
         {activeTimerSeconds !== null && (
-          <div className="mb-4 flex items-center justify-between rounded-2xl bg-[#B72E35] text-white p-3.5 shadow-md animate-fade-in">
+          <div className="flex items-center justify-between rounded-2xl bg-[#B72E35] text-white p-3.5 shadow-md animate-fade-in relative z-10">
             <div className="flex items-center gap-3">
               <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/20">
                 <Clock className="h-5 w-5 animate-spin" style={{ animationDuration: "4s" }} />
@@ -639,22 +719,32 @@ export const KitchenCookbookView: React.FC = () => {
         )}
 
         {/* Recipe Top Header & Controls */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#C9AE8B]/30 dark:border-stone-800 pb-4">
+        <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 border-b border-[#E7DAC8]/70 dark:border-stone-800 pb-5 relative z-10">
           <div>
             <div className="flex items-center gap-2 flex-wrap">
-              <span className="rounded-full bg-[#B72E35] text-white px-2.5 py-0.5 font-mono text-[10px] font-bold">
+              <span className="rounded-full bg-[#B72E35] text-white px-3 py-1 font-mono text-xs font-bold shadow-2xs">
                 {activeRecipe.station}
               </span>
-              <span className="rounded-full bg-[#EFE7DC] dark:bg-stone-800 px-2.5 py-0.5 font-mono text-[10px] font-semibold text-[#725039] dark:text-stone-300">
+              <ChevronRight className="h-3.5 w-3.5 text-[#9E8B7A]" />
+              <span className="rounded-full bg-[#EFE5D7] dark:bg-stone-800 px-3 py-1 font-mono text-xs font-semibold text-[#6E4F39] dark:text-stone-300">
                 {activeRecipe.difficulty}
               </span>
             </div>
-            <h1 className="font-serif text-2xl sm:text-3xl font-bold tracking-tight text-[#241F1C] dark:text-white mt-1">
+            <h1 className="font-serif text-3xl sm:text-4xl font-extrabold tracking-tight text-[#241F1C] dark:text-white mt-2">
               {activeRecipe.dishName}
             </h1>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 shrink-0">
+            {/* Three Dots Menu Button */}
+            <button
+              type="button"
+              className="flex h-9 w-9 items-center justify-center rounded-xl border border-[#E5D7C5] dark:border-stone-700 bg-white dark:bg-stone-800 text-[#725039] dark:text-stone-300 hover:bg-[#FAF6F0] dark:hover:bg-stone-700 transition cursor-pointer shadow-2xs"
+              title="More options"
+            >
+              <MoreVertical className="h-4 w-4" />
+            </button>
+
             {!isEditing ? (
               <button
                 type="button"
@@ -662,7 +752,7 @@ export const KitchenCookbookView: React.FC = () => {
                   setEditedRecipe(JSON.parse(JSON.stringify(activeRecipe)));
                   setIsEditing(true);
                 }}
-                className="flex items-center gap-1.5 rounded-xl border border-[#C9AE8B]/60 dark:border-stone-700 bg-white dark:bg-stone-800 px-3.5 py-2 font-serif text-xs font-bold text-[#241F1C] dark:text-stone-200 shadow-xs hover:bg-[#F3E7D3]/40 transition active:scale-95 cursor-pointer"
+                className="flex items-center gap-1.5 rounded-xl border border-[#B72E35]/50 dark:border-stone-700 bg-white dark:bg-stone-800 px-4 py-2 text-xs font-serif font-bold text-[#241F1C] dark:text-stone-200 shadow-2xs hover:bg-[#FAF6F0] hover:border-[#B72E35] transition active:scale-95 cursor-pointer"
               >
                 <Edit3 className="h-3.5 w-3.5 text-[#B72E35]" />
                 <span>Edit Recipe SOP</span>
@@ -694,87 +784,103 @@ export const KitchenCookbookView: React.FC = () => {
         </div>
 
         {/* Essential Metrics: Prep, Cook, Serving Ware, Ideal Temp */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 py-4">
-          <div className="p-3 rounded-2xl bg-white dark:bg-stone-900 border border-[#E2D7C7] dark:border-stone-800 shadow-2xs">
-            <div className="flex items-center gap-1.5 text-xs text-[#725039] dark:text-stone-400 font-mono">
-              <Clock className="h-3.5 w-3.5 text-[#B72E35]" />
-              <span>Prep Time</span>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5 py-1">
+          <div className="p-3.5 rounded-2xl bg-white dark:bg-stone-900 border border-[#E8DCCB] dark:border-stone-800 flex items-center gap-3 shadow-[0_2px_8px_rgba(74,46,27,0.03)]">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-red-50 dark:bg-red-950/40 border border-red-100 dark:border-red-900/30 text-[#B72E35]">
+              <Clock className="h-5 w-5" />
             </div>
-            <p className="font-serif text-base font-bold text-[#241F1C] dark:text-white mt-0.5">
-              {activeRecipe.prepTimeMinutes} mins
-            </p>
+            <div className="min-w-0">
+              <span className="block font-mono text-[10.5px] uppercase font-bold text-[#8C7662] dark:text-stone-400">
+                Prep Time
+              </span>
+              <p className="font-serif text-xl font-extrabold text-[#241F1C] dark:text-white leading-tight mt-0.5">
+                {activeRecipe.prepTimeMinutes} mins
+              </p>
+            </div>
           </div>
 
-          <div className="p-3 rounded-2xl bg-white dark:bg-stone-900 border border-[#E2D7C7] dark:border-stone-800 shadow-2xs">
-            <div className="flex items-center gap-1.5 text-xs text-[#725039] dark:text-stone-400 font-mono">
-              <Flame className="h-3.5 w-3.5 text-amber-500" />
-              <span>Cook / Sauté</span>
+          <div className="p-3.5 rounded-2xl bg-white dark:bg-stone-900 border border-[#E8DCCB] dark:border-stone-800 flex items-center gap-3 shadow-[0_2px_8px_rgba(74,46,27,0.03)]">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-100 dark:border-amber-900/30 text-amber-600">
+              <Flame className="h-5 w-5" />
             </div>
-            <p className="font-serif text-base font-bold text-[#241F1C] dark:text-white mt-0.5">
-              {activeRecipe.cookTimeMinutes} mins
-            </p>
+            <div className="min-w-0">
+              <span className="block font-mono text-[10.5px] uppercase font-bold text-[#8C7662] dark:text-stone-400">
+                Cook / Sauté
+              </span>
+              <p className="font-serif text-xl font-extrabold text-[#241F1C] dark:text-white leading-tight mt-0.5">
+                {activeRecipe.cookTimeMinutes} mins
+              </p>
+            </div>
           </div>
 
-          <div className="p-3 rounded-2xl bg-white dark:bg-stone-900 border border-[#E2D7C7] dark:border-stone-800 shadow-2xs">
-            <div className="flex items-center gap-1.5 text-xs text-[#725039] dark:text-stone-400 font-mono">
-              <Thermometer className="h-3.5 w-3.5 text-emerald-500" />
-              <span>Target Temp</span>
+          <div className="p-3.5 rounded-2xl bg-white dark:bg-stone-900 border border-[#E8DCCB] dark:border-stone-800 flex items-center gap-3 shadow-[0_2px_8px_rgba(74,46,27,0.03)]">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-100 dark:border-emerald-900/30 text-emerald-600">
+              <Thermometer className="h-5 w-5" />
             </div>
-            <p className="font-serif text-sm font-bold text-[#241F1C] dark:text-white mt-0.5 truncate">
-              {activeRecipe.idealTemperature}
-            </p>
+            <div className="min-w-0">
+              <span className="block font-mono text-[10.5px] uppercase font-bold text-[#8C7662] dark:text-stone-400">
+                Target Temp
+              </span>
+              <p className="font-serif text-base font-extrabold text-[#241F1C] dark:text-white leading-tight mt-0.5 truncate">
+                {activeRecipe.idealTemperature}
+              </p>
+            </div>
           </div>
 
-          <div className="p-3 rounded-2xl bg-white dark:bg-stone-900 border border-[#E2D7C7] dark:border-stone-800 shadow-2xs">
-            <div className="flex items-center gap-1.5 text-xs text-[#725039] dark:text-stone-400 font-mono">
-              <Utensils className="h-3.5 w-3.5 text-[#754CFF]" />
-              <span>Serving Ware</span>
+          <div className="p-3.5 rounded-2xl bg-white dark:bg-stone-900 border border-[#E8DCCB] dark:border-stone-800 flex items-center gap-3 shadow-[0_2px_8px_rgba(74,46,27,0.03)]">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-purple-50 dark:bg-purple-950/40 border border-purple-100 dark:border-purple-900/30 text-purple-600">
+              <Utensils className="h-5 w-5" />
             </div>
-            <p className="font-serif text-xs font-bold text-[#241F1C] dark:text-white mt-0.5 truncate" title={activeRecipe.servingWare}>
-              {activeRecipe.servingWare}
-            </p>
+            <div className="min-w-0 flex-1">
+              <span className="block font-mono text-[10.5px] uppercase font-bold text-[#8C7662] dark:text-stone-400">
+                Serving Ware
+              </span>
+              <p className="font-serif text-xs font-bold text-[#241F1C] dark:text-white leading-tight mt-0.5 truncate" title={activeRecipe.servingWare}>
+                {activeRecipe.servingWare}
+              </p>
+            </div>
+            <ChevronRight className="h-4 w-4 text-[#A8988B] shrink-0" />
           </div>
         </div>
 
         {/* INGREDIENTS SECTION (Exact Gram Ratios) */}
-        <div className="rounded-3xl border border-[#E2D7C7] dark:border-stone-800 bg-white dark:bg-[#1A1614] p-4 sm:p-5 space-y-3 mb-4 shadow-2xs">
-          <div className="flex items-center justify-between">
+        <div className="space-y-3">
+          <div className="flex items-center justify-between flex-wrap gap-2">
             <div className="flex items-center gap-2">
-              <Layers className="h-4 w-4 text-[#B72E35]" />
-              <h3 className="font-serif text-base font-bold text-[#241F1C] dark:text-white">
+              <Layers className="h-5 w-5 text-[#B72E35]" />
+              <h3 className="font-serif text-base sm:text-lg font-bold text-[#241F1C] dark:text-white">
                 Exact Ingredient Ratios &amp; Portions
               </h3>
             </div>
-            {isEditing && (
-              <button
-                type="button"
-                onClick={handleAddIngredient}
-                className="flex items-center gap-1 rounded-lg bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 border border-emerald-300 px-2 py-0.5 text-xs font-mono font-bold cursor-pointer"
-              >
-                <Plus className="h-3 w-3" />
-                <span>Add Ingredient</span>
-              </button>
-            )}
+            <div className="flex items-center gap-1.5 text-[#8C7E72] dark:text-stone-400 font-mono text-xs">
+              <Info className="h-3.5 w-3.5" />
+              <span>Use standard measurements for consistency</span>
+            </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {!isEditing
               ? activeRecipe.ingredients.map((ing, idx) => (
                   <div
                     key={idx}
-                    className="flex items-center justify-between p-2.5 rounded-2xl border border-[#E2D7C7]/70 dark:border-stone-800 bg-[#FAF4EB]/60 dark:bg-stone-900/40"
+                    className="p-3.5 rounded-2xl border border-[#E8DCCB] dark:border-stone-800 bg-[#FAF7F2] dark:bg-stone-900 flex items-center justify-between shadow-[0_1px_4px_rgba(74,46,27,0.03)]"
                   >
-                    <div>
-                      <span className="font-serif text-xs font-bold text-[#241F1C] dark:text-stone-200">
-                        {ing.name}
-                      </span>
-                      {ing.notes && (
-                        <span className="block font-mono text-[10px] text-[#8C7E72] dark:text-stone-400">
-                          • {ing.notes}
+                    <div className="flex items-center gap-3 min-w-0 pr-2">
+                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white dark:bg-stone-800 border border-[#E7DAC8] dark:border-stone-700 text-[#725039]">
+                        {idx === 0 ? <Leaf className="h-4 w-4 text-[#B72E35]" /> : <Sparkles className="h-4 w-4 text-amber-600" />}
+                      </div>
+                      <div className="min-w-0">
+                        <span className="block font-serif text-sm font-bold text-[#241F1C] dark:text-stone-100 truncate">
+                          {ing.name}
                         </span>
-                      )}
+                        {ing.notes && (
+                          <span className="block font-mono text-xs text-[#8C7E72] dark:text-stone-400 mt-0.5 truncate">
+                            • {ing.notes}
+                          </span>
+                        )}
+                      </div>
                     </div>
-                    <span className="rounded-lg bg-[#EFE7DC] dark:bg-stone-800 px-2 py-1 font-mono text-xs font-black text-[#B72E35] dark:text-[#A78BFA] shrink-0">
+                    <span className="rounded-lg bg-red-100/70 dark:bg-red-950/60 border border-red-200 dark:border-red-900/50 text-[#B72E35] dark:text-red-300 font-mono text-xs font-black px-3 py-1 shrink-0">
                       {ing.quantity}
                     </span>
                   </div>
@@ -816,71 +922,130 @@ export const KitchenCookbookView: React.FC = () => {
                   </div>
                 ))}
           </div>
+
+          {isEditing && (
+            <button
+              type="button"
+              onClick={handleAddIngredient}
+              className="flex items-center gap-1 rounded-xl bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 border border-emerald-300 px-3 py-1.5 text-xs font-mono font-bold cursor-pointer"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              <span>Add Ingredient</span>
+            </button>
+          )}
         </div>
 
         {/* STEP-BY-STEP COOKING / SAUTÉ PROCEDURE */}
-        <div className="rounded-3xl border border-[#E2D7C7] dark:border-stone-800 bg-white dark:bg-[#1A1614] p-4 sm:p-5 space-y-4 mb-4 shadow-2xs">
-          <div className="flex items-center justify-between">
+        <div className="space-y-3">
+          <div className="flex items-center justify-between flex-wrap gap-2">
             <div className="flex items-center gap-2">
-              <ChefHat className="h-4 w-4 text-[#B72E35]" />
-              <h3 className="font-serif text-base font-bold text-[#241F1C] dark:text-white">
+              <ChefHat className="h-5 w-5 text-[#B72E35]" />
+              <h3 className="font-serif text-base sm:text-lg font-bold text-[#241F1C] dark:text-white">
                 Step-by-Step Cooking &amp; Sauté SOP Guide
               </h3>
             </div>
-            {isEditing && (
-              <button
-                type="button"
-                onClick={handleAddStep}
-                className="flex items-center gap-1 rounded-lg bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 border border-emerald-300 px-2 py-0.5 text-xs font-mono font-bold cursor-pointer"
-              >
-                <Plus className="h-3 w-3" />
-                <span>Add Step</span>
-              </button>
-            )}
+
+            <div className="flex items-center gap-3">
+              {isEditing && (
+                <button
+                  type="button"
+                  onClick={handleAddStep}
+                  className="flex items-center gap-1 rounded-xl bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 border border-emerald-300 px-3 py-1.5 text-xs font-mono font-bold cursor-pointer"
+                >
+                  <Plus className="h-3 w-3" />
+                  <span>Add Step</span>
+                </button>
+              )}
+              <label className="flex items-center gap-2 font-mono text-xs text-[#725039] dark:text-stone-300 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={showChecklist}
+                  onChange={(e) => setShowChecklist(e.target.checked)}
+                  className="rounded border-[#C9AE8B] text-[#B72E35] focus:ring-[#B72E35] h-3.5 w-3.5 cursor-pointer"
+                />
+                <span>Show checklist</span>
+              </label>
+            </div>
           </div>
 
           <div className="space-y-3">
             {!isEditing
-              ? activeRecipe.steps.map((step) => (
-                  <div
-                    key={step.stepNumber}
-                    className="p-3.5 rounded-2xl border border-[#E2D7C7]/80 dark:border-stone-800 bg-[#FAF4EB]/40 dark:bg-stone-900/30 space-y-2 hover:bg-[#FAF4EB]/80 transition"
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[#B72E35] text-white font-mono text-xs font-bold">
-                          {step.stepNumber}
-                        </span>
-                        <h4 className="font-serif text-sm font-bold text-[#241F1C] dark:text-white">
-                          {step.title}
-                        </h4>
-                      </div>
-
-                      <div className="flex items-center gap-2">
-                        {step.heatLevel && (
-                          <span className="rounded-full bg-amber-100 dark:bg-amber-950/80 text-amber-900 dark:text-amber-300 border border-amber-300 px-2.5 py-0.5 font-mono text-[10px] font-bold">
-                            🔥 {step.heatLevel}
+              ? activeRecipe.steps.map((step) => {
+                  const isChecked = Boolean(completedSteps[step.stepNumber]);
+                  const isExpanded = expandedSteps[step.stepNumber] !== false; // default open
+                  return (
+                    <div
+                      key={step.stepNumber}
+                      className="p-4 rounded-2xl border border-[#E8DCCB] dark:border-stone-800 bg-white dark:bg-stone-900 space-y-2.5 shadow-[0_2px_8px_rgba(74,46,27,0.03)] hover:border-[#B72E35]/40 transition"
+                    >
+                      <div className="flex items-center justify-between gap-2 flex-wrap">
+                        <div className="flex items-center gap-2.5">
+                          <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[#B72E35] text-white font-mono text-xs font-black shrink-0">
+                            {step.stepNumber}
                           </span>
-                        )}
-                        {step.durationSeconds && (
+                          <h4 className="font-serif text-sm sm:text-base font-bold text-[#241F1C] dark:text-white">
+                            {step.title}
+                          </h4>
+                        </div>
+
+                        <div className="flex items-center gap-2 shrink-0">
+                          {step.heatLevel && (
+                            <span className="rounded-full bg-amber-50 dark:bg-amber-950/60 border border-amber-200 text-amber-800 dark:text-amber-300 px-3 py-1 font-mono text-[11px] font-bold flex items-center gap-1">
+                              🔥 {step.heatLevel}
+                            </span>
+                          )}
+
+                          {step.durationSeconds && (
+                            <button
+                              type="button"
+                              onClick={() => handleStartTimer(step.durationSeconds || 60, step.title)}
+                              className="flex items-center gap-1.5 rounded-full bg-red-50 hover:bg-red-100 dark:bg-red-950/60 border border-red-200 text-[#B72E35] dark:text-red-300 px-3 py-1 font-mono text-[11px] font-bold cursor-pointer transition active:scale-95 shadow-2xs"
+                              title="Start step timer"
+                            >
+                              <Play className="h-3 w-3 fill-current" />
+                              <span>
+                                {Math.floor(step.durationSeconds / 60)}:{(step.durationSeconds % 60).toString().padStart(2, "0")} min
+                              </span>
+                            </button>
+                          )}
+
+                          {showChecklist && (
+                            <input
+                              type="checkbox"
+                              checked={isChecked}
+                              onChange={(e) => {
+                                setCompletedSteps((prev) => ({
+                                  ...prev,
+                                  [step.stepNumber]: e.target.checked,
+                                }));
+                              }}
+                              className="rounded border-[#C9AE8B] text-[#B72E35] focus:ring-[#B72E35] h-4 w-4 cursor-pointer ml-1"
+                            />
+                          )}
+
                           <button
                             type="button"
-                            onClick={() => handleStartTimer(step.durationSeconds || 60, step.title)}
-                            className="flex items-center gap-1 rounded-lg bg-[#FAF4EB] dark:bg-stone-800 border border-[#C9AE8B]/40 px-2.5 py-0.5 text-[11px] font-mono font-bold text-[#B72E35] hover:bg-[#B72E35] hover:text-white transition active:scale-95 cursor-pointer shadow-2xs"
-                            title="Start step timer"
+                            onClick={() => {
+                              setExpandedSteps((prev) => ({
+                                ...prev,
+                                [step.stepNumber]: !isExpanded,
+                              }));
+                            }}
+                            className="p-1 text-[#8C7E72] hover:text-[#241F1C] transition cursor-pointer"
                           >
-                            <Play className="h-2.5 w-2.5" />
-                            <span>{Math.floor(step.durationSeconds / 60)}:{(step.durationSeconds % 60).toString().padStart(2, "0")} min</span>
+                            <ChevronDown className={`h-4 w-4 transition-transform ${isExpanded ? "rotate-180" : ""}`} />
                           </button>
-                        )}
+                        </div>
                       </div>
-                    </div>
 
-                    <p className="font-serif text-xs leading-relaxed text-[#241F1C] dark:text-stone-300 pl-8">
-                      {step.instruction}
-                    </p>
-                  </div>
-                ))
+                      {isExpanded && (
+                        <p className="font-serif text-xs leading-relaxed text-[#574436] dark:text-stone-300 pl-9">
+                          {step.instruction}
+                        </p>
+                      )}
+                    </div>
+                  );
+                })
               : editedRecipe?.steps.map((step, idx) => (
                   <div
                     key={step.stepNumber}
@@ -933,36 +1098,36 @@ export const KitchenCookbookView: React.FC = () => {
           </div>
         </div>
 
-        {/* CHEF'S PRO TIPS & EMERGENCY SUBSTITUTIONS */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          {/* Pro Tips */}
-          <div className="p-4 rounded-2xl border border-amber-200 dark:border-amber-900/50 bg-amber-50/70 dark:bg-amber-950/20 space-y-2">
-            <div className="flex items-center gap-1.5 text-amber-900 dark:text-amber-300 font-serif text-xs font-bold">
-              <Sparkles className="h-4 w-4 text-amber-600" />
-              <span>Chef&apos;s Pro Secrets</span>
+        {/* BOTTOM CARDS: Chef's Pro Tip & Quality Checkpoints */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 pt-1">
+          {/* Chef's Pro Tip */}
+          <div className="p-4 rounded-2xl border border-amber-200/90 dark:border-amber-900/40 bg-[#FFFBEB] dark:bg-amber-950/20 flex items-start gap-3">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-amber-100 dark:bg-amber-900/50 text-amber-600">
+              <Lightbulb className="h-5 w-5" />
             </div>
-            <ul className="space-y-1.5 text-xs text-[#78350F] dark:text-stone-300 font-serif">
-              {activeRecipe.proTips.map((tip, i) => (
-                <li key={i} className="leading-relaxed">
-                  ✦ {tip}
-                </li>
-              ))}
-            </ul>
+            <div className="space-y-0.5 min-w-0">
+              <h4 className="font-serif text-xs font-bold text-amber-900 dark:text-amber-300">
+                Chef&apos;s Pro Tip
+              </h4>
+              <p className="font-serif text-xs text-amber-800/90 dark:text-stone-300 leading-relaxed">
+                {activeRecipe.proTips[0] || "Maintain consistency in texture and warmth for best customer experience."}
+              </p>
+            </div>
           </div>
 
-          {/* Emergency Substitutions */}
-          <div className="p-4 rounded-2xl border border-emerald-200 dark:border-emerald-900/50 bg-emerald-50/70 dark:bg-emerald-950/20 space-y-2">
-            <div className="flex items-center gap-1.5 text-emerald-900 dark:text-emerald-300 font-serif text-xs font-bold">
-              <ShieldAlert className="h-4 w-4 text-emerald-600" />
-              <span>Chef Absent Backup Substitutions</span>
+          {/* Quality Checkpoints */}
+          <div className="p-4 rounded-2xl border border-emerald-200/90 dark:border-emerald-900/40 bg-[#F0FDF4] dark:bg-emerald-950/20 flex items-start gap-3">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-emerald-100 dark:bg-emerald-900/50 text-emerald-600">
+              <ShieldCheck className="h-5 w-5" />
             </div>
-            <ul className="space-y-1.5 text-xs text-[#065F46] dark:text-stone-300 font-serif">
-              {activeRecipe.substitutions.map((sub, i) => (
-                <li key={i} className="leading-relaxed">
-                  ✓ {sub}
-                </li>
-              ))}
-            </ul>
+            <div className="space-y-0.5 min-w-0">
+              <h4 className="font-serif text-xs font-bold text-emerald-900 dark:text-emerald-300">
+                Quality Checkpoints
+              </h4>
+              <p className="font-serif text-xs text-emerald-800/90 dark:text-stone-300 leading-relaxed">
+                Taste, texture, temperature and presentation before dispatch.
+              </p>
+            </div>
           </div>
         </div>
       </div>
