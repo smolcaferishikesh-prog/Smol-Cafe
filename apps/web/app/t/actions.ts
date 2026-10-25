@@ -414,7 +414,7 @@ export async function activateTableAndRedirectAction(formData: FormData): Promis
  */
 export async function clearTableSession(): Promise<void> {
   await clearTableSessionCookie();
-  redirect("/home");
+  redirect("/");
 }
 
 /**

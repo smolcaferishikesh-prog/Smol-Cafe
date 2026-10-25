@@ -9,6 +9,11 @@ import {
   recordDeletedTable,
   unrecordDeletedTable,
   isTableDeleted,
+  getPersistedSectionsMap,
+  getPersistedCustomSections,
+  recordTableSection,
+  recordCustomSection,
+  deleteCustomSectionFromStore,
 } from "@/lib/table-store";
 
 export interface DiningTableRecord {
@@ -59,8 +64,7 @@ declare global {
   var __SMOL_TABLE_SECTIONS_MAP__: Record<string, string> | undefined;
 }
 
-// Enforce standard table mapping for 14 tables
-globalThis.__SMOL_TABLE_SECTIONS_MAP__ = {
+const DEFAULT_ZONE_MAP: Record<string, string> = {
   "01": "smol-cafe",
   "02": "smol-cafe",
   "03": "smol-cafe",
@@ -77,6 +81,16 @@ globalThis.__SMOL_TABLE_SECTIONS_MAP__ = {
   "14": "smol-terrace",
 };
 
+function getActiveSectionsMap(): Record<string, string> {
+  const persisted = getPersistedSectionsMap();
+  if (!globalThis.__SMOL_TABLE_SECTIONS_MAP__) {
+    globalThis.__SMOL_TABLE_SECTIONS_MAP__ = { ...DEFAULT_ZONE_MAP, ...persisted };
+  } else {
+    Object.assign(globalThis.__SMOL_TABLE_SECTIONS_MAP__, persisted);
+  }
+  return globalThis.__SMOL_TABLE_SECTIONS_MAP__;
+}
+
 // Clean legacy custom sections
 if (globalThis.__SMOL_CUSTOM_SECTIONS__) {
   globalThis.__SMOL_CUSTOM_SECTIONS__ = globalThis.__SMOL_CUSTOM_SECTIONS__.filter(
@@ -85,7 +99,10 @@ if (globalThis.__SMOL_CUSTOM_SECTIONS__) {
 }
 
 function getSectionsList(tables: DiningTableRecord[]): string[] {
-  const custom = (globalThis.__SMOL_CUSTOM_SECTIONS__ || []).filter((s) => !LEGACY_SECTIONS.has(s));
+  const persistedCustom = getPersistedCustomSections();
+  const custom = Array.from(
+    new Set([...(globalThis.__SMOL_CUSTOM_SECTIONS__ || []), ...persistedCustom])
+  ).filter((s) => !LEGACY_SECTIONS.has(s));
   const fromTables = tables
     .map((t) => t.section)
     .filter((s) => Boolean(s) && !LEGACY_SECTIONS.has(s));
@@ -127,30 +144,19 @@ export async function fetchTablesAndSectionsAction(): Promise<{
 
     const occupiedTableIds = new Set((sessionsData || []).map((s: { table_id: string }) => s.table_id));
 
-    const defaultZoneMap: Record<string, string> = {
-      "01": "smol-cafe",
-      "02": "smol-cafe",
-      "03": "smol-cafe",
-      "04": "smol-cafe",
-      "05": "smol-cafe",
-      "06": "smol-cafe",
-      "07": "smol-lounge",
-      "08": "smol-lounge",
-      "09": "smol-lounge",
-      "10": "smol-lounge",
-      "11": "smol-terrace",
-      "12": "smol-terrace",
-      "13": "smol-terrace",
-      "14": "smol-terrace",
-    };
-
-    const sectionMap = globalThis.__SMOL_TABLE_SECTIONS_MAP__ || defaultZoneMap;
+    const sectionMap = getActiveSectionsMap();
 
     const tables: DiningTableRecord[] = (tablesData || []).map((t: any) => {
       const cleanNum = t.label?.toString().padStart(2, "0");
-      let section = t.section || sectionMap[t.id] || sectionMap[t.label] || sectionMap[cleanNum] || defaultZoneMap[cleanNum] || "smol-cafe";
+      let section =
+        (t.section && !LEGACY_SECTIONS.has(t.section) ? t.section : undefined) ||
+        sectionMap[t.id] ||
+        sectionMap[t.label] ||
+        sectionMap[cleanNum] ||
+        DEFAULT_ZONE_MAP[cleanNum] ||
+        "smol-cafe";
       if (LEGACY_SECTIONS.has(section) || section === "Café" || section === "Lounge" || section === "Terrace") {
-        section = defaultZoneMap[cleanNum] || (parseInt(cleanNum, 10) > 10 ? "smol-terrace" : parseInt(cleanNum, 10) > 6 ? "smol-lounge" : "smol-cafe");
+        section = DEFAULT_ZONE_MAP[cleanNum] || "smol-cafe";
       }
       return {
         id: t.id,
@@ -231,17 +237,40 @@ export async function createTableAction(input: CreateTableInput): Promise<{
       return { success: false, message: "Could not resolve restaurant location." };
     }
 
-    // 2. Insert dining table (PostgreSQL gen_random_uuid generates UUID id)
-    const { data: inserted, error: insertError } = await supabase
+    // 2. Insert dining table (with section support for PostgreSQL dining_tables schema)
+    let inserted: any = null;
+    let insertError: any = null;
+
+    const res = await supabase
       .from("dining_tables")
       .insert({
         location_id: locationId,
         label,
         seats,
         active,
-      })
+        section,
+      } as any)
       .select()
       .single();
+
+    if (res.error && res.error.message?.includes("section")) {
+      // Graceful fallback if PostgreSQL section column migration hasn't been executed yet
+      const fallback = await supabase
+        .from("dining_tables")
+        .insert({
+          location_id: locationId,
+          label,
+          seats,
+          active,
+        })
+        .select()
+        .single();
+      inserted = fallback.data;
+      insertError = fallback.error;
+    } else {
+      inserted = res.data;
+      insertError = res.error;
+    }
 
     if (insertError) {
       return { success: false, message: insertError.message };
@@ -256,7 +285,8 @@ export async function createTableAction(input: CreateTableInput): Promise<{
     unrecordDeletedTable(`t-${cleanNum}`);
     unrecordDeletedTable(tableId);
 
-    // 3. Save section mapping in runtime registry
+    // 3. Save section mapping in persistent store & runtime registry
+    recordTableSection(tableId, label, section);
     if (!globalThis.__SMOL_TABLE_SECTIONS_MAP__) {
       globalThis.__SMOL_TABLE_SECTIONS_MAP__ = {};
     }
@@ -274,6 +304,7 @@ export async function createTableAction(input: CreateTableInput): Promise<{
 
     // Make sure section is registered in custom sections if new
     if (!DEFAULT_SECTIONS.includes(section)) {
+      recordCustomSection(section);
       if (!globalThis.__SMOL_CUSTOM_SECTIONS__) {
         globalThis.__SMOL_CUSTOM_SECTIONS__ = [];
       }
@@ -341,20 +372,34 @@ export async function updateTableAction(
   try {
     const supabase = createAdminClient();
 
-    // Only update columns that exist in the PostgreSQL dining_tables schema
+    // Update columns in PostgreSQL dining_tables schema (including section)
     const dbUpdates: Record<string, unknown> = {};
     if (input.label !== undefined) dbUpdates.label = input.label.trim();
     if (input.seats !== undefined) dbUpdates.seats = Number(input.seats);
     if (input.active !== undefined) dbUpdates.active = input.active;
+    if (input.section !== undefined) dbUpdates.section = input.section.trim();
 
     let updated: Record<string, unknown> | null = null;
     if (Object.keys(dbUpdates).length > 0) {
-      const { data, error: updateError } = await supabase
+      let { data, error: updateError } = await supabase
         .from("dining_tables")
         .update(dbUpdates)
         .eq("id", tableId)
         .select()
         .single();
+
+      // Graceful fallback if PostgreSQL section column migration hasn't been executed yet
+      if (updateError && updateError.message?.includes("section")) {
+        delete dbUpdates.section;
+        const retry = await supabase
+          .from("dining_tables")
+          .update(dbUpdates)
+          .eq("id", tableId)
+          .select()
+          .single();
+        data = retry.data;
+        updateError = retry.error;
+      }
 
       if (updateError) {
         return { success: false, message: updateError.message };
@@ -370,18 +415,28 @@ export async function updateTableAction(
     }
 
     const cleanNum = (updated?.label || input.label || "").toString().padStart(2, "0");
+    const targetLabel = (updated?.label as string) || input.label || "";
 
-    // Handle section update in runtime memory
-    if (input.section) {
-      const trimmedSection = input.section.trim();
+    // Handle section update in persistent store & runtime memory
+    const effectiveSection =
+      (input.section ? input.section.trim() : undefined) ||
+      (updated?.section as string) ||
+      globalThis.__SMOL_TABLE_SECTIONS_MAP__?.[tableId] ||
+      globalThis.__SMOL_TABLE_SECTIONS_MAP__?.[cleanNum] ||
+      "smol-cafe";
+
+    if (input.section || effectiveSection) {
+      const trimmedSection = (input.section || effectiveSection).trim();
+      recordTableSection(tableId, targetLabel, trimmedSection);
       if (!globalThis.__SMOL_TABLE_SECTIONS_MAP__) {
         globalThis.__SMOL_TABLE_SECTIONS_MAP__ = {};
       }
       globalThis.__SMOL_TABLE_SECTIONS_MAP__[tableId] = trimmedSection;
-      if (updated?.label) globalThis.__SMOL_TABLE_SECTIONS_MAP__[String(updated.label)] = trimmedSection;
+      if (targetLabel) globalThis.__SMOL_TABLE_SECTIONS_MAP__[targetLabel] = trimmedSection;
       if (cleanNum) globalThis.__SMOL_TABLE_SECTIONS_MAP__[cleanNum] = trimmedSection;
 
       if (!DEFAULT_SECTIONS.includes(trimmedSection)) {
+        recordCustomSection(trimmedSection);
         if (!globalThis.__SMOL_CUSTOM_SECTIONS__) {
           globalThis.__SMOL_CUSTOM_SECTIONS__ = [];
         }
@@ -390,12 +445,6 @@ export async function updateTableAction(
         }
       }
     }
-
-    const effectiveSection =
-      (input.section ? input.section.trim() : undefined) ||
-      globalThis.__SMOL_TABLE_SECTIONS_MAP__?.[tableId] ||
-      globalThis.__SMOL_TABLE_SECTIONS_MAP__?.[cleanNum] ||
-      "Café";
 
     try {
       revalidatePath("/admin/tables");
@@ -601,6 +650,7 @@ export async function createSectionAction(name: string): Promise<{
     }
 
     globalThis.__SMOL_CUSTOM_SECTIONS__.push(trimmed);
+    recordCustomSection(trimmed);
 
     try {
       revalidatePath("/admin");
@@ -610,7 +660,7 @@ export async function createSectionAction(name: string): Promise<{
       // Non-fatal if revalidation context is absent
     }
 
-    const allSections = Array.from(new Set([...DEFAULT_SECTIONS, ...globalThis.__SMOL_CUSTOM_SECTIONS__]));
+    const allSections = Array.from(new Set([...DEFAULT_SECTIONS, ...globalThis.__SMOL_CUSTOM_SECTIONS__, ...getPersistedCustomSections()]));
 
     try {
       await broadcastSyncEvent({
@@ -655,7 +705,8 @@ export async function deleteSectionAction(name: string): Promise<{
       };
     }
 
-    const assignedCount = Object.values(globalThis.__SMOL_TABLE_SECTIONS_MAP__ || {}).filter(
+    const activeMap = getActiveSectionsMap();
+    const assignedCount = Object.values(activeMap).filter(
       (s) => s?.toLowerCase() === trimmed.toLowerCase()
     ).length;
 
@@ -671,6 +722,7 @@ export async function deleteSectionAction(name: string): Promise<{
         (s) => s.toLowerCase() !== trimmed.toLowerCase()
       );
     }
+    deleteCustomSectionFromStore(trimmed);
 
     try {
       revalidatePath("/admin");
@@ -680,7 +732,7 @@ export async function deleteSectionAction(name: string): Promise<{
       // Non-fatal if revalidation context is absent
     }
 
-    const allSections = Array.from(new Set([...DEFAULT_SECTIONS, ...(globalThis.__SMOL_CUSTOM_SECTIONS__ || [])]));
+    const allSections = Array.from(new Set([...DEFAULT_SECTIONS, ...(globalThis.__SMOL_CUSTOM_SECTIONS__ || []), ...getPersistedCustomSections()]));
 
     try {
       await broadcastSyncEvent({

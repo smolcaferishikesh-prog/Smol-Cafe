@@ -48,6 +48,7 @@ export type Database = {
           label: string;
           seats?: number;
           active?: boolean;
+          section?: string;
           created_at?: string;
           updated_at?: string;
         };
@@ -57,6 +58,7 @@ export type Database = {
           label?: string;
           seats?: number;
           active?: boolean;
+          section?: string;
           created_at?: string;
           updated_at?: string;
         };

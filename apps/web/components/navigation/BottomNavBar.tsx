@@ -19,7 +19,7 @@ export const BottomNavBar: React.FC = () => {
 
   // Aggressive route prefetching on mount for instant customer navigation
   React.useEffect(() => {
-    const routes = ["/home", "/smol-menu", "/drinks", "/orders", "/profile", "/bill"];
+    const routes = ["/home", "/smol-menu", "/drinks", "/orders", "/profile"];
     routes.forEach((r) => {
       try {
         router.prefetch(r);

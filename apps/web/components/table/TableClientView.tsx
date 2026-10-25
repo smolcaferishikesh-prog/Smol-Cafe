@@ -5,7 +5,6 @@ import Link from "next/link";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { TableArchedCard } from "./TableArchedCard";
-import { switchTableSessionAction, fetchActiveTablesAction } from "@/app/t/actions";
 import { X, Check, Utensils, QrCode, ArrowLeft, RefreshCw, Trash2, Plus } from "lucide-react";
 
 export interface TableItemView {
@@ -41,20 +40,6 @@ export const TableClientView: React.FC<TableClientViewProps> = ({
   const [hasAddedBoard, setHasAddedBoard] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [activeItemModal, setActiveItemModal] = useState<TableItemView | null>(null);
-  const [switchingTable, setSwitchingTable] = useState<string | null>(null);
-  const [availableTables, setAvailableTables] = useState<string[]>(() =>
-    Array.from({ length: 14 }, (_, i) => (i + 1).toString().padStart(2, "0"))
-  );
-
-  React.useEffect(() => {
-    fetchActiveTablesAction()
-      .then((data) => {
-        if (data && data.length > 0) {
-          setAvailableTables(data.map((t) => t.label));
-        }
-      })
-      .catch((err) => console.warn("Could not fetch tables in TableClientView:", err));
-  }, []);
 
   // Toggle upsell Conversation Board
   const toggleConversationBoard = () => {
@@ -88,21 +73,6 @@ export const TableClientView: React.FC<TableClientViewProps> = ({
   // Calculate live total and count
   const liveCount = itemsList.reduce((acc, it) => acc + it.quantity, 0);
   const liveTotal = itemsList.reduce((acc, it) => acc + it.subtotalRupees, 0);
-
-  // Switch table handler
-  const handleTableSwitch = async (label: string) => {
-    if (label === currentTableLabel) return;
-    setSwitchingTable(label);
-    try {
-      const res = await switchTableSessionAction(label);
-      if (res.success) {
-        router.refresh();
-      }
-    } finally {
-      setSwitchingTable(null);
-      setDrawerOpen(false);
-    }
-  };
 
   // Item options: duplicate item
   const handleAddAnother = (item: TableItemView) => {
@@ -303,15 +273,15 @@ export const TableClientView: React.FC<TableClientViewProps> = ({
             {liveCount} items &nbsp;•&nbsp; Total ₹{liveTotal}
           </p>
 
-          {/* Primary CTA Button: "View Bill" with Liquid Glassmorphism */}
+          {/* Primary CTA Button: "View Live Orders" with Liquid Glassmorphism */}
           <Link
-            href="/bill"
+            href="/orders"
             className="group relative overflow-hidden w-full block rounded-full bg-gradient-to-b from-[#E03A43]/70 via-[#B72E35]/80 to-[#7D1217]/90 dark:from-[#A855F7]/70 dark:via-[#7E22CE]/80 dark:to-[#4C1D95]/90 text-white font-serif text-[17.5px] font-medium py-3.5 backdrop-blur-[16px] border border-white/55 dark:border-purple-300/40 shadow-[0_8px_26px_rgba(183,46,53,0.42),inset_0_1.5px_1.5px_rgba(255,255,255,0.85),inset_0_-1.5px_2px_rgba(0,0,0,0.4),inset_0_0_14px_rgba(255,140,140,0.35)] dark:shadow-[0_8px_28px_rgba(126,34,206,0.5),inset_0_1.5px_1.5px_rgba(255,255,255,0.85),inset_0_-1.5px_2px_rgba(0,0,0,0.5),inset_0_0_16px_rgba(192,132,252,0.45)] active:scale-[0.99] transition duration-150 cursor-pointer text-center"
           >
             {/* Curved Specular Glass Gloss Reflection */}
             <span className="absolute inset-x-4 top-1 h-[42%] rounded-full bg-gradient-to-b from-white/50 via-white/15 to-transparent pointer-events-none opacity-90" />
             <span className="relative z-10 drop-shadow-[0_1.5px_2.5px_rgba(0,0,0,0.35)]">
-              View Bill
+              View Live Orders
             </span>
           </Link>
 
@@ -373,38 +343,14 @@ export const TableClientView: React.FC<TableClientViewProps> = ({
                 </Link>
 
                 <Link
-                  href="/bill"
+                  href="/orders"
                   onClick={() => setDrawerOpen(false)}
                   className="flex items-center gap-3 px-3 py-2.5 rounded-xl font-serif text-sm font-semibold text-[#241F1C] hover:bg-[#F3E7D3] transition"
                 >
-                  <span className="font-mono text-[#B72E35] font-bold">₹</span>
-                  <span>View Bill &amp; Settle</span>
+                  <span className="font-mono text-[#B72E35] font-bold">🛍️</span>
+                  <span>View Live Orders</span>
                 </Link>
               </nav>
-
-              {/* Quick Table Switcher */}
-              <div className="pt-2">
-                <p className="font-mono text-[10px] uppercase font-bold tracking-wider text-[#725039] mb-2">
-                  Switch Active Table:
-                </p>
-                <div className="grid grid-cols-4 gap-1.5 max-h-36 overflow-y-auto">
-                  {Array.from(new Set([...availableTables, currentTableLabel])).map((lbl) => (
-                    <button
-                      key={lbl}
-                      type="button"
-                      onClick={() => handleTableSwitch(lbl)}
-                      disabled={switchingTable === lbl}
-                      className={`py-1 rounded-lg font-mono text-xs font-bold border transition ${
-                        lbl === currentTableLabel
-                          ? "bg-[#B72E35] text-[#F3E7D3] border-[#B72E35]"
-                          : "border-[#C9AE8B] bg-[#FAF4EB] text-[#241F1C] hover:bg-[#F3E7D3]"
-                      }`}
-                    >
-                      T{lbl}
-                    </button>
-                  ))}
-                </div>
-              </div>
             </div>
 
             <div className="pt-4 border-t border-[#C9AE8B]/40 text-center">

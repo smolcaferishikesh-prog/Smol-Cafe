@@ -42,6 +42,65 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [items, setItems] = useState<CartItem[]>([]);
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [editingOrder, setEditingOrder] = useState<EditingOrderState | null>(null);
+  const [isHydrated, setIsHydrated] = useState(false);
+
+  // Restore cart and editing order from localStorage on client mount
+  React.useEffect(() => {
+    try {
+      if (typeof window !== "undefined") {
+        const savedItems = localStorage.getItem("smol_cart_items");
+        if (savedItems) {
+          const parsed = JSON.parse(savedItems);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setItems(parsed);
+          }
+        }
+        const savedEditing = localStorage.getItem("smol_cart_editing_order");
+        if (savedEditing) {
+          const parsed = JSON.parse(savedEditing);
+          if (parsed && typeof parsed === "object") {
+            setEditingOrder(parsed);
+          }
+        }
+      }
+    } catch (e) {
+      console.warn("Failed to restore cart from localStorage:", e);
+    } finally {
+      setIsHydrated(true);
+    }
+  }, []);
+
+  // Sync items to localStorage
+  React.useEffect(() => {
+    if (!isHydrated) return;
+    try {
+      if (typeof window !== "undefined") {
+        if (items.length > 0) {
+          localStorage.setItem("smol_cart_items", JSON.stringify(items));
+        } else {
+          localStorage.removeItem("smol_cart_items");
+        }
+      }
+    } catch (e) {
+      console.warn("Failed to persist cart items to localStorage:", e);
+    }
+  }, [items, isHydrated]);
+
+  // Sync editingOrder to localStorage
+  React.useEffect(() => {
+    if (!isHydrated) return;
+    try {
+      if (typeof window !== "undefined") {
+        if (editingOrder) {
+          localStorage.setItem("smol_cart_editing_order", JSON.stringify(editingOrder));
+        } else {
+          localStorage.removeItem("smol_cart_editing_order");
+        }
+      }
+    } catch (e) {
+      console.warn("Failed to persist editingOrder to localStorage:", e);
+    }
+  }, [editingOrder, isHydrated]);
 
   const addItem = (item: MenuItemWithDetails, qty = 1) => {
     setItems((prev) => {
@@ -76,6 +135,14 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const clearCart = () => {
     setItems([]);
     setEditingOrder(null);
+    try {
+      if (typeof window !== "undefined") {
+        localStorage.removeItem("smol_cart_items");
+        localStorage.removeItem("smol_cart_editing_order");
+      }
+    } catch (e) {
+      // safe
+    }
   };
 
   const loadOrderForEditing = (

@@ -42,6 +42,7 @@ export interface DiningTable {
   label: string;
   seats: number;
   active: boolean;
+  section?: string;
   created_at: string;
   updated_at: string;
 }

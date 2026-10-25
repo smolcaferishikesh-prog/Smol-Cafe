@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useMemo, useCallback } from "react";
+import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
 import {
   UtensilsCrossed,
@@ -44,6 +44,9 @@ export const AdminMenuManager: React.FC<AdminMenuManagerProps> = ({ onItemChange
   const [categories, setCategories] = useState<AdminCategoryOption[]>([]);
   const [items, setItems] = useState<AdminMenuItem[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
+  const itemsCountRef = useRef(0);
+  itemsCountRef.current = items.length;
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [selectedCategory, setSelectedCategory] = useState<string>("ALL");
   const [statusFilter, setStatusFilter] = useState<"ALL" | "AVAILABLE" | "SOLD_OUT">("ALL");
@@ -65,6 +68,17 @@ export const AdminMenuManager: React.FC<AdminMenuManagerProps> = ({ onItemChange
   useEffect(() => {
     setMounted(true);
   }, []);
+
+  // Prevent background scrolling when Add/Edit modal is open
+  useEffect(() => {
+    if (isModalOpen) {
+      const originalOverflow = document.body.style.overflow;
+      document.body.style.overflow = "hidden";
+      return () => {
+        document.body.style.overflow = originalOverflow;
+      };
+    }
+  }, [isModalOpen]);
 
   // Delete confirmation
   const [deletingItemId, setDeletingItemId] = useState<string | null>(null);
@@ -118,11 +132,14 @@ export const AdminMenuManager: React.FC<AdminMenuManagerProps> = ({ onItemChange
     }
   };
 
-  const loadMenu = useCallback(async () => {
-    setIsLoading(true);
+  const loadMenu = useCallback(async (isBackground = false) => {
+    if (!isBackground && itemsCountRef.current === 0) {
+      setIsLoading(true);
+    }
+    setIsRefreshing(true);
     try {
       const res = await fetchAdminMenuCatalogAction();
-      if (res.success) {
+      if (res.success && res.items) {
         setCategories(res.categories);
         setItems(res.items);
       }
@@ -130,6 +147,7 @@ export const AdminMenuManager: React.FC<AdminMenuManagerProps> = ({ onItemChange
       setFeedback({ type: "error", text: "Failed to load menu catalog." });
     } finally {
       setIsLoading(false);
+      setIsRefreshing(false);
     }
   }, []);
 
@@ -247,14 +265,19 @@ export const AdminMenuManager: React.FC<AdminMenuManagerProps> = ({ onItemChange
     return () => unsub();
   }, [categories]);
 
-  // Fast fallback refresh when tab or network resumes
+  // Fast fallback refresh when tab or network resumes (silent background sync)
   useEffect(() => {
+    let focusTimer: NodeJS.Timeout | null = null;
     const handleFocus = () => {
-      loadMenu();
+      if (focusTimer) clearTimeout(focusTimer);
+      focusTimer = setTimeout(() => {
+        loadMenu(true);
+      }, 500);
     };
     window.addEventListener("focus", handleFocus);
     window.addEventListener("online", handleFocus);
     return () => {
+      if (focusTimer) clearTimeout(focusTimer);
       window.removeEventListener("focus", handleFocus);
       window.removeEventListener("online", handleFocus);
     };
@@ -584,12 +607,12 @@ export const AdminMenuManager: React.FC<AdminMenuManagerProps> = ({ onItemChange
 
         <div className="flex items-center flex-wrap gap-2.5">
           <button
-            onClick={loadMenu}
-            disabled={isLoading}
+            onClick={() => loadMenu(false)}
+            disabled={isLoading || isRefreshing}
             className="p-2.5 rounded-xl border border-stone-200 dark:border-stone-700 bg-stone-50 dark:bg-stone-800 hover:bg-stone-100 dark:hover:bg-stone-700 text-stone-700 dark:text-stone-300 transition"
             title="Refresh Catalog"
           >
-            <RefreshCw className={`w-4 h-4 ${isLoading ? "animate-spin" : ""}`} />
+            <RefreshCw className={`w-4 h-4 ${isLoading || isRefreshing ? "animate-spin" : ""}`} />
           </button>
 
           <button
@@ -739,7 +762,7 @@ export const AdminMenuManager: React.FC<AdminMenuManagerProps> = ({ onItemChange
       </div>
 
       {/* Menu Items Grid */}
-      {isLoading ? (
+      {isLoading && items.length === 0 ? (
         <div className="flex flex-col items-center justify-center p-12 bg-white dark:bg-stone-900 rounded-2xl border border-stone-200 dark:border-stone-800">
           <RefreshCw className="w-8 h-8 text-[#B72E35] animate-spin mb-3" />
           <p className="text-sm text-stone-500 font-mono">Loading menu catalog...</p>
@@ -947,7 +970,7 @@ export const AdminMenuManager: React.FC<AdminMenuManagerProps> = ({ onItemChange
               </button>
             </div>
 
-            <form onSubmit={handleSubmitForm} className="p-5 space-y-4 overflow-y-auto flex-1">
+            <form onSubmit={handleSubmitForm} className="p-5 space-y-4 overflow-y-auto flex-1 overscroll-contain">
               {/* Name */}
               <div>
                 <label className="block text-xs font-semibold text-stone-700 dark:text-stone-300 mb-1">
@@ -1210,7 +1233,7 @@ export const AdminMenuManager: React.FC<AdminMenuManagerProps> = ({ onItemChange
               </div>
             </div>
             <p className="text-xs text-stone-600 dark:text-stone-400 leading-relaxed mb-6">
-              This will restore all 64 original Smol Café dishes across all 13 categories with standard pricing and chef notes.
+              This will restore all official Smol Café dishes across the 10 menu categories with official PDF pricing and chef notes.
             </p>
             <div className="flex items-center justify-end gap-3">
               <button

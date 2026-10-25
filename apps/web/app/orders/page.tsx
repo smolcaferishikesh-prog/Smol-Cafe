@@ -1,6 +1,5 @@
 import { fetchActiveOrdersAction } from "./actions";
 import { OrderStatusClientView } from "@/components/orders/OrderStatusClientView";
-import { fetchActiveTablesAction } from "../t/actions";
 
 export const metadata = {
   title: "Order Status — smol café",
@@ -8,10 +7,7 @@ export const metadata = {
 };
 
 export default async function OrdersPage() {
-  const [result, activeTables] = await Promise.all([
-    fetchActiveOrdersAction(),
-    fetchActiveTablesAction().catch(() => []),
-  ]);
+  const result = await fetchActiveOrdersAction();
 
   return (
     <OrderStatusClientView
@@ -20,7 +16,6 @@ export default async function OrdersPage() {
       locationName={result.locationName}
       hasSession={result.hasSession}
       guestName={result.guestName}
-      availableTables={activeTables.map((t) => t.label)}
     />
   );
 }
