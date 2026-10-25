@@ -116,6 +116,22 @@ export const CashierDashboard: React.FC<CashierDashboardProps> = ({
     changeRupees?: number;
   } | null>(null);
 
+  // Active Floor Staff Assistance Requests (Call Staff / Water / Napkins)
+  const [staffAlerts, setStaffAlerts] = useState<
+    Array<{
+      id: string;
+      tableLabel: string;
+      guestName: string;
+      reason: string;
+      timestamp: number;
+    }>
+  >([]);
+
+  const handleDismissStaffAlert = (alertId: string) => {
+    soundManager.stopStaffCallBell();
+    setStaffAlerts((prev) => prev.filter((a) => a.id !== alertId));
+  };
+
   const isRefreshingRef = useRef(false);
 
   const refreshData = useCallback(async (isBackground = false) => {
@@ -270,6 +286,24 @@ export const CashierDashboard: React.FC<CashierDashboardProps> = ({
           window.location.href = "/smol-backdoor";
           return;
         }
+      }
+
+      // Active Customer Service Bell Alert (Call Staff / Water & Napkins) with 5-Second Continuous Ringing
+      if (event.type === "STAFF_HELP_REQUEST" || event.metadata?.type === "STAFF_HELP_REQUEST") {
+        const meta = event.metadata || {};
+        const alertData = {
+          id: (meta.id as string) || (event as any).id || `help_${Date.now()}`,
+          tableLabel: (meta.tableLabel as string) || (event as any).tableLabel || "01",
+          guestName: (meta.guestName as string) || (event as any).guestName || "Guest",
+          reason: (meta.reason as string) || (event as any).reason || "General assistance",
+          timestamp: event.timestamp || Date.now(),
+        };
+
+        // Ring service desk bell continuously for 5 seconds
+        soundManager.playStaffCallBellRinging(5);
+
+        setStaffAlerts((prev) => [alertData, ...prev.filter((a) => a.id !== alertData.id)]);
+        return;
       }
 
       if (event.type === "ORDER_PENDING_CASHIER" || event.status === "PENDING_CONFIRMATION") {
@@ -717,6 +751,46 @@ export const CashierDashboard: React.FC<CashierDashboardProps> = ({
 
       {/* Main Content */}
       <main className="mx-auto max-w-5xl p-4 sm:p-6 space-y-4 sm:space-y-6">
+        {/* Active Floor Staff Assistance Requests (5-Second Ringing Bell Alert) */}
+        {staffAlerts.length > 0 && (
+          <div className="space-y-2.5 animate-fade-in-up">
+            {staffAlerts.map((alert) => (
+              <div
+                key={alert.id}
+                className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-3.5 sm:p-4 rounded-2xl bg-gradient-to-r from-red-600/15 via-[#B72E35]/20 to-amber-600/15 dark:from-purple-950/70 dark:via-purple-900/40 dark:to-purple-950/70 border-2 border-[#B72E35]/60 dark:border-purple-500/80 shadow-lg shadow-red-950/10 dark:shadow-purple-950/30"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="h-10 w-10 rounded-2xl bg-[#B72E35] dark:bg-purple-600 text-white flex items-center justify-center shrink-0 shadow-md">
+                    <Bell className="h-5 w-5 animate-bounce" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-mono text-xs font-black uppercase tracking-wider text-white bg-[#B72E35] dark:bg-purple-600 px-2.5 py-0.5 rounded-md shadow-xs">
+                        TABLE {alert.tableLabel}
+                      </span>
+                      <span className="font-serif font-bold text-sm sm:text-base text-[#241F1C] dark:text-white">
+                        {alert.reason}
+                      </span>
+                    </div>
+                    <p className="text-[11px] font-mono text-[#725039] dark:text-stone-300 mt-0.5">
+                      Guest: <span className="font-semibold">{alert.guestName}</span> • Calling floor staff right now
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => handleDismissStaffAlert(alert.id)}
+                  className="self-stretch sm:self-auto flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-[#B72E35] hover:bg-[#9B242A] dark:bg-purple-600 dark:hover:bg-purple-500 text-white font-mono text-xs font-bold shadow-md active:scale-95 transition cursor-pointer"
+                >
+                  <Check className="h-4 w-4" />
+                  <span>Mark Attended</span>
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
         {actionFeedback && (
           <div
             className={`rounded-2xl p-4 text-xs font-serif ${

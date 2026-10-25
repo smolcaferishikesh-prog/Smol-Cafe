@@ -521,17 +521,37 @@ export async function requestStaffAssistanceAction(
   try {
     const cleanLabel = (tableLabel || "01").replace(/^(table|t)[-\s_]*/i, "").trim().padStart(2, "0");
 
-    // Broadcast instant sync event for cashier & staff dashboard
+    const requestId = `help_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+
+    // Broadcast instant sync event specifically targeted for Cashier & Admin desks
+    broadcastSyncEvent({
+      type: "STAFF_HELP_REQUEST" as any,
+      tableLabel: cleanLabel,
+      timestamp: Date.now(),
+      metadata: {
+        type: "STAFF_HELP_REQUEST",
+        id: requestId,
+        tableLabel: cleanLabel,
+        guestName: guestName || "Guest",
+        reason: reason || "General assistance",
+        requestedAt: new Date().toISOString(),
+        target: "CASHIER_ADMIN",
+      },
+    });
+
+    // Also send on SETTINGS_UPDATED for backward compatibility
     broadcastSyncEvent({
       type: "SETTINGS_UPDATED",
       tableLabel: cleanLabel,
       timestamp: Date.now(),
       metadata: {
         type: "STAFF_HELP_REQUEST",
+        id: requestId,
         tableLabel: cleanLabel,
         guestName: guestName || "Guest",
         reason: reason || "General assistance",
         requestedAt: new Date().toISOString(),
+        target: "CASHIER_ADMIN",
       },
     });
 
