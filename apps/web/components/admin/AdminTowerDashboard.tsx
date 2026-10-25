@@ -28,6 +28,7 @@ import {
   Eye,
   EyeOff,
   Check,
+  Bell,
   Edit2,
   RotateCcw,
   ChefHat,
@@ -77,6 +78,7 @@ import {
 import { TABLE_ZONES_CONFIG, createTableJsonTag, type TableJsonTag } from "@/lib/table-tag";
 import { getUpiConfig, updateMerchantConfig, type MerchantConfig } from "@/lib/upi";
 import { broadcastSyncEvent, subscribeToSyncEvents } from "@/lib/sync-events";
+import { soundManager } from "@/lib/sound";
 import { JsonTagInspectorModal } from "@/components/table/JsonTagInspectorModal";
 import { OrderDetailsInspectorModal } from "@/components/admin/OrderDetailsInspectorModal";
 import { ThemeToggle } from "@/components/common/ThemeToggle";
@@ -153,6 +155,7 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
   const [orders, setOrders] = useState<AdminOrderRecord[]>(initialOverviewData?.orders || []);
   const [payments, setPayments] = useState<AdminPaymentRecord[]>(initialOverviewData?.payments || []);
   const [mounted, setMounted] = useState(false);
+
 
   useEffect(() => {
     setMounted(true);
@@ -1775,10 +1778,10 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
                 alert("⚠️ Security Notice: Admin credentials (PIN/Password) were changed from another session. Redirecting to login...");
               } catch {}
               window.location.href = "/smol-backdoor";
-              return;
             }
           }
         }
+
 
         if (ev.type === "TABLE_DELETED") {
           const targetId = ev.tableId || (ev.metadata?.id as string);
@@ -2158,6 +2161,7 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
             <ThemeToggle />
           </div>
         </header>
+
 
         {/* Tab 1: OVERVIEW DASHBOARD & CHARTS */}
         {activeTab === "overview" && (

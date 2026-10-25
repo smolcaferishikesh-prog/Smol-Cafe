@@ -7,9 +7,10 @@ import { fetchActiveOrdersAction, type CustomerOrderDetails } from "@/app/orders
 import type { OrderStatus } from "@smol-cafe/db";
 import { OrderCard } from "./OrderCard";
 import { ConversationDeckModal } from "./ConversationDeckModal";
-import { Bell, BellRing, CheckCircle2, Sparkles, Receipt, ExternalLink, QrCode, Home } from "lucide-react";
+import { Bell, BellRing, CheckCircle2, Sparkles, Receipt, ExternalLink, QrCode, Home, Check, Coffee, Loader2 } from "lucide-react";
 import { useSupabaseRealtime } from "@/hooks/useSupabaseRealtime";
 import { subscribeToSyncEvents } from "@/lib/sync-events";
+import { requestStaffAssistanceAction } from "@/app/t/actions";
 import { createTableJsonTag } from "@/lib/table-tag";
 import { JsonTagInspectorModal } from "@/components/table/JsonTagInspectorModal";
 import { UpiPaymentDrawer } from "@/components/payment/UpiPaymentDrawer";
@@ -51,6 +52,50 @@ export const OrderStatusClientView: React.FC<OrderStatusClientViewProps> = ({
   const [isStaffHelpOpen, setIsStaffHelpOpen] = useState(false);
   const [isNotifyEnabled, setIsNotifyEnabled] = useState(false);
   const [showNotifyToast, setShowNotifyToast] = useState(false);
+  const [napkinStatus, setNapkinStatus] = useState<"idle" | "loading" | "sent">("idle");
+  const [callStaffStatus, setCallStaffStatus] = useState<"idle" | "loading" | "sent">("idle");
+
+  const handleQuickCallStaffRequest = async () => {
+    if (callStaffStatus === "loading") return;
+    soundManager.triggerHaptic(50);
+    setCallStaffStatus("loading");
+
+    try {
+      const res = await requestStaffAssistanceAction(tableLabel, currentGuestName, "Call Staff to Table");
+      if (res.success) {
+        soundManager.triggerHaptic([60, 40, 90]);
+        setCallStaffStatus("sent");
+        setTimeout(() => {
+          setCallStaffStatus("idle");
+        }, 4000);
+      } else {
+        setCallStaffStatus("idle");
+      }
+    } catch {
+      setCallStaffStatus("idle");
+    }
+  };
+
+  const handleQuickNapkinRequest = async () => {
+    if (napkinStatus === "loading") return;
+    soundManager.triggerHaptic(50);
+    setNapkinStatus("loading");
+
+    try {
+      const res = await requestStaffAssistanceAction(tableLabel, currentGuestName, "Need Napkins & Water");
+      if (res.success) {
+        soundManager.triggerHaptic([60, 40, 90]);
+        setNapkinStatus("sent");
+        setTimeout(() => {
+          setNapkinStatus("idle");
+        }, 4000);
+      } else {
+        setNapkinStatus("idle");
+      }
+    } catch {
+      setNapkinStatus("idle");
+    }
+  };
 
   // Status tracker for audible chime on READY / COMPLETED transition
   const prevStatusesRef = useRef<Record<string, string>>({});
@@ -408,16 +453,6 @@ export const OrderStatusClientView: React.FC<OrderStatusClientViewProps> = ({
           </div>
 
           <div className="flex items-center gap-1.5 pt-1 shrink-0">
-            <button
-              type="button"
-              onClick={() => setIsStaffHelpOpen(true)}
-              className="inline-flex items-center gap-1 rounded-full bg-[#B72E35]/10 dark:bg-[#B72E35]/20 border border-[#B72E35]/30 px-2.5 py-1 text-[10px] font-mono font-bold text-[#B72E35] dark:text-[#FF6B6B] hover:bg-[#B72E35]/20 transition shadow-xs cursor-pointer"
-              title="Call Staff / Ask a human"
-            >
-              <Bell className="h-3 w-3 text-[#B72E35] dark:text-[#FF6B6B]" />
-              <span>Call Staff</span>
-            </button>
-
             {orders.length > 0 && (
               <button
                 type="button"
@@ -519,6 +554,101 @@ export const OrderStatusClientView: React.FC<OrderStatusClientViewProps> = ({
                 {heroEta}
               </span>
             </div>
+          </div>
+
+          {/* Quick Floor Service Buttons (Call a Staff & Water/Napkins - Modern App UI Cards) */}
+          <div className="mt-4 pt-3.5 border-t border-[#C9AE8B]/20 dark:border-white/10 grid grid-cols-2 gap-3">
+            {/* Call a Staff App UI Button */}
+            <button
+              type="button"
+              onClick={handleQuickCallStaffRequest}
+              disabled={callStaffStatus === "loading"}
+              className={`group relative flex items-center gap-2.5 rounded-2xl p-2.5 text-left transition-all duration-200 active:scale-[0.96] active:translate-y-0.5 cursor-pointer disabled:opacity-75 overflow-hidden border ${
+                callStaffStatus === "sent"
+                  ? "bg-gradient-to-b from-emerald-50 to-emerald-100/70 dark:from-emerald-950/50 dark:to-emerald-900/30 border-emerald-500/60 shadow-[0_4px_14px_rgba(16,185,129,0.22),inset_0_1px_0_rgba(255,255,255,0.9)] dark:shadow-[0_4px_16px_rgba(0,0,0,0.5),inset_0_1px_0_rgba(255,255,255,0.12)]"
+                  : "bg-gradient-to-b from-white via-[#FCF9F5] to-[#F5EBE1] dark:from-[#241C18] dark:via-[#1E1714] dark:to-[#17120F] border-[#DFCBB5] dark:border-white/15 shadow-[0_4px_14px_rgba(74,46,27,0.08),0_1px_2px_rgba(74,46,27,0.04),inset_0_1px_0_rgba(255,255,255,1)] dark:shadow-[0_6px_20px_rgba(0,0,0,0.5),inset_0_1px_0_rgba(255,255,255,0.12)] hover:border-[#B72E35]/50 dark:hover:border-purple-400/50 hover:shadow-md"
+              }`}
+            >
+              {/* Top Specular Highlight */}
+              <div className="absolute inset-x-3 top-0 h-[1.5px] bg-gradient-to-r from-transparent via-white/90 dark:via-white/30 to-transparent pointer-events-none" />
+
+              {/* Icon Squircle Badge */}
+              <div
+                className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl transition-all duration-200 group-hover:scale-105 ${
+                  callStaffStatus === "sent"
+                    ? "bg-gradient-to-br from-emerald-500 to-emerald-700 text-white shadow-[0_2px_8px_rgba(16,185,129,0.4)]"
+                    : "bg-gradient-to-br from-[#B72E35] to-[#8C1E24] dark:from-purple-600 dark:to-purple-800 text-white shadow-[0_2px_8px_rgba(183,46,53,0.35)] dark:shadow-[0_2px_10px_rgba(168,85,247,0.45)]"
+                }`}
+              >
+                {callStaffStatus === "loading" ? (
+                  <Loader2 className="h-4 w-4 animate-spin text-white" />
+                ) : callStaffStatus === "sent" ? (
+                  <Check className="h-4 w-4 stroke-[3] text-white" />
+                ) : (
+                  <Bell className="h-4 w-4 group-hover:animate-bounce" />
+                )}
+              </div>
+
+              {/* Text Hierarchy */}
+              <div className="min-w-0 flex-1">
+                <span className="block font-sans text-xs sm:text-[13px] font-bold text-[#241F1C] dark:text-[#FAF4EB] leading-tight truncate">
+                  {callStaffStatus === "loading"
+                    ? "Calling..."
+                    : callStaffStatus === "sent"
+                    ? "Notified!"
+                    : "Call Staff"}
+                </span>
+                <span className="block font-mono text-[9px] font-semibold uppercase tracking-wider text-[#7A583E] dark:text-[#C9AE8B]/80 mt-0.5 truncate">
+                  {callStaffStatus === "sent" ? "Coming over" : "To table"}
+                </span>
+              </div>
+            </button>
+
+            {/* Request Water & Napkins App UI Button */}
+            <button
+              type="button"
+              onClick={handleQuickNapkinRequest}
+              disabled={napkinStatus === "loading"}
+              className={`group relative flex items-center gap-2.5 rounded-2xl p-2.5 text-left transition-all duration-200 active:scale-[0.96] active:translate-y-0.5 cursor-pointer disabled:opacity-75 overflow-hidden border ${
+                napkinStatus === "sent"
+                  ? "bg-gradient-to-b from-emerald-50 to-emerald-100/70 dark:from-emerald-950/50 dark:to-emerald-900/30 border-emerald-500/60 shadow-[0_4px_14px_rgba(16,185,129,0.22),inset_0_1px_0_rgba(255,255,255,0.9)] dark:shadow-[0_4px_16px_rgba(0,0,0,0.5),inset_0_1px_0_rgba(255,255,255,0.12)]"
+                  : "bg-gradient-to-b from-white via-[#FCF9F5] to-[#F5EBE1] dark:from-[#241C18] dark:via-[#1E1714] dark:to-[#17120F] border-[#DFCBB5] dark:border-white/15 shadow-[0_4px_14px_rgba(74,46,27,0.08),0_1px_2px_rgba(74,46,27,0.04),inset_0_1px_0_rgba(255,255,255,1)] dark:shadow-[0_6px_20px_rgba(0,0,0,0.5),inset_0_1px_0_rgba(255,255,255,0.12)] hover:border-[#8C5E1A]/50 dark:hover:border-amber-400/50 hover:shadow-md"
+              }`}
+            >
+              {/* Top Specular Highlight */}
+              <div className="absolute inset-x-3 top-0 h-[1.5px] bg-gradient-to-r from-transparent via-white/90 dark:via-white/30 to-transparent pointer-events-none" />
+
+              {/* Icon Squircle Badge */}
+              <div
+                className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl transition-all duration-200 group-hover:scale-105 ${
+                  napkinStatus === "sent"
+                    ? "bg-gradient-to-br from-emerald-500 to-emerald-700 text-white shadow-[0_2px_8px_rgba(16,185,129,0.4)]"
+                    : "bg-gradient-to-br from-[#8C5E1A] to-[#68410C] dark:from-amber-600 dark:to-amber-800 text-white shadow-[0_2px_8px_rgba(140,94,26,0.35)] dark:shadow-[0_2px_10px_rgba(217,119,6,0.45)]"
+                }`}
+              >
+                {napkinStatus === "loading" ? (
+                  <Loader2 className="h-4 w-4 animate-spin text-white" />
+                ) : napkinStatus === "sent" ? (
+                  <Check className="h-4 w-4 stroke-[3] text-white" />
+                ) : (
+                  <Coffee className="h-4 w-4 group-hover:scale-110 transition-transform" />
+                )}
+              </div>
+
+              {/* Text Hierarchy */}
+              <div className="min-w-0 flex-1">
+                <span className="block font-sans text-xs sm:text-[13px] font-bold text-[#241F1C] dark:text-[#FAF4EB] leading-tight truncate">
+                  {napkinStatus === "loading"
+                    ? "Sending..."
+                    : napkinStatus === "sent"
+                    ? "Notified!"
+                    : "Water & Napkins"}
+                </span>
+                <span className="block font-mono text-[9px] font-semibold uppercase tracking-wider text-[#7A583E] dark:text-[#C9AE8B]/80 mt-0.5 truncate">
+                  {napkinStatus === "sent" ? "Refill on way" : "Tabletop refill"}
+                </span>
+              </div>
+            </button>
           </div>
         </div>
 

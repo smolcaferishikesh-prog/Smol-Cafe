@@ -4,6 +4,7 @@ import React, { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Bell, Coffee, ArrowLeftRight, Check, X, Loader2, AlertCircle } from "lucide-react";
 import { requestStaffAssistanceAction } from "@/app/t/actions";
+import { soundManager } from "@/lib/sound";
 
 interface CallStaffHelpModalProps {
   isOpen: boolean;
@@ -29,12 +30,14 @@ export const CallStaffHelpModal: React.FC<CallStaffHelpModalProps> = ({
 
   const handleCallStaff = async (reason = "General assistance") => {
     if (isSubmitting) return;
+    soundManager.triggerHaptic(50);
     setIsSubmitting(true);
     setFeedback(null);
 
     try {
       const res = await requestStaffAssistanceAction(tableLabel, guestName, reason);
       if (res.success) {
+        soundManager.triggerHaptic([60, 40, 90]);
         setFeedback({
           type: "success",
           text: res.message || "Staff notified. Someone will come over.",
@@ -123,7 +126,7 @@ export const CallStaffHelpModal: React.FC<CallStaffHelpModalProps> = ({
             type="button"
             onClick={() => handleCallStaff("Call Staff to Table")}
             disabled={isSubmitting}
-            className="w-full flex items-center justify-between rounded-2xl bg-[#B72E35] text-white px-4 py-3 text-xs font-bold shadow-md hover:bg-[#91242C] transition active:scale-98 cursor-pointer disabled:opacity-50"
+            className="w-full flex items-center justify-between rounded-2xl bg-[#B72E35] dark:bg-purple-600 text-white px-4 py-3 text-xs font-bold shadow-md hover:bg-[#91242C] dark:hover:bg-purple-500 transition active:scale-98 cursor-pointer disabled:opacity-50"
           >
             <span className="flex items-center gap-2">
               <Bell className="h-4 w-4" />

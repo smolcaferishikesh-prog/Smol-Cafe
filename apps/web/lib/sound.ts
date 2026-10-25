@@ -193,6 +193,95 @@ class SoundSynthesizer {
     }
   }
 
+  private activeRingingInterval: ReturnType<typeof setInterval> | null = null;
+  private activeRingingTimeout: ReturnType<typeof setTimeout> | null = null;
+
+  /**
+   * Safe cross-browser Haptic vibration trigger (supported on mobile / tablet devices)
+   */
+  public triggerHaptic(pattern: number | number[] = 50) {
+    if (typeof window !== "undefined" && typeof navigator !== "undefined" && typeof navigator.vibrate === "function") {
+      try {
+        navigator.vibrate(pattern);
+      } catch {
+        // Silently ignore if browser restricts vibration
+      }
+    }
+  }
+
+  /**
+   * Stop any ongoing staff call bell ringing immediately (e.g. when staff acknowledges alert)
+   */
+  public stopStaffCallBell() {
+    if (this.activeRingingInterval) {
+      clearInterval(this.activeRingingInterval);
+      this.activeRingingInterval = null;
+    }
+    if (this.activeRingingTimeout) {
+      clearTimeout(this.activeRingingTimeout);
+      this.activeRingingTimeout = null;
+    }
+    // Immediately cancel any active vibration pattern
+    this.triggerHaptic(0);
+  }
+
+  /**
+   * 5-Second Loud & Attentive Service Desk Ringing Bell + Rhythmic Haptic Vibration
+   * Fires consecutive dual-tone bell chimes (C6 1046.5Hz & G6 1568Hz) repeatedly for 5 seconds.
+   * Also pulses device vibration in sync with each bell chime.
+   */
+  public playStaffCallBellRinging(durationSeconds = 5) {
+    this.stopStaffCallBell();
+
+    const ring = () => {
+      // Trigger haptic vibration pulse in sync with chime strike
+      this.triggerHaptic([150, 60, 150]);
+
+      const ctx = this.getContext();
+      if (!ctx) return;
+      try {
+        const now = ctx.currentTime;
+        // Crisp high bell strike
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = "sine";
+        osc.frequency.setValueAtTime(1046.5, now); // C6
+        osc.frequency.exponentialRampToValueAtTime(1567.98, now + 0.08); // Strike pitch up to G6
+        gain.gain.setValueAtTime(0.85, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.65);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(now);
+        osc.stop(now + 0.65);
+
+        // Resonant harmonic shimmer
+        const harm = ctx.createOscillator();
+        const harmGain = ctx.createGain();
+        harm.type = "triangle";
+        harm.frequency.setValueAtTime(2093.0, now); // C7 harmonic
+        harmGain.gain.setValueAtTime(0.4, now);
+        harmGain.gain.exponentialRampToValueAtTime(0.001, now + 0.45);
+        harm.connect(harmGain);
+        harmGain.connect(ctx.destination);
+        harm.start(now);
+        harm.stop(now + 0.45);
+      } catch (e) {
+        console.warn("Staff bell ring note failed:", e);
+      }
+    };
+
+    // Play first ring immediately
+    ring();
+
+    // Repeat every 750ms (~6-7 rings over 5s)
+    this.activeRingingInterval = setInterval(ring, 750);
+
+    // Stop automatically after durationSeconds (default 5s)
+    this.activeRingingTimeout = setTimeout(() => {
+      this.stopStaffCallBell();
+    }, durationSeconds * 1000);
+  }
+
   /**
    * Alias for standard order alerts
    */
