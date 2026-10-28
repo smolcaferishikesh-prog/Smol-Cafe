@@ -19,9 +19,9 @@ export interface EditingOrderState {
 interface CartContextType {
   items: CartItem[];
   addItem: (item: MenuItemWithDetails, qty?: number) => void;
-  updateQty: (itemId: string, delta: number) => void;
-  setQty: (itemId: string, qty: number) => void;
-  removeItem: (itemId: string) => void;
+  updateQty: (itemId: string, delta: number, itemName?: string) => void;
+  setQty: (itemId: string, qty: number, itemName?: string) => void;
+  removeItem: (itemId: string, itemName?: string) => void;
   clearCart: () => void;
   totalCount: number;
   subtotalPaise: number;
@@ -104,32 +104,45 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const addItem = (item: MenuItemWithDetails, qty = 1) => {
     setItems((prev) => {
-      const existing = prev.find((i) => i.item.id === item.id);
+      const existing = prev.find((i) => i.item.id === item.id && i.item.name === item.name);
       if (existing) {
-        return prev.map((i) => (i.item.id === item.id ? { ...i, qty: i.qty + qty } : i));
+        return prev.map((i) => (i.item.id === item.id && i.item.name === item.name ? { ...i, qty: i.qty + qty } : i));
       }
       return [...prev, { item, qty }];
     });
   };
 
-  const updateQty = (itemId: string, delta: number) => {
+  const updateQty = (itemId: string, delta: number, itemName?: string) => {
     setItems((prev) =>
       prev
-        .map((i) => (i.item.id === itemId ? { ...i, qty: i.qty + delta } : i))
+        .map((i) => {
+          const match = itemName ? (i.item.id === itemId && i.item.name === itemName) : i.item.id === itemId;
+          return match ? { ...i, qty: i.qty + delta } : i;
+        })
         .filter((i) => i.qty > 0)
     );
   };
 
-  const setQty = (itemId: string, qty: number) => {
+  const setQty = (itemId: string, qty: number, itemName?: string) => {
     if (qty <= 0) {
-      removeItem(itemId);
+      removeItem(itemId, itemName);
       return;
     }
-    setItems((prev) => prev.map((i) => (i.item.id === itemId ? { ...i, qty } : i)));
+    setItems((prev) =>
+      prev.map((i) => {
+        const match = itemName ? (i.item.id === itemId && i.item.name === itemName) : i.item.id === itemId;
+        return match ? { ...i, qty } : i;
+      })
+    );
   };
 
-  const removeItem = (itemId: string) => {
-    setItems((prev) => prev.filter((i) => i.item.id !== itemId));
+  const removeItem = (itemId: string, itemName?: string) => {
+    setItems((prev) =>
+      prev.filter((i) => {
+        const match = itemName ? (i.item.id === itemId && i.item.name === itemName) : i.item.id === itemId;
+        return !match;
+      })
+    );
   };
 
   const clearCart = () => {

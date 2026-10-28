@@ -98,8 +98,13 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ tableLabel, guestName = 
     setIsUpdatingOrder(true);
     setErrorMessage(null);
 
+    const extractCleanUuid = (id: string): string => {
+      const match = id.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
+      return match ? match[0] : id;
+    };
+
     const orderPayload = items.map((cartItem) => ({
-      menu_item_id: cartItem.item.id,
+      menu_item_id: extractCleanUuid(cartItem.item.id),
       name: cartItem.item.name,
       expected_unit_price_paise: cartItem.item.pricePaise,
       qty: cartItem.qty,
@@ -250,13 +255,11 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ tableLabel, guestName = 
     if (name.includes("(Sourdough)")) return "Sourdough bread";
     if (name.includes("(Extra")) return "Extra Cheese";
     if (name.includes("(Spicy")) return "Spicy Dip";
+    if (name.includes("(Penne)")) return "Penne";
+    if (name.includes("(Farfalle)")) return "Farfalle";
+    if (name.includes("(Spaghetti)")) return "Spaghetti";
     if (cartItem.item.metadata?.customer_note) return cartItem.item.metadata.customer_note;
 
-    // Realistic defaults matching mockups if no options selected
-    if (name.toLowerCase().includes("pour over")) return "No milk";
-    if (name.toLowerCase().includes("flat white")) return "Oat milk";
-    if (name.toLowerCase().includes("decker") || name.toLowerCase().includes("sandwich"))
-      return "Add jalapeños";
     return null;
   };
 
@@ -298,8 +301,13 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ tableLabel, guestName = 
       return null;
     }
 
+    const extractCleanUuid = (id: string): string => {
+      const match = id.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
+      return match ? match[0] : id;
+    };
+
     const orderPayload = items.map((cartItem) => ({
-      menu_item_id: cartItem.item.id,
+      menu_item_id: extractCleanUuid(cartItem.item.id),
       name: cartItem.item.name,
       expected_unit_price_paise: cartItem.item.pricePaise,
       qty: cartItem.qty,
@@ -313,7 +321,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ tableLabel, guestName = 
           menu_item_id: p.menu_item_id,
           expected_unit_price_paise: p.expected_unit_price_paise,
           qty: p.qty,
-          name: items.find((it) => it.item.id === p.menu_item_id)?.item.name || "Artisanal Item",
+          name: p.name || "Artisanal Item",
         })),
         totalPaise: grandTotal * 100,
         instructions: instructions || undefined,
@@ -419,7 +427,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ tableLabel, guestName = 
             menu_item_id: p.menu_item_id,
             expected_unit_price_paise: p.expected_unit_price_paise,
             qty: p.qty,
-            name: items.find((it) => it.item.id === p.menu_item_id)?.item.name || "Artisanal Item",
+            name: p.name || "Artisanal Item",
           })),
           totalPaise: grandTotal * 100,
           instructions: instructions || undefined,
@@ -444,7 +452,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ tableLabel, guestName = 
           menu_item_id: p.menu_item_id,
           expected_unit_price_paise: p.expected_unit_price_paise,
           qty: p.qty,
-          name: items.find((it) => it.item.id === p.menu_item_id)?.item.name || "Artisanal Item",
+          name: p.name || "Artisanal Item",
         })),
         totalPaise: grandTotal * 100,
         instructions: instructions || undefined,
@@ -977,7 +985,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ tableLabel, guestName = 
                                   <div className="flex items-center gap-2.5">
                                     <button
                                       type="button"
-                                      onClick={() => updateQty(item.id, -1)}
+                                      onClick={() => updateQty(item.id, -1, item.name)}
                                       className="h-6 w-6 rounded-full border border-[#C9AE8B] dark:border-white/10 bg-[#F3E7D3] dark:bg-[#28201C] font-mono text-xs font-bold text-[#241F1C] dark:text-[#FAF4EB] flex items-center justify-center hover:bg-[#FAF4EB] dark:hover:bg-[#342A25]"
                                     >
                                       −
@@ -987,14 +995,14 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ tableLabel, guestName = 
                                     </span>
                                     <button
                                       type="button"
-                                      onClick={() => updateQty(item.id, 1)}
+                                      onClick={() => updateQty(item.id, 1, item.name)}
                                       className="h-6 w-6 rounded-full border border-[#C9AE8B] dark:border-white/10 bg-[#F3E7D3] dark:bg-[#28201C] font-mono text-xs font-bold text-[#241F1C] dark:text-[#FAF4EB] flex items-center justify-center hover:bg-[#FAF4EB] dark:hover:bg-[#342A25]"
                                     >
                                       +
                                     </button>
                                     <button
                                       type="button"
-                                      onClick={() => removeItem(item.id)}
+                                      onClick={() => removeItem(item.id, item.name)}
                                       className="p-1 text-[#B72E35] dark:text-[#FF5B52] hover:bg-[#B72E35]/10 rounded-full transition ml-1"
                                       aria-label="Remove item"
                                     >
@@ -1009,6 +1017,33 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ tableLabel, guestName = 
                       </div>
                     </div>
                   ))}
+                </div>
+
+                {/* Cooking Instructions / Special Requests */}
+                <div className="border-t border-[#C9AE8B]/40 dark:border-white/10 bg-[#FAF4EB]/60 dark:bg-[#1A1513]/60 px-4 py-3">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label htmlFor="cart-cooking-instructions" className="font-serif font-bold text-[12px] text-[#241F1C] dark:text-[#FAF4EB] flex items-center gap-1.5">
+                      <span>Kitchen &amp; Barista Notes</span>
+                      <span className="text-[10px] font-sans font-normal text-[#725039] dark:text-[#C9AE8B]">(Optional)</span>
+                    </label>
+                    {instructions && (
+                      <button
+                        type="button"
+                        onClick={() => setInstructions("")}
+                        className="text-[10px] font-mono text-[#B72E35] dark:text-[#FF5B52] underline cursor-pointer"
+                      >
+                        Clear
+                      </button>
+                    )}
+                  </div>
+                  <textarea
+                    id="cart-cooking-instructions"
+                    rows={2}
+                    value={instructions}
+                    onChange={(e) => setInstructions(e.target.value)}
+                    placeholder="E.g. Less spicy, oat milk separate, extra crispy toast..."
+                    className="w-full text-[12px] font-sans rounded-xl bg-white/80 dark:bg-black/30 border border-[#C9AE8B]/50 dark:border-white/10 p-2 text-[#241F1C] dark:text-[#FAF4EB] placeholder:text-[#725039]/50 dark:placeholder:text-[#C9AE8B]/40 focus:outline-none focus:ring-1 focus:ring-[#B72E35] dark:focus:ring-[#FF5B52] resize-none"
+                  />
                 </div>
 
                 {/* Itemized Bill Breakdown Section inside Arched Card */}

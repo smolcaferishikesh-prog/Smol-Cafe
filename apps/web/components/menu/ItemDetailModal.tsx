@@ -61,8 +61,30 @@ export const ItemDetailModal: React.FC<ItemDetailModalProps> = ({
     );
   }, [item]);
 
+  const isPasta = useMemo(() => {
+    if (!item) return false;
+    const cat = (categories.find((c) => c.id === item.categoryId)?.name || "").toLowerCase();
+    const name = item.name.toLowerCase();
+    const sub = (item.metadata?.subcategory || "").toLowerCase();
+    return (
+      cat.includes("pasta") ||
+      name.includes("pasta") ||
+      name.includes("spaghetti") ||
+      name.includes("penne") ||
+      name.includes("farfalle") ||
+      name.includes("fusilli") ||
+      name.includes("rigatoni") ||
+      sub.includes("pasta")
+    );
+  }, [item]);
+
   // Dynamic customization groups
-  const customizationTitle = isBeverage ? "Milk Preference" : "Bread & Style";
+  const customizationTitle = isBeverage
+    ? "Milk Preference"
+    : isPasta
+    ? "Pasta Shape"
+    : "Bread & Style";
+
   const customOptions: CustomOption[] = useMemo(() => {
     if (isBeverage) {
       return [
@@ -72,15 +94,33 @@ export const ItemDetailModal: React.FC<ItemDetailModalProps> = ({
         { id: "almond", label: "Almond +₹30", priceDelta: 30 },
       ];
     }
+    if (isPasta) {
+      return [
+        { id: "penne", label: "Penne", priceDelta: 0 },
+        { id: "farfalle", label: "Farfalle", priceDelta: 0 },
+        { id: "spaghetti", label: "Spaghetti", priceDelta: 0 },
+      ];
+    }
     return [
       { id: "classic", label: "Classic", priceDelta: 0 },
       { id: "sourdough", label: "Sourdough +₹40", priceDelta: 40 },
       { id: "extra_cheese", label: "Extra Cheese +₹35", priceDelta: 35 },
       { id: "spicy_dip", label: "Spicy Dip +₹25", priceDelta: 25 },
     ];
-  }, [isBeverage]);
+  }, [isBeverage, isPasta]);
 
   const [selectedOptionId, setSelectedOptionId] = useState<string>("none");
+
+  // Reset selected option when item changes
+  React.useEffect(() => {
+    if (isBeverage) {
+      setSelectedOptionId("none");
+    } else if (isPasta) {
+      setSelectedOptionId("penne");
+    } else {
+      setSelectedOptionId("classic");
+    }
+  }, [item?.id, isBeverage, isPasta]);
 
   // Lookup / resolve paired recommendation
   const pairedItemInfo = useMemo(() => {
@@ -213,14 +253,26 @@ export const ItemDetailModal: React.FC<ItemDetailModalProps> = ({
   }
 
   const handleAddToCart = () => {
-    // If an add-on was selected, bundle it with option details
-    if (optionDelta > 0 && selectedOption) {
+    // If an add-on or customization was selected, bundle it with option details
+    const isCustomized =
+      selectedOption &&
+      (optionDelta > 0 ||
+        (isPasta && selectedOption.id !== "penne") ||
+        (isBeverage && selectedOption.id !== "none") ||
+        (!isBeverage && !isPasta && selectedOption.id !== "classic"));
+
+    if (isCustomized && selectedOption) {
       const modifierLabel = selectedOption.label.replace(/\s*\+₹\d+.*$/, "").trim();
       const modifiedItem: MenuItemWithDetails = {
         ...item,
-        id: `${item.id}-${selectedOption.id}`,
+        // Crucial fix: Keep valid item.id for PostgreSQL UUID constraints
+        id: item.id,
         name: `${item.name} (${modifierLabel})`,
         pricePaise: item.pricePaise + optionDelta * 100,
+        metadata: {
+          ...item.metadata,
+          customer_note: modifierLabel,
+        },
       };
       addItem(modifiedItem, 1);
     } else {
