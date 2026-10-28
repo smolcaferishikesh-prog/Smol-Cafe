@@ -72,7 +72,7 @@ export const CashierDashboard: React.FC<CashierDashboardProps> = ({
   initialDeliveryOrders = [],
   initialPaidHistory = [],
 }) => {
-  const [activeTab, setActiveTab] = useState<"queue" | "delivery" | "paid">("queue");
+  const [activeTab, setActiveTab] = useState<"queue" | "delivery" | "paid" | "tables">("queue");
   const [tables, setTables] = useState<ActiveCashierTable[]>(initialTables);
   const [pendingOrders, setPendingOrders] = useState<PendingOrderVerification[]>(initialPendingOrders);
   const [deliveryOrders, setDeliveryOrders] = useState<DeliveryOrder[]>(initialDeliveryOrders);
@@ -862,6 +862,24 @@ export const CashierDashboard: React.FC<CashierDashboardProps> = ({
               {paidHistory.length}
             </span>
           </button>
+
+          {/* TAB 4: ACTIVE TABLES & SETTLEMENT */}
+          <button
+            type="button"
+            onClick={() => setActiveTab("tables")}
+            className={`flex shrink-0 items-center gap-1.5 sm:gap-2 rounded-xl sm:rounded-2xl px-3.5 sm:px-5 py-2 sm:py-2.5 text-xs font-bold transition-all cursor-pointer ${
+              activeTab === "tables"
+                ? "bg-[#241F1C] dark:bg-stone-800 text-white shadow-md font-extrabold"
+                : "bg-[#FAF4EB] dark:bg-stone-900 border border-[#C9AE8B]/40 dark:border-stone-800 text-[#725039] dark:text-stone-400 hover:bg-[#F3E7D3] dark:hover:bg-stone-800"
+            }`}
+          >
+            <Armchair className="h-4 w-4 shrink-0 text-[#C9AE8B] dark:text-stone-400" />
+            <span className="hidden sm:inline">Dining Tables</span>
+            <span className="sm:hidden">Tables</span>
+            <span className="rounded-full bg-[#F3E7D3] dark:bg-stone-800 px-1.5 sm:px-2 py-0.2 text-[10px] font-mono text-[#725039] dark:text-stone-300">
+              {tables.length}
+            </span>
+          </button>
         </div>
 
         {/* TAB 1: ORDER CONFIRMATION QUEUE */}
@@ -1534,6 +1552,80 @@ export const CashierDashboard: React.FC<CashierDashboardProps> = ({
                   </div>
                 </div>
               </>
+            )}
+          </div>
+        )}
+
+        {/* TAB 4: ACTIVE DINING TABLES & CASH SETTLEMENT */}
+        {activeTab === "tables" && (
+          <div className="space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <h2 className="text-xl sm:text-2xl font-black font-mono tracking-tight text-[#241F1C] dark:text-white">
+                  Active Dining Tables ({tables.length})
+                </h2>
+                <p className="text-xs text-[#725039] dark:text-stone-400 font-serif">
+                  Monitor table status and record direct cash payments &amp; table bill settlements.
+                </p>
+              </div>
+            </div>
+
+            {tables.length === 0 ? (
+              <div className="rounded-3xl border border-dashed border-[#C9AE8B]/40 dark:border-stone-800 bg-[#FAF4EB]/60 dark:bg-stone-900/40 p-12 text-center">
+                <Armchair className="h-12 w-12 mx-auto text-[#C9AE8B] dark:text-stone-600 mb-3" />
+                <h3 className="font-mono text-base font-bold text-[#241F1C] dark:text-white">No Active Tables</h3>
+                <p className="text-xs text-stone-500 dark:text-stone-400 mt-1">All tables are currently settled and available.</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {tables.map((table) => {
+                  const billRupees = Math.round(table.totalPaise / 100);
+                  return (
+                    <div
+                      key={table.sessionId}
+                      className="rounded-3xl border border-[#C9AE8B]/40 dark:border-stone-800 bg-[#FAF4EB] dark:bg-stone-900 p-5 shadow-sm space-y-3"
+                    >
+                      <div className="flex items-start justify-between">
+                        <div>
+                          <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-[#B72E35] dark:text-[#F6AD55]">
+                            {table.orderCount} {table.orderCount === 1 ? "Order" : "Orders"}
+                          </span>
+                          <h3 className="text-xl font-black font-mono text-[#241F1C] dark:text-white">
+                            Table {table.tableLabel}
+                          </h3>
+                        </div>
+                        <span
+                          className={`px-2.5 py-1 rounded-full text-[10px] font-bold ${
+                            table.sessionStatus === "OPEN"
+                              ? "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 border border-amber-300 dark:border-amber-800"
+                              : "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800"
+                          }`}
+                        >
+                          {table.sessionStatus}
+                        </span>
+                      </div>
+
+                      <div className="rounded-2xl border border-[#C9AE8B]/20 dark:border-stone-800 bg-[#F3E7D3]/40 dark:bg-stone-950/40 p-3 flex justify-between items-center text-xs">
+                        <span className="text-[#725039] dark:text-stone-400 font-medium">Total Bill Due</span>
+                        <span className="font-mono font-extrabold text-base text-[#241F1C] dark:text-white">
+                          ₹{billRupees}
+                        </span>
+                      </div>
+
+                      <div className="pt-1">
+                        <button
+                          type="button"
+                          onClick={() => handleOpenSettlement(table)}
+                          className="w-full flex items-center justify-center gap-1.5 rounded-xl bg-[#241F1C] dark:bg-stone-800 py-2.5 text-xs font-bold text-[#F3E7D3] dark:text-white transition hover:bg-[#362B24] dark:hover:bg-stone-700 shadow-xs cursor-pointer active:scale-98"
+                        >
+                          <Banknote className="h-4 w-4 text-emerald-400" />
+                          <span>Settle Cash Bill</span>
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             )}
           </div>
         )}

@@ -3,8 +3,9 @@
 import { cookies } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { createAdminClient, isMockDatabase } from "@/lib/supabase/admin";
+import { requireStaffAuth } from "@/lib/auth/rbac";
 import { broadcastSyncEvent } from "@/lib/sync-events";
-import { isBeverageItem, deriveStationStatus, deriveAggregateOrderStatus } from "@/lib/station-utils";
+import { isBeverageItem, isComboWithFoodItem, deriveStationStatus, deriveAggregateOrderStatus } from "@/lib/station-utils";
 import { extractOrderInstructions } from "@/lib/order-instructions";
 import type { OrderStatus } from "@smol-cafe/db";
 import { generateRequestId, logger } from "@/lib/observability/logger";
@@ -43,7 +44,7 @@ export interface FetchKitchenOrdersResult {
 
 export interface TransitionOrderResult {
   success: boolean;
-  error?: "STATUS_MISMATCH" | "ORDER_NOT_FOUND" | "DB_ERROR";
+  error?: "STATUS_MISMATCH" | "ORDER_NOT_FOUND" | "DB_ERROR" | "AUTH_REQUIRED";
   message?: string;
   currentStatus?: OrderStatus;
 }
@@ -101,8 +102,10 @@ export async function fetchSingleKitchenTicketAction(orderId: string): Promise<{
       };
     });
 
-    // Filter to ONLY dispatched food items (drinks belong exclusively to Barista)
-    const foodItems = allItems.filter((it) => !isBeverageItem(it.name) && it.itemStatus && it.itemStatus !== "PENDING" && it.itemStatus !== "DRAFT");
+    // Filter to ONLY dispatched food items (and combos with food; pure drinks belong exclusively to Barista)
+    const foodItems = allItems.filter(
+      (it) => (!isBeverageItem(it.name) || isComboWithFoodItem(it.name)) && it.itemStatus && it.itemStatus !== "PENDING" && it.itemStatus !== "DRAFT"
+    );
     if (foodItems.length === 0) {
       return { success: false, reason: "NO_DISPATCHED_FOOD_ITEMS" };
     }
@@ -242,7 +245,12 @@ export async function fetchKitchenOrdersAction(): Promise<FetchKitchenOrdersResu
     for (const o of orders) {
       const allItems = itemsByOrder.get(o.id) || [];
       const dispatchedFoodItems = allItems.filter(
-        (i) => !isBeverageItem(i.name) && i.itemStatus && i.itemStatus !== "PENDING" && i.itemStatus !== "DRAFT" && i.itemStatus !== "SUBMITTED"
+        (i) =>
+          (!isBeverageItem(i.name) || isComboWithFoodItem(i.name)) &&
+          i.itemStatus &&
+          i.itemStatus !== "PENDING" &&
+          i.itemStatus !== "DRAFT" &&
+          i.itemStatus !== "SUBMITTED"
       );
       if (dispatchedFoodItems.length === 0) {
         continue;
@@ -284,6 +292,15 @@ export async function transitionOrderStatusAction(
   fromStatusOrTarget: OrderStatus,
   targetStatus?: OrderStatus
 ): Promise<TransitionOrderResult> {
+  const auth = await requireStaffAuth(["kitchen", "chef", "admin", "super_admin", "cashier", "barista"]);
+  if (!auth.authorized) {
+    return {
+      success: false,
+      error: "AUTH_REQUIRED",
+      message: auth.message || "Unauthorized: Kitchen staff authorization required.",
+    };
+  }
+
   const fromStatus = targetStatus ? fromStatusOrTarget : undefined;
   const toStatus = targetStatus || fromStatusOrTarget;
   const requestId = generateRequestId();
@@ -375,7 +392,7 @@ export async function transitionOrderStatusAction(
 
     // 3. Update Kitchen food items in order_items
     const foodItemIds = (dbItems || [])
-      .filter((it) => !isBeverageItem(it.name_snapshot))
+      .filter((it) => !isBeverageItem(it.name_snapshot) || isComboWithFoodItem(it.name_snapshot))
       .map((it) => it.id);
 
     if (foodItemIds.length > 0) {

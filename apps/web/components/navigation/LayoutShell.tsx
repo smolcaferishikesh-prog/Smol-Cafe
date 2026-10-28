@@ -2,7 +2,6 @@
 
 import React from "react";
 import { usePathname } from "next/navigation";
-import { RoleSwitcherBar } from "@/components/navigation/RoleSwitcherBar";
 import { InstallAppPrompt } from "@/components/common/InstallAppPrompt";
 import { OfflineSyncBanner } from "@/components/common/OfflineSyncBanner";
 import { BottomNavBar } from "@/components/navigation/BottomNavBar";
@@ -41,14 +40,6 @@ export const LayoutShell: React.FC<LayoutShellProps> = ({ children }) => {
     pathname?.startsWith("/events") ||
     pathname?.startsWith("/music") ||
     pathname?.startsWith("/drinks");
-
-  const isStaffWorkspace =
-    pathname?.startsWith("/kitchen") ||
-    pathname?.startsWith("/barista") ||
-    pathname?.startsWith("/admin") ||
-    pathname?.startsWith("/cashier");
-
-  const showRoleSwitcher = !isCustomerFacingRoute && isStaffWorkspace;
 
   const showBottomNavBar =
     pathname === "/home" ||
@@ -102,7 +93,6 @@ export const LayoutShell: React.FC<LayoutShellProps> = ({ children }) => {
       <AppSplashScreen />
       {/* Offline sync banner disabled as requested */}
       {/* <OfflineSyncBanner /> */}
-      {showRoleSwitcher && <RoleSwitcherBar />}
       {children}
       {showBottomNavBar && <BottomNavBar />}
       <InstallAppPrompt />

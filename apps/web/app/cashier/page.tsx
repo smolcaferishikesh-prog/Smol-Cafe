@@ -17,7 +17,7 @@ export const metadata = {
 };
 
 export default async function CashierPage() {
-  const auth = await requireStaffAuth(["cashier", "admin", "super_admin"]);
+  const auth = await requireStaffAuth(["cashier", "admin", "super_admin", "barista", "kitchen", "chef"]);
 
   if (!auth.authorized) {
     redirect("/smol-backdoor");

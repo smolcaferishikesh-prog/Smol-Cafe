@@ -21,7 +21,14 @@ export const PastBillsModal: React.FC<PastBillsModalProps> = ({
 }) => {
   const [selectedReceipt, setSelectedReceipt] = useState<InvoiceReceiptData | null>(null);
 
-  const totalSpentPaise = orders.reduce((sum, o) => sum + o.totalPaise, 0);
+  const totalSpentPaise = orders.reduce(
+    (sum, o) =>
+      sum +
+      (o.totalPaise ||
+        (o as any).total_snapshot ||
+        ((o as any).totalRupees !== undefined ? (o as any).totalRupees * 100 : 0)),
+    0
+  );
   const totalSpentRupees = Math.round(totalSpentPaise / 100);
 
   const handlePrintConsolidated = () => {
@@ -29,10 +36,34 @@ export const PastBillsModal: React.FC<PastBillsModalProps> = ({
       o.items.map((i) => ({
         name: i.name,
         qty: i.qty,
-        priceRupees: Math.round(i.unitPricePaise / 100),
-        subtotalRupees: Math.round(i.lineSubtotal / 100),
+        priceRupees:
+          (i as any).priceRupees ?? (i.unitPricePaise ? Math.round(i.unitPricePaise / 100) : 0),
+        subtotalRupees:
+          (i as any).subtotalRupees ?? (i.lineSubtotal ? Math.round(i.lineSubtotal / 100) : 0),
       }))
     );
+
+    const consolidatedSubtotalRupees = Math.round(
+      orders.reduce(
+        (sum, o) =>
+          sum +
+          (o.subtotalPaise ||
+            (o as any).subtotal_snapshot ||
+            ((o as any).subtotalRupees !== undefined ? (o as any).subtotalRupees * 100 : 0)),
+        0
+      ) / 100
+    ) || Math.round(totalSpentRupees / 1.05);
+
+    const consolidatedTaxRupees = Math.round(
+      orders.reduce(
+        (sum, o) =>
+          sum +
+          (o.taxPaise ||
+            (o as any).tax_snapshot ||
+            ((o as any).taxRupees !== undefined ? (o as any).taxRupees * 100 : 0)),
+        0
+      ) / 100
+    ) || Math.max(0, totalSpentRupees - consolidatedSubtotalRupees);
 
     const consolidatedReceipt: InvoiceReceiptData = {
       orderId: `SESSION-T${tableLabel}`,
@@ -40,8 +71,8 @@ export const PastBillsModal: React.FC<PastBillsModalProps> = ({
       tableLabel,
       guestName,
       items: allItems,
-      subtotalRupees: Math.round(orders.reduce((sum, o) => sum + o.subtotalPaise, 0) / 100),
-      taxRupees: Math.round(orders.reduce((sum, o) => sum + o.taxPaise, 0) / 100),
+      subtotalRupees: consolidatedSubtotalRupees,
+      taxRupees: consolidatedTaxRupees,
       totalRupees: totalSpentRupees,
       paymentMethod: "UPI",
       paidAt: orders[0]?.submittedAt || new Date().toISOString(),
@@ -52,6 +83,33 @@ export const PastBillsModal: React.FC<PastBillsModalProps> = ({
   };
 
   const openOrderReceipt = (order: CustomerOrderDetails) => {
+    const orderTotalRupees =
+      (order as any).totalRupees !== undefined
+        ? (order as any).totalRupees
+        : order.totalPaise
+        ? Math.round(order.totalPaise / 100)
+        : (order as any).total_snapshot
+        ? Math.round((order as any).total_snapshot / 100)
+        : 0;
+
+    const orderSubtotalRupees =
+      (order as any).subtotalRupees !== undefined
+        ? (order as any).subtotalRupees
+        : order.subtotalPaise
+        ? Math.round(order.subtotalPaise / 100)
+        : (order as any).subtotal_snapshot
+        ? Math.round((order as any).subtotal_snapshot / 100)
+        : Math.round(orderTotalRupees / 1.05);
+
+    const orderTaxRupees =
+      (order as any).taxRupees !== undefined
+        ? (order as any).taxRupees
+        : order.taxPaise
+        ? Math.round(order.taxPaise / 100)
+        : (order as any).tax_snapshot
+        ? Math.round((order as any).tax_snapshot / 100)
+        : Math.max(0, orderTotalRupees - orderSubtotalRupees);
+
     setSelectedReceipt({
       orderId: order.id,
       orderNo: order.orderNo,
@@ -60,12 +118,14 @@ export const PastBillsModal: React.FC<PastBillsModalProps> = ({
       items: order.items.map((i) => ({
         name: i.name,
         qty: i.qty,
-        priceRupees: Math.round(i.unitPricePaise / 100),
-        subtotalRupees: Math.round(i.lineSubtotal / 100),
+        priceRupees:
+          (i as any).priceRupees ?? (i.unitPricePaise ? Math.round(i.unitPricePaise / 100) : 0),
+        subtotalRupees:
+          (i as any).subtotalRupees ?? (i.lineSubtotal ? Math.round(i.lineSubtotal / 100) : 0),
       })),
-      subtotalRupees: Math.round(order.subtotalPaise / 100),
-      taxRupees: Math.round(order.taxPaise / 100),
-      totalRupees: Math.round(order.totalPaise / 100),
+      subtotalRupees: orderSubtotalRupees,
+      taxRupees: orderTaxRupees,
+      totalRupees: orderTotalRupees,
       paymentMethod: "UPI",
       paidAt: order.submittedAt || new Date().toISOString(),
       orderStatus: order.status,
@@ -136,7 +196,14 @@ export const PastBillsModal: React.FC<PastBillsModalProps> = ({
             ) : (
               orders.map((order, idx) => {
                 const roundNum = orders.length - idx;
-                const orderRupees = Math.round(order.totalPaise / 100);
+                const orderRupees =
+                  (order as any).totalRupees !== undefined
+                    ? (order as any).totalRupees
+                    : order.totalPaise
+                    ? Math.round(order.totalPaise / 100)
+                    : (order as any).total_snapshot
+                    ? Math.round((order as any).total_snapshot / 100)
+                    : 0;
                 const orderTime = order.submittedAt
                   ? new Date(order.submittedAt).toLocaleTimeString("en-IN", {
                       hour: "numeric",

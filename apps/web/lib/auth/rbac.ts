@@ -1,5 +1,6 @@
 import { cookies } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
+import { isMockDatabase } from "@/lib/supabase/admin";
 import {
   getStoredCredentials,
   generateRoleCredentialToken,
@@ -62,6 +63,11 @@ export async function requireStaffAuth(
 ): Promise<AuthCheckResult> {
   const cookieStore = await cookies();
   const staffCookie = cookieStore.get(STAFF_SESSION_COOKIE)?.value;
+
+  // In local mock database development, allow requests if no cookie is set
+  if (isMockDatabase() && process.env.NODE_ENV !== "production" && !staffCookie) {
+    return { authorized: true, role: "admin" };
+  }
 
   // 1. Check HTTP-Only Staff Role Cookie
   if (staffCookie) {

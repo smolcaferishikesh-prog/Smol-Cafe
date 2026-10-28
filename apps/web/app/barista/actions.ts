@@ -3,6 +3,7 @@
 import { cookies } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { createAdminClient, isMockDatabase } from "@/lib/supabase/admin";
+import { requireStaffAuth } from "@/lib/auth/rbac";
 import { broadcastSyncEvent } from "@/lib/sync-events";
 import type { OrderStatus } from "@smol-cafe/db";
 import { generateRequestId, logger } from "@/lib/observability/logger";
@@ -194,6 +195,11 @@ export async function transitionBaristaOrderStatusAction(
   fromStatus: OrderStatus,
   toStatus: OrderStatus
 ): Promise<{ success: boolean; message?: string; currentStatus?: OrderStatus }> {
+  const auth = await requireStaffAuth(["barista", "admin", "super_admin", "kitchen", "chef", "cashier"]);
+  if (!auth.authorized) {
+    return { success: false, message: auth.message || "Unauthorized: Barista staff access required." };
+  }
+
   const requestId = generateRequestId();
   const startTime = Date.now();
   const supabase = createAdminClient();

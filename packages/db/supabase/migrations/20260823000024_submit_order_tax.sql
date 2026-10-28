@@ -254,9 +254,10 @@ BEGIN
     ORDER BY effective_from DESC
     LIMIT 1;
 
-    SELECT mv.id INTO v_version_id
-    FROM menu_item_versions mv
-    WHERE mv.menu_item_id = v_menu_item_id
+    SELECT mi.name, mv.id INTO v_item_name, v_version_id
+    FROM menu_items mi
+    LEFT JOIN menu_item_versions mv ON mv.menu_item_id = mi.id
+    WHERE mi.id = v_menu_item_id
     ORDER BY mv.created_at DESC
     LIMIT 1;
 
@@ -266,18 +267,20 @@ BEGIN
       order_id,
       menu_item_id,
       menu_item_version_id,
-      quantity,
-      unit_price,
+      name_snapshot,
+      unit_price_snapshot,
+      qty,
       line_subtotal,
-      notes
+      item_status
     ) VALUES (
       v_order_id,
       v_menu_item_id,
       v_version_id,
-      v_qty,
+      COALESCE(v_item_name, 'Café Item'),
       COALESCE(v_current_price, (v_item->>'expected_unit_price_paise')::INTEGER),
+      v_qty,
       v_line_subtotal,
-      v_item->>'notes'
+      'SUBMITTED'
     );
 
     -- Deduct Ingredient Stocks
