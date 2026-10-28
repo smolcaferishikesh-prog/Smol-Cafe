@@ -19,7 +19,13 @@ export function isBeverageItem(name: string, categoryName?: string): boolean {
     c.includes("shake") ||
     c.includes("cooler") ||
     c.includes("smoothie") ||
-    c.includes("kombucha")
+    c.includes("kombucha") ||
+    c.includes("refresher") ||
+    c.includes("mocktail") ||
+    c.includes("cold beverage") ||
+    c.includes("hot beverage") ||
+    c.includes("fizz") ||
+    c.includes("juice")
   ) {
     return true;
   }
@@ -51,7 +57,37 @@ export function isBeverageItem(name: string, categoryName?: string): boolean {
     n.includes("cooler") ||
     n.includes("lemonade") ||
     n.includes("soda") ||
-    n.includes("cold brew")
+    n.includes("cold brew") ||
+    n.includes("mojito") ||
+    n.includes("chaas") ||
+    n.includes("buttermilk") ||
+    n.includes("juice") ||
+    n.includes("fizz") ||
+    n.includes("refresher") ||
+    n.includes("mocktail") ||
+    n.includes("water")
+  );
+}
+
+/**
+ * Helper to identify combo items that contain BOTH a food component and a beverage component
+ * (e.g., "Bun Makkhan + Masala Milk Tea", "Cookie + Cappuccino").
+ * These items need to appear on BOTH Kitchen KDS (to prepare food) and Barista Desk (to brew beverage).
+ */
+export function isComboWithFoodItem(name: string): boolean {
+  const n = (name || "").toLowerCase().trim();
+  return (
+    n.includes("+") &&
+    (n.includes("bun") ||
+      n.includes("makkhan") ||
+      n.includes("toast") ||
+      n.includes("sandwich") ||
+      n.includes("cookie") ||
+      n.includes("croissant") ||
+      n.includes("muffin") ||
+      n.includes("cake") ||
+      n.includes("brownie") ||
+      n.includes("roll"))
   );
 }
 
@@ -143,7 +179,13 @@ export function deriveAggregateOrderStatus(
   if (allReadyOrServed) return "READY";
 
   const anyPreparingOrReady = statuses.some(
-    (s) => s === "PREPARING" || s === "IN_PROGRESS" || s === "READY"
+    (s) =>
+      s === "PREPARING" ||
+      s === "IN_PROGRESS" ||
+      s === "READY" ||
+      s === "SERVED" ||
+      s === "COMPLETED" ||
+      s === "DELIVERED"
   );
   if (anyPreparingOrReady) return "PREPARING";
 

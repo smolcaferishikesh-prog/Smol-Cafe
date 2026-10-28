@@ -421,8 +421,9 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
       ["Average Order Value", `₹${overviewData?.kpis.avgOrderRupees ?? 0}`, "Average ticket size"],
       ["Top Selling Item", `${overviewData?.kpis.topSellerName ?? "Espresso"} (${overviewData?.kpis.topSellerUnits ?? 0} units)`, "Highest velocity item"],
       ["Active Tables", `${overviewData?.kpis.activeTablesCount ?? 0} of ${overviewData?.kpis.totalTablesCount ?? 0}`, "Floor occupancy"],
-      ["Average Table Turnaround", "42 mins", "Dwell time per party"],
-      ["Customer Reorder Rate", "28%", "Multi-round dining rate"],
+      ["Average Table Turnaround", overviewData?.analyticsMetrics?.tableTurnDurationMinutes != null ? `${overviewData.analyticsMetrics.tableTurnDurationMinutes} mins` : "40 mins", "Dwell time per party"],
+      ["Customer Reorder Rate", overviewData?.analyticsMetrics?.reorderRatePercent != null ? `${overviewData.analyticsMetrics.reorderRatePercent}%` : "0%", "Multi-round dining rate"],
+      ["Peak Ordering Window", overviewData?.analyticsMetrics?.peakHourWindow || "11:00 AM - 1:00 PM", "Busiest service hour"],
     ];
     downloadCsv("smol_cafe_executive_analytics", headers, rows);
   };
@@ -436,27 +437,47 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
       (o) => (o.orderNo && t.ord.includes(String(o.orderNo))) || (o.id && t.ord.includes(o.id.slice(0, 6)))
     );
 
-    const items = matchedOrder?.items && matchedOrder.items.length > 0
-      ? matchedOrder.items.map((itemStr) => {
-          const qtyMatch = itemStr.match(/^(\d+)x\s*(.*)$/);
-          const qty = qtyMatch ? parseInt(qtyMatch[1], 10) : 1;
-          const name = qtyMatch ? qtyMatch[2] : itemStr;
-          const itemPrice = Math.round((subtotal / matchedOrder.items.length) * 100) / 100;
-          return {
-            name,
-            qty,
-            priceRupees: itemPrice,
-            subtotalRupees: itemPrice * qty,
-          };
-        })
-      : [
-          {
-            name: `Order Items (${t.ord || "Dining"})`,
-            qty: 1,
-            priceRupees: subtotal,
-            subtotalRupees: subtotal,
-          },
-        ];
+    // Precise receipt itemization: Use real DB itemsDetail prices first, then structured string parse
+    let items: Array<{ name: string; qty: number; priceRupees: number; subtotalRupees: number }>;
+
+    if (matchedOrder?.itemsDetail && matchedOrder.itemsDetail.length > 0) {
+      items = matchedOrder.itemsDetail.map((it) => {
+        const itemQty = it.qty || 1;
+        const sub = it.subtotalRupees || 0;
+        const unitPrice = it.priceRupees || (itemQty > 0 ? Math.round((sub / itemQty) * 100) / 100 : sub);
+        return {
+          name: it.name,
+          qty: itemQty,
+          priceRupees: unitPrice,
+          subtotalRupees: sub > 0 ? sub : unitPrice * itemQty,
+        };
+      });
+    } else if (matchedOrder?.items && matchedOrder.items.length > 0) {
+      let totalParsedQty = 0;
+      const parsed = matchedOrder.items.map((itemStr) => {
+        const qtyMatch = itemStr.match(/^(\d+)x\s*(.*)$/);
+        const qty = qtyMatch ? parseInt(qtyMatch[1], 10) : 1;
+        const name = qtyMatch ? qtyMatch[2] : itemStr;
+        totalParsedQty += qty;
+        return { name, qty };
+      });
+      const perUnitBase = totalParsedQty > 0 ? Math.round((subtotal / totalParsedQty) * 100) / 100 : subtotal;
+      items = parsed.map((p) => ({
+        name: p.name,
+        qty: p.qty,
+        priceRupees: perUnitBase,
+        subtotalRupees: Math.round(perUnitBase * p.qty * 100) / 100,
+      }));
+    } else {
+      items = [
+        {
+          name: `Order Items (${t.ord || "Dining"})`,
+          qty: 1,
+          priceRupees: subtotal,
+          subtotalRupees: subtotal,
+        },
+      ];
+    }
 
     const receipt: ReceiptData = {
       orderId: t.ord || t.txn.slice(-6),
@@ -1612,7 +1633,7 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
       setIsRefreshing(true);
     }
     try {
-      const res = await fetchAdminOverviewAction();
+      const res = await fetchAdminOverviewAction(true);
       if (res.success && res.data) {
         setOverviewData(res.data);
         setOrders(res.data.orders);
@@ -3698,11 +3719,13 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
 
             {/* Mobile View: Clean Transaction Cards (md:hidden) */}
             <div className="block md:hidden space-y-2.5">
-              {(payments.length > 0 ? payments : [
-                { txn: "TXN/2026/89412984", mode: "UPI Direct QR", amt: "₹580", ord: "ORD-104", st: "VERIFIED", time: "10:15 AM" },
-                { txn: "TXN/2026/71829104", mode: "Cash Tendered", amt: "₹420", ord: "ORD-103", st: "VERIFIED", time: "10:08 AM" },
-                { txn: "TXN/2026/10294100", mode: "UPI Direct QR", amt: "₹280", ord: "ORD-101", st: "SETTLED", time: "09:45 AM" },
-              ]).map((t, idx) => (
+              {payments.length === 0 ? (
+                <div className="py-8 text-center border border-dashed border-[#C9AE8B]/40 dark:border-stone-800 rounded-2xl p-4">
+                  <Receipt className="w-6 h-6 mx-auto mb-1.5 text-[#725039]/60 dark:text-stone-500" />
+                  <p className="font-serif text-xs font-medium text-[#725039] dark:text-stone-400">No payment transactions recorded for this period.</p>
+                </div>
+              ) : (
+                payments.map((t, idx) => (
                 <div
                   key={idx}
                   className="p-3.5 rounded-2xl border border-[#C9AE8B]/40 dark:border-stone-800 bg-[#FAF4EB] dark:bg-[#1A1715] space-y-2.5 shadow-xs transition-colors"
@@ -3768,7 +3791,7 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
                     </div>
                   </div>
                 </div>
-              ))}
+              )))}
             </div>
 
             {/* Desktop View: Wide Data Table (hidden md:block) */}
@@ -3788,11 +3811,16 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-[#C9AE8B]/20 dark:divide-stone-800 font-mono">
-                    {(payments.length > 0 ? payments : [
-                      { txn: "TXN/2026/89412984", mode: "UPI Direct QR", amt: "₹580", ord: "ORD-104", st: "VERIFIED", time: "10:15 AM" },
-                      { txn: "TXN/2026/71829104", mode: "Cash Tendered", amt: "₹420", ord: "ORD-103", st: "VERIFIED", time: "10:08 AM" },
-                      { txn: "TXN/2026/10294100", mode: "UPI Direct QR", amt: "₹280", ord: "ORD-101", st: "SETTLED", time: "09:45 AM" },
-                    ]).map((t, idx) => (
+                    {payments.length === 0 ? (
+                      <tr>
+                        <td colSpan={8} className="p-12 text-center text-[#725039] dark:text-stone-400">
+                          <Receipt className="w-8 h-8 mx-auto mb-2 opacity-40" />
+                          <p className="font-serif text-sm">No payment transactions recorded for this period.</p>
+                          <p className="text-[11px] font-mono opacity-60">Verified payments will appear here in real time.</p>
+                        </td>
+                      </tr>
+                    ) : (
+                      payments.map((t, idx) => (
                       <tr key={idx} className="hover:bg-[#F3E7D3]/60 dark:hover:bg-stone-900/50 transition">
                         <td className="p-3.5 font-bold text-[#241F1C] dark:text-stone-200">{t.txn}</td>
                         <td className="p-3.5 text-[#B72E35] dark:text-[#F2C84B] font-bold">{t.mode}</td>
@@ -3846,7 +3874,7 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
                           </div>
                         </td>
                       </tr>
-                    ))}
+                    )))}
                   </tbody>
                 </table>
               </div>
@@ -3888,8 +3916,8 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
             {/* Loyalty KPIs */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               {[
-                { label: "ENROLLED MEMBERS", val: loyaltyMembers.length > 0 ? `${loyaltyMembers.length * 312}` : "1,248", sub: "+38 this week", color: "#B72E35" },
-                { label: "POINTS ISSUED", val: "48,290", sub: "Valued at ₹48,290", color: "#319795" },
+                { label: "ENROLLED MEMBERS", val: loyaltyMembers.length.toLocaleString("en-IN"), sub: `${loyaltyMembers.length} active patrons`, color: "#B72E35" },
+                { label: "POINTS ISSUED", val: `${loyaltyMembers.reduce((acc, m) => acc + (m.currentBalance || 0), 0).toLocaleString("en-IN")} pts`, sub: `Valued at ₹${loyaltyMembers.reduce((acc, m) => acc + (m.currentBalance || 0), 0).toLocaleString("en-IN")}`, color: "#319795" },
                 { label: "MAX BILL DISCOUNT", val: `${loyaltyConfig.maxBillDiscountPercent}%`, sub: `1 pt = ₹${loyaltyConfig.pointRupeeValue}`, color: "#D97706" },
                 { label: "SLOW PERIOD BOOST", val: loyaltyConfig.slowPeriodActive ? `${loyaltyConfig.slowPeriodMultiplier}× Points` : "Disabled", sub: loyaltyConfig.slowPeriodHoursText, color: "#8C6D53" },
               ].map((k, i) => (
@@ -4018,8 +4046,8 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
             {/* Loyalty KPIs */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               {[
-                { label: "ENROLLED MEMBERS", val: loyaltyMembers.length > 0 ? `${loyaltyMembers.length * 312}` : "1,248", sub: "+38 this week", color: "#B72E35" },
-                { label: "POINTS ISSUED", val: "48,290", sub: "Valued at ₹48,290", color: "#319795" },
+                { label: "ENROLLED MEMBERS", val: loyaltyMembers.length.toLocaleString("en-IN"), sub: `${loyaltyMembers.length} active patrons`, color: "#B72E35" },
+                { label: "POINTS ISSUED", val: `${loyaltyMembers.reduce((acc, m) => acc + (m.currentBalance || 0), 0).toLocaleString("en-IN")} pts`, sub: `Valued at ₹${loyaltyMembers.reduce((acc, m) => acc + (m.currentBalance || 0), 0).toLocaleString("en-IN")}`, color: "#319795" },
                 { label: "MAX BILL DISCOUNT", val: `${loyaltyConfig.maxBillDiscountPercent}%`, sub: `1 pt = ₹${loyaltyConfig.pointRupeeValue}`, color: "#D97706" },
                 { label: "SLOW PERIOD BOOST", val: loyaltyConfig.slowPeriodActive ? `${loyaltyConfig.slowPeriodMultiplier}× Points` : "Disabled", sub: loyaltyConfig.slowPeriodHoursText, color: "#8C6D53" },
               ].map((k, i) => (

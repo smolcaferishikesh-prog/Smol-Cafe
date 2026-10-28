@@ -1,6 +1,7 @@
 "use server";
 
 import { createAdminClient } from "@/lib/supabase/admin";
+import { requireStaffAuth } from "@/lib/auth/rbac";
 import { revalidatePath } from "next/cache";
 import { broadcastSyncEvent } from "@/lib/sync-events";
 import { invalidateAdminOverviewCache } from "@/app/admin/actions";
@@ -189,6 +190,11 @@ export async function createTableAction(input: CreateTableInput): Promise<{
   table?: DiningTableRecord;
   message?: string;
 }> {
+  const auth = await requireStaffAuth(["admin", "super_admin"]);
+  if (!auth.authorized) {
+    return { success: false, message: auth.message || "Unauthorized: Admin access required." };
+  }
+
   try {
     const label = input.label.trim();
     if (!label) {
@@ -369,6 +375,11 @@ export async function updateTableAction(
   table?: DiningTableRecord;
   message?: string;
 }> {
+  const auth = await requireStaffAuth(["admin", "super_admin"]);
+  if (!auth.authorized) {
+    return { success: false, message: auth.message || "Unauthorized: Admin access required." };
+  }
+
   try {
     const supabase = createAdminClient();
 
@@ -496,6 +507,11 @@ export async function deleteTableAction(tableId: string, knownLabel?: string): P
   success: boolean;
   message?: string;
 }> {
+  const auth = await requireStaffAuth(["admin", "super_admin"]);
+  if (!auth.authorized) {
+    return { success: false, message: auth.message || "Unauthorized: Admin access required." };
+  }
+
   try {
     const supabase = createAdminClient();
 
@@ -631,6 +647,11 @@ export async function createSectionAction(name: string): Promise<{
   sections?: string[];
   message?: string;
 }> {
+  const auth = await requireStaffAuth(["admin", "super_admin"]);
+  if (!auth.authorized) {
+    return { success: false, message: auth.message || "Unauthorized: Admin access required." };
+  }
+
   try {
     const trimmed = name.trim();
     if (!trimmed) {
@@ -694,6 +715,11 @@ export async function deleteSectionAction(name: string): Promise<{
   sections?: string[];
   message?: string;
 }> {
+  const auth = await requireStaffAuth(["admin", "super_admin"]);
+  if (!auth.authorized) {
+    return { success: false, message: auth.message || "Unauthorized: Admin access required." };
+  }
+
   try {
     const trimmed = name.trim();
     if (!trimmed) return { success: false, message: "Invalid section name." };

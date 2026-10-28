@@ -226,42 +226,50 @@ export const KitchenBoardView: React.FC<KitchenBoardViewProps> = ({ initialOrder
       let exists = false;
       setOrders((prev) => {
         exists = prev.some((o) => o.id === orderId);
-        if (exists && newStatus) {
-          return prev.map((o) =>
-            o.id === orderId ? { ...o, status: newStatus } : o
-          );
-        }
         return prev;
       });
 
-      if (!exists) {
+      if (exists) {
+        // Re-derive station-specific status so cross-station changes don't overwrite this ticket
         fetchSingleKitchenTicketAction(orderId)
           .then((result) => {
             if (result && result.success && result.ticket) {
-              const newTicket = result.ticket;
-              if (
-                newTicket.status === "PENDING_CONFIRMATION" ||
-                newTicket.status === "DRAFT" ||
-                newTicket.status === "SUBMITTED" ||
-                newTicket.status === "CANCELLED" ||
-                newTicket.status === "REJECTED"
-              ) {
-                return;
-              }
-              setOrders((prev) => {
-                if (prev.some((o) => o.id === newTicket.id)) return prev;
-                return [newTicket, ...prev];
-              });
-              playChime(newTicket.id);
-            } else if (result?.reason !== "NO_FOOD_ITEMS") {
-              // Only fallback to full refresh if it was not identified as drinks-only
-              refreshOrders();
+              const freshTicket = result.ticket;
+              setOrders((prev) =>
+                prev.map((o) => (o.id === freshTicket.id ? freshTicket : o))
+              );
             }
           })
-          .catch(() => {
-            refreshOrders();
-          });
+          .catch(() => {});
+        return;
       }
+
+      fetchSingleKitchenTicketAction(orderId)
+        .then((result) => {
+          if (result && result.success && result.ticket) {
+            const newTicket = result.ticket;
+            if (
+              newTicket.status === "PENDING_CONFIRMATION" ||
+              newTicket.status === "DRAFT" ||
+              newTicket.status === "SUBMITTED" ||
+              newTicket.status === "CANCELLED" ||
+              newTicket.status === "REJECTED"
+            ) {
+              return;
+            }
+            setOrders((prev) => {
+              if (prev.some((o) => o.id === newTicket.id)) return prev;
+              return [newTicket, ...prev];
+            });
+            playChime(newTicket.id);
+          } else if (result?.reason !== "NO_DISPATCHED_FOOD_ITEMS" && result?.reason !== "NO_FOOD_ITEMS") {
+            // Only fallback to full refresh if it was not identified as drinks-only
+            refreshOrders();
+          }
+        })
+        .catch(() => {
+          refreshOrders();
+        });
     },
     [playChime, refreshOrders]
   );

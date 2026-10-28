@@ -904,12 +904,21 @@ export const OrderStatusClientView: React.FC<OrderStatusClientViewProps> = ({
           orderNo={latestOrder.orderNo}
           tableLabel={tableLabel}
           zone={tableJsonTag.zone}
-          amountPaise={latestOrder.totalPaise}
+          amountPaise={
+            latestOrder.totalPaise ||
+            (latestOrder as any).total_snapshot ||
+            ((latestOrder as any).totalRupees ? (latestOrder as any).totalRupees * 100 : 0)
+          }
           items={latestOrder.items.map((i) => ({
             name: i.name,
             qty: i.qty,
-            priceRupees: Math.round(i.unitPricePaise / 100),
-            subtotalRupees: Math.round((i.unitPricePaise / 100) * i.qty),
+            priceRupees:
+              (i as any).priceRupees ?? (i.unitPricePaise ? Math.round(i.unitPricePaise / 100) : 0),
+            subtotalRupees:
+              (i as any).subtotalRupees ??
+              (i.lineSubtotal
+                ? Math.round(i.lineSubtotal / 100)
+                : Math.round(((i.unitPricePaise || 0) / 100) * i.qty)),
           }))}
           onClose={() => setIsUpiDrawerOpen(false)}
           onPaymentSuccess={() => {

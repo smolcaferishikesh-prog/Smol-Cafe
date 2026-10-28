@@ -2,7 +2,8 @@
 
 import { revalidatePath } from "next/cache";
 import { createAdminClient, isMockDatabase } from "@/lib/supabase/admin";
-import { isBeverageItem } from "@/lib/station-utils";
+import { requireStaffAuth } from "@/lib/auth/rbac";
+import { isBeverageItem, isComboWithFoodItem } from "@/lib/station-utils";
 import { broadcastSyncEvent } from "@/lib/sync-events";
 import { safeUpdateOrderWithInstructions, extractOrderInstructions } from "@/lib/order-instructions";
 import { getOrderPhoneRecord } from "@/lib/customer-phone";
@@ -142,15 +143,15 @@ export async function fetchPendingCashierOrdersAction(): Promise<FetchPendingOrd
     }
 
     // Filter to those genuinely pending cashier confirmation / approval:
-    // (Orders that are in PENDING_CONFIRMATION, SUBMITTED, DRAFT, OR payment_status PENDING, and NOT yet accepted/preparing/ready/completed/cancelled)
+    // (Orders that are in PENDING_CONFIRMATION, SUBMITTED, DRAFT, OR payment_status PENDING, OR orders in ACCEPTED/PREPARING that still have undispatched pending items)
     const relevantOrders = orders.filter(
       (o) =>
         (o.status === "PENDING_CONFIRMATION" ||
           o.status === "SUBMITTED" ||
           o.status === "DRAFT" ||
-          o.payment_status === "PENDING") &&
-        o.status !== "ACCEPTED" &&
-        o.status !== "PREPARING" &&
+          o.payment_status === "PENDING" ||
+          o.status === "ACCEPTED" ||
+          o.status === "PREPARING") &&
         o.status !== "READY" &&
         o.status !== "SERVED" &&
         o.status !== "COMPLETED" &&
@@ -248,11 +249,11 @@ export async function fetchPendingCashierOrdersAction(): Promise<FetchPendingOrd
       .map((o) => {
         const tableInfo = o.table_session_id ? tableLabelMap.get(o.table_session_id) : null;
         const items = itemsByOrder.get(o.id) || [];
-        const hasFoodItems = items.some((i) => !i.isBeverage);
+        const hasFoodItems = items.some((i) => !i.isBeverage || isComboWithFoodItem(i.name));
         const hasBeverageItems = items.some((i) => i.isBeverage);
         const hasPendingFood = items.some(
           (i) =>
-            !i.isBeverage &&
+            (!i.isBeverage || isComboWithFoodItem(i.name)) &&
             (!i.itemStatus ||
               i.itemStatus === "PENDING" ||
               i.itemStatus === "DRAFT" ||
@@ -327,6 +328,11 @@ export async function editCashierOrderAction(
   instructions?: string,
   paymentMethod?: string
 ): Promise<{ success: boolean; message?: string; totalPaise?: number }> {
+  const auth = await requireStaffAuth(["cashier", "admin", "super_admin", "barista", "kitchen", "chef"]);
+  if (!auth.authorized) {
+    return { success: false, message: auth.message || "Unauthorized: Cashier access required." };
+  }
+
   if (!items || items.length === 0) {
     return { success: false, message: "Order must contain at least one item." };
   }
@@ -529,6 +535,11 @@ export async function confirmCashierOrderAction(
   staffName = "Cashier",
   paymentMethod = "UPI"
 ): Promise<ConfirmOrderResult> {
+  const auth = await requireStaffAuth(["cashier", "admin", "super_admin", "barista", "kitchen", "chef"]);
+  if (!auth.authorized) {
+    return { success: false, message: auth.message || "Unauthorized: Cashier access required." };
+  }
+
   const supabase = createAdminClient();
   const nowIso = new Date().toISOString();
   const cleanMethod = (paymentMethod || "UPI").toUpperCase();
@@ -537,12 +548,13 @@ export async function confirmCashierOrderAction(
     // 1. Fetch current order with totals and items
     const { data: currentOrder } = await supabase
       .from("orders")
-      .select("id, order_no, table_session_id, total_snapshot, subtotal_snapshot, tax_snapshot")
+      .select("id, order_no, table_session_id, total_snapshot, subtotal_snapshot, tax_snapshot, payment_status, status, accepted_at")
       .eq("id", orderId)
       .single();
 
     const orderTotalPaise = currentOrder?.total_snapshot || 0;
     const sessionId = currentOrder?.table_session_id;
+    const isAlreadyPaid = currentOrder?.payment_status === "PAID";
 
     // 2. Update item statuses according to stationTarget first
     try {
@@ -553,7 +565,9 @@ export async function confirmCashierOrderAction(
 
       if (dbItems && dbItems.length > 0) {
         if (stationTarget === "KITCHEN") {
-          const foodIds = dbItems.filter((i) => !isBeverageItem(i.name_snapshot)).map((i) => i.id);
+          const foodIds = dbItems
+            .filter((i) => !isBeverageItem(i.name_snapshot) || isComboWithFoodItem(i.name_snapshot))
+            .map((i) => i.id);
           if (foodIds.length > 0) {
             await supabase.from("order_items").update({ item_status: "ACCEPTED" }).in("id", foodIds);
           }
@@ -579,7 +593,11 @@ export async function confirmCashierOrderAction(
         .eq("order_id", orderId);
 
       const hasPending = (allItems || []).some(
-        (i) => !i.item_status || i.item_status === "PENDING" || i.item_status === "DRAFT"
+        (i) =>
+          !i.item_status ||
+          i.item_status === "PENDING" ||
+          i.item_status === "DRAFT" ||
+          i.item_status === "SUBMITTED"
       );
       isFullyDispatched = !hasPending;
     } catch (checkErr) {
@@ -587,12 +605,16 @@ export async function confirmCashierOrderAction(
     }
 
     // 2c. Update order status and payment status in PostgreSQL
+    // Keep downstream station status (PREPARING/READY/SERVED) if already advanced, else mark ACCEPTED
+    const keepExistingAdvancedStatus = ["PREPARING", "READY", "SERVED"].includes(currentOrder?.status || "");
+    const targetOrderStatus: OrderStatus = keepExistingAdvancedStatus ? (currentOrder!.status as OrderStatus) : "ACCEPTED";
+
     const orderUpdatePayload: Record<string, unknown> = {
-      status: isFullyDispatched ? "ACCEPTED" : "SUBMITTED",
+      status: targetOrderStatus,
       payment_status: "PAID",
       updated_at: nowIso,
     };
-    if (isFullyDispatched) {
+    if (isFullyDispatched && !currentOrder?.accepted_at) {
       orderUpdatePayload.accepted_at = nowIso;
     }
     if (isMockDatabase()) {
@@ -609,8 +631,8 @@ export async function confirmCashierOrderAction(
       return { success: false, message: `Failed to confirm order: ${updateErr.message || "database error"}` };
     }
 
-    // 3. Settle bill and payment attempt for Cashier Audit
-    if (sessionId) {
+    // 3. Settle bill and payment attempt for Cashier Audit (only once per order to prevent double-billing)
+    if (sessionId && !isAlreadyPaid) {
       try {
         let billId: string | null = null;
         const { data: existingBill } = await supabase
@@ -663,8 +685,8 @@ export async function confirmCashierOrderAction(
       await supabase.from("order_status_history").insert({
         id: crypto.randomUUID(),
         order_id: orderId,
-        from_status: "DRAFT",
-        to_status: "ACCEPTED",
+        from_status: (currentOrder?.status as OrderStatus) || "DRAFT",
+        to_status: targetOrderStatus,
         actor_type: "STAFF",
         created_at: nowIso,
       });
@@ -677,7 +699,7 @@ export async function confirmCashierOrderAction(
       orderId,
       orderNo: currentOrder?.order_no,
       station: stationTarget,
-      status: isFullyDispatched ? "ACCEPTED" : "SUBMITTED",
+      status: targetOrderStatus,
       timestamp: Date.now(),
       metadata: { stationTarget, isFullyDispatched },
     });
@@ -686,7 +708,7 @@ export async function confirmCashierOrderAction(
       type: "STATUS_CHANGED",
       orderId,
       station: stationTarget,
-      status: isFullyDispatched ? "ACCEPTED" : "SUBMITTED",
+      status: targetOrderStatus,
       timestamp: Date.now(),
       metadata: { stationTarget, isFullyDispatched },
     });
@@ -719,6 +741,11 @@ export async function rejectCashierOrderAction(
   reason: string,
   staffName = "Cashier"
 ): Promise<ConfirmOrderResult> {
+  const auth = await requireStaffAuth(["cashier", "admin", "super_admin", "barista", "kitchen", "chef"]);
+  if (!auth.authorized) {
+    return { success: false, message: auth.message || "Unauthorized: Cashier access required." };
+  }
+
   const supabase = createAdminClient();
   const nowIso = new Date().toISOString();
 
@@ -774,6 +801,11 @@ export async function clearAllPendingCashierOrdersAction(
   action: "CANCEL" | "CONFIRM" = "CANCEL",
   staffName = "Cashier"
 ): Promise<{ success: boolean; count: number; message: string }> {
+  const auth = await requireStaffAuth(["cashier", "admin", "super_admin", "barista", "kitchen", "chef"]);
+  if (!auth.authorized) {
+    return { success: false, count: 0, message: auth.message || "Unauthorized: Cashier access required." };
+  }
+
   const supabase = createAdminClient();
   const nowIso = new Date().toISOString();
 
@@ -1206,6 +1238,11 @@ export async function fetchReadyForDeliveryOrdersAction(): Promise<{
 export async function markOrderDeliveredAction(
   orderId: string
 ): Promise<{ success: boolean; message: string }> {
+  const auth = await requireStaffAuth(["cashier", "admin", "super_admin", "barista", "kitchen", "chef"]);
+  if (!auth.authorized) {
+    return { success: false, message: auth.message || "Unauthorized: Cashier access required." };
+  }
+
   const supabase = createAdminClient();
   const nowIso = new Date().toISOString();
 

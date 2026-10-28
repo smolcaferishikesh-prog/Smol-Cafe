@@ -97,7 +97,14 @@ export const OrderCard: React.FC<OrderCardProps> = ({ order, tableLabel = "01", 
   const [mounted, setMounted] = useState(false);
   const [timeAgo, setTimeAgo] = useState<string>("Just now");
   const copy = getStatusCopy(order.status);
-  const totalRupees = Math.round(order.totalPaise / 100);
+  const totalRupees =
+    (order as any).totalRupees !== undefined
+      ? (order as any).totalRupees
+      : order.totalPaise
+      ? Math.round(order.totalPaise / 100)
+      : (order as any).total_snapshot
+      ? Math.round((order as any).total_snapshot / 100)
+      : 0;
   const canEdit = order.status === "PENDING_CONFIRMATION" || order.status === "DRAFT";
 
   useEffect(() => {
@@ -117,11 +124,25 @@ export const OrderCard: React.FC<OrderCardProps> = ({ order, tableLabel = "01", 
     items: order.items.map((i) => ({
       name: i.name,
       qty: i.qty,
-      priceRupees: Math.round(i.unitPricePaise / 100),
-      subtotalRupees: Math.round(i.lineSubtotal / 100),
+      priceRupees: (i as any).priceRupees ?? (i.unitPricePaise ? Math.round(i.unitPricePaise / 100) : 0),
+      subtotalRupees: (i as any).subtotalRupees ?? (i.lineSubtotal ? Math.round(i.lineSubtotal / 100) : 0),
     })),
-    subtotalRupees: Math.round(order.subtotalPaise / 100),
-    taxRupees: Math.round(order.taxPaise / 100),
+    subtotalRupees:
+      (order as any).subtotalRupees !== undefined
+        ? (order as any).subtotalRupees
+        : order.subtotalPaise
+        ? Math.round(order.subtotalPaise / 100)
+        : (order as any).subtotal_snapshot
+        ? Math.round((order as any).subtotal_snapshot / 100)
+        : Math.round(totalRupees / 1.05),
+    taxRupees:
+      (order as any).taxRupees !== undefined
+        ? (order as any).taxRupees
+        : order.taxPaise
+        ? Math.round(order.taxPaise / 100)
+        : (order as any).tax_snapshot
+        ? Math.round((order as any).tax_snapshot / 100)
+        : Math.max(0, totalRupees - Math.round(totalRupees / 1.05)),
     totalRupees: totalRupees,
     paymentMethod: "UPI",
     paidAt: order.submittedAt || new Date().toISOString(),
@@ -246,7 +267,7 @@ export const OrderCard: React.FC<OrderCardProps> = ({ order, tableLabel = "01", 
                     </span>
                   </div>
                   <span className="font-mono font-semibold text-[#241F1C] dark:text-[#FAF4EB]">
-                    ₹{Math.round(item.lineSubtotal / 100)}
+                    ₹{item.lineSubtotal ? Math.round(item.lineSubtotal / 100) : (item as any).priceRupees || 0}
                   </span>
                 </div>
               ))}
