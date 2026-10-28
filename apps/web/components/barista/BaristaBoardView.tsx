@@ -212,42 +212,50 @@ export const BaristaBoardView: React.FC<BaristaBoardViewProps> = ({ initialOrder
       let exists = false;
       setOrders((prev) => {
         exists = prev.some((o) => o.id === orderId);
-        if (exists && newStatus) {
-          return prev.map((o) =>
-            o.id === orderId ? { ...o, status: newStatus } : o
-          );
-        }
         return prev;
       });
 
-      if (!exists) {
+      if (exists) {
+        // Re-derive station-specific status so cross-station changes don't overwrite this ticket
         fetchSingleBaristaTicketAction(orderId)
           .then((result) => {
             if (result && result.success && result.ticket) {
-              const newTicket = result.ticket;
-              if (
-                newTicket.status === "PENDING_CONFIRMATION" ||
-                newTicket.status === "DRAFT" ||
-                newTicket.status === "SUBMITTED" ||
-                newTicket.status === "CANCELLED" ||
-                newTicket.status === "REJECTED"
-              ) {
-                return;
-              }
-              setOrders((prev) => {
-                if (prev.some((o) => o.id === newTicket.id)) return prev;
-                return [newTicket, ...prev];
-              });
-              playChime(newTicket.id);
-            } else if (result?.reason !== "NO_BEVERAGE_ITEMS") {
-              // Only fallback to full refresh if it was not identified as food-only
-              refreshOrders();
+              const freshTicket = result.ticket;
+              setOrders((prev) =>
+                prev.map((o) => (o.id === freshTicket.id ? freshTicket : o))
+              );
             }
           })
-          .catch(() => {
-            refreshOrders();
-          });
+          .catch(() => {});
+        return;
       }
+
+      fetchSingleBaristaTicketAction(orderId)
+        .then((result) => {
+          if (result && result.success && result.ticket) {
+            const newTicket = result.ticket;
+            if (
+              newTicket.status === "PENDING_CONFIRMATION" ||
+              newTicket.status === "DRAFT" ||
+              newTicket.status === "SUBMITTED" ||
+              newTicket.status === "CANCELLED" ||
+              newTicket.status === "REJECTED"
+            ) {
+              return;
+            }
+            setOrders((prev) => {
+              if (prev.some((o) => o.id === newTicket.id)) return prev;
+              return [newTicket, ...prev];
+            });
+            playChime(newTicket.id);
+          } else if (result?.reason !== "NO_BEVERAGE_ITEMS") {
+            // Only fallback to full refresh if it was not identified as food-only
+            refreshOrders();
+          }
+        })
+        .catch(() => {
+          refreshOrders();
+        });
     },
     [playChime, refreshOrders]
   );
@@ -482,7 +490,13 @@ export const BaristaBoardView: React.FC<BaristaBoardViewProps> = ({ initialOrder
               name.includes("cappuccino") ||
               name.includes("americano") ||
               name.includes("cortado") ||
-              name.includes("flat white")
+              name.includes("flat white") ||
+              name.includes("mocha") ||
+              name.includes("black coffee") ||
+              name.includes("macchiato") ||
+              name.includes("pour over") ||
+              name.includes("filter coffee") ||
+              name.includes("instant")
             );
           }
           if (categoryFilter === "COLD") {
@@ -490,11 +504,30 @@ export const BaristaBoardView: React.FC<BaristaBoardViewProps> = ({ initialOrder
               name.includes("cold brew") ||
               name.includes("iced") ||
               name.includes("tonic") ||
-              name.includes("frappe")
+              name.includes("frappe") ||
+              name.includes("soda") ||
+              name.includes("mojito") ||
+              name.includes("fizz") ||
+              name.includes("refresher") ||
+              name.includes("cooler") ||
+              name.includes("lemonade") ||
+              name.includes("kombucha") ||
+              name.includes("chaas") ||
+              name.includes("buttermilk") ||
+              name.includes("juice")
             );
           }
           if (categoryFilter === "SHAKES") {
-            return name.includes("shake") || name.includes("tea") || name.includes("chai") || name.includes("smoothie");
+            return (
+              name.includes("shake") ||
+              name.includes("tea") ||
+              name.includes("chai") ||
+              name.includes("smoothie") ||
+              name.includes("lassi") ||
+              name.includes("hot chocolate") ||
+              name.includes("cocoa") ||
+              name.includes("matcha")
+            );
           }
           return true;
         });

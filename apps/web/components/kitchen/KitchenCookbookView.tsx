@@ -34,6 +34,7 @@ import {
   UtensilsCrossed,
 } from "lucide-react";
 import { type KitchenMenuItem, fetchKitchenMenuCatalogAction } from "@/app/kitchen/menu-actions";
+import { RAW_MENU_ITEMS } from "@/lib/mock-db/seedData";
 
 export interface RecipeIngredient {
   name: string;
@@ -65,8 +66,121 @@ export interface RecipeDetail {
   allergens: string[];
 }
 
+function determineCookbookStation(cat: string): string {
+  if (cat.includes("Tea") || cat.includes("Coffee") || cat.includes("Drinks") || cat.includes("Refreshers")) {
+    return "Brew Bar & Beverages";
+  }
+  if (cat.includes("Bun Makkhan") || cat.includes("Sandwiches") || cat.includes("Breakfast") || cat.includes("Bakery")) {
+    return "Bakery & Bakes";
+  }
+  if (cat.includes("Pasta") || cat.includes("Indian Meals") || cat.includes("Eggs")) {
+    return "Hot Kitchen & Grill";
+  }
+  return "Cold Prep & Bowls";
+}
+
+function parseIngredientsList(rawIngredients: string): RecipeIngredient[] {
+  if (!rawIngredients) return [{ name: "Fresh Pantry Ingredients", quantity: "Standard batch" }];
+  return rawIngredients.split(",").map((ing) => {
+    const trimmed = ing.trim();
+    return {
+      name: trimmed,
+      quantity: "Standard portion",
+      notes: "Pantry stock",
+    };
+  });
+}
+
+function parseStepsFromPrep(prep: string, dishName: string, equipment?: string): RecipeStep[] {
+  if (!prep || prep.trim() === "—") {
+    return [
+      {
+        stepNumber: 1,
+        title: "Station Prep & Mise",
+        instruction: `Gather and inspect mise en place for ${dishName}.`,
+        durationSeconds: 60,
+        heatLevel: "Low Heat",
+      },
+      {
+        stepNumber: 2,
+        title: "Cooking & Preparation",
+        instruction: `Prepare ${dishName} according to station culinary standards${equipment ? ` using ${equipment}` : ""}.`,
+        durationSeconds: 180,
+        heatLevel: "Medium Flame",
+      },
+      {
+        stepNumber: 3,
+        title: "Finishing & Plating",
+        instruction: "Inspect quality, plate in designated ware, and pass to pickup counter.",
+        durationSeconds: 30,
+        heatLevel: "Off",
+      },
+    ];
+  }
+
+  const parts = prep.split(/[\.\;]/).map((p) => p.trim()).filter((p) => p.length > 3);
+  if (parts.length <= 1) {
+    return [
+      {
+        stepNumber: 1,
+        title: "Station Prep & Mise",
+        instruction: "Inspect and gather fresh ingredients from station chiller.",
+        durationSeconds: 60,
+        heatLevel: "Low Heat",
+      },
+      {
+        stepNumber: 2,
+        title: "Preparation & Assembly",
+        instruction: prep,
+        durationSeconds: 180,
+        heatLevel: "Medium Flame",
+      },
+      {
+        stepNumber: 3,
+        title: "Plating & Check",
+        instruction: `Verify temperature and plate neatly${equipment ? ` using ${equipment}` : ""}.`,
+        durationSeconds: 30,
+        heatLevel: "Off",
+      },
+    ];
+  }
+
+  return parts.map((instruction, idx) => ({
+    stepNumber: idx + 1,
+    title: idx === 0 ? "Mise en place & Start" : idx === parts.length - 1 ? "Finishing & Plating" : `Step ${idx + 1}`,
+    instruction,
+    durationSeconds: idx === 0 ? 60 : idx === parts.length - 1 ? 45 : 120,
+    heatLevel: (idx === parts.length - 1 ? "Off" : "Medium Flame") as RecipeStep["heatLevel"],
+  }));
+}
+
+// Generate comprehensive recipes for all live menu catalog items
+const CATALOG_RECIPES: Record<string, RecipeDetail> = {};
+RAW_MENU_ITEMS.forEach((raw) => {
+  const slug = `item_${raw.name.toLowerCase().replace(/[^a-z0-9]+/g, "_")}`;
+  CATALOG_RECIPES[slug] = {
+    itemId: slug,
+    dishName: raw.name,
+    station: determineCookbookStation(raw.cat),
+    prepTimeMinutes: raw.cat.includes("Tea") || raw.cat.includes("Coffee") ? 3 : 5,
+    cookTimeMinutes: raw.cat.includes("Pasta") || raw.cat.includes("Meals") ? 8 : 4,
+    difficulty: (raw.cat.includes("Pasta") || raw.cat.includes("Meals") ? "Intermediate" : "Beginner (Easy)") as RecipeDetail["difficulty"],
+    servingWare: raw.ware || "Artisanal Ceramic Ware",
+    idealTemperature: raw.cat.includes("Cold") || raw.cat.includes("Refreshers") ? "Chilled (4°C)" : "Warm & Fresh (65°C)",
+    ingredients: parseIngredientsList(raw.ingredients),
+    steps: parseStepsFromPrep(raw.prep, raw.name, raw.equipment),
+    proTips: [
+      raw.notes || "Maintain consistent station cleanliness and standard portion weights.",
+      raw.pairing ? `Chef recommendation: Pairs wonderfully with ${raw.pairing}.` : "Verify presentation before passing to dispatch counter.",
+    ],
+    substitutions: [raw.dietary ? `Dietary standard: ${raw.dietary}. Check for vegan/dairy-free substitute.` : "Standard preparation."],
+    allergens: [raw.dietary || "Standard ingredients"],
+  };
+});
+
 // Master Pre-seeded Artisanal Recipes for Smol Café standard menu
 const DEFAULT_RECIPES: Record<string, RecipeDetail> = {
+  ...CATALOG_RECIPES,
   item_croissant_butter: {
     itemId: "item_croissant_butter",
     dishName: "Flaky Butter Croissant",

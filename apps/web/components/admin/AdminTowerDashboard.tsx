@@ -421,8 +421,9 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
       ["Average Order Value", `₹${overviewData?.kpis.avgOrderRupees ?? 0}`, "Average ticket size"],
       ["Top Selling Item", `${overviewData?.kpis.topSellerName ?? "Espresso"} (${overviewData?.kpis.topSellerUnits ?? 0} units)`, "Highest velocity item"],
       ["Active Tables", `${overviewData?.kpis.activeTablesCount ?? 0} of ${overviewData?.kpis.totalTablesCount ?? 0}`, "Floor occupancy"],
-      ["Average Table Turnaround", "42 mins", "Dwell time per party"],
-      ["Customer Reorder Rate", "28%", "Multi-round dining rate"],
+      ["Average Table Turnaround", overviewData?.analyticsMetrics?.tableTurnDurationMinutes != null ? `${overviewData.analyticsMetrics.tableTurnDurationMinutes} mins` : "40 mins", "Dwell time per party"],
+      ["Customer Reorder Rate", overviewData?.analyticsMetrics?.reorderRatePercent != null ? `${overviewData.analyticsMetrics.reorderRatePercent}%` : "0%", "Multi-round dining rate"],
+      ["Peak Ordering Window", overviewData?.analyticsMetrics?.peakHourWindow || "11:00 AM - 1:00 PM", "Busiest service hour"],
     ];
     downloadCsv("smol_cafe_executive_analytics", headers, rows);
   };
