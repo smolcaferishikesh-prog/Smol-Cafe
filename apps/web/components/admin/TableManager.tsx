@@ -885,7 +885,7 @@ export const TableManager: React.FC<TableManagerProps> = ({
     setFeedback(null);
   };
 
-  // Submit Add Table (0ms instant optimistic update)
+  // Submit Add Table (with live loading indicator until saved to database)
   const handleSubmitAdd = async (e: React.FormEvent) => {
     e.preventDefault();
     const cleanLabel = tableLabel.trim();
@@ -894,56 +894,9 @@ export const TableManager: React.FC<TableManagerProps> = ({
       return;
     }
 
-    const tempId = `temp_tbl_${Date.now()}`;
-    const optimisticTable: DiningTableRecord = {
-      id: tempId,
-      location_id: "",
-      label: cleanLabel,
-      seats: tableSeats,
-      active: tableActive,
-      section: tableSection,
-      isOccupied: false,
-    };
+    setIsLoading(true);
+    setFeedback(null);
 
-    const previousTables = tables;
-    const previousSections = sections;
-
-    // 1. Instant 0ms Optimistic UI update & immediate modal close
-    setTables((prev) => {
-      const normLabel = cleanLabel.toLowerCase();
-      const matchIdx = prev.findIndex(
-        (t) => t.id === tempId || t.label.trim().toLowerCase() === normLabel
-      );
-      if (matchIdx >= 0) {
-        return prev.map((t, idx) => (idx === matchIdx ? { ...t, ...optimisticTable } : t));
-      }
-      return [...prev, optimisticTable];
-    });
-
-    if (!sections.includes(tableSection)) {
-      setSections((prev) => [...prev, tableSection]);
-    }
-
-    setIsAddModalOpen(false);
-    setIsAddSectionDropdownOpen(false);
-    clearDeletedRefs(tempId, cleanLabel);
-    setFeedback({ type: "success", text: `Table T-${cleanLabel} added! Scannable QR stand & tags generated.` });
-    setViewingQrTable(optimisticTable);
-
-    broadcastSyncEvent({
-      type: "TABLE_CREATED",
-      tableId: tempId,
-      tableLabel: cleanLabel,
-      metadata: {
-        id: tempId,
-        label: cleanLabel,
-        seats: tableSeats,
-        active: tableActive,
-        section: tableSection,
-      },
-    });
-
-    // 2. Background database persistence
     try {
       const res = await createTableAction({
         label: cleanLabel,
@@ -956,33 +909,59 @@ export const TableManager: React.FC<TableManagerProps> = ({
         const confirmedTable = res.table;
         clearDeletedRefs(confirmedTable.id, confirmedTable.label);
         clearDeletedRefs(confirmedTable.id, cleanLabel);
+
         setTables((prev) => {
+          const normLabel = cleanLabel.toLowerCase();
           const matchIdx = prev.findIndex(
             (t) =>
-              t.id === tempId ||
               t.id === confirmedTable.id ||
-              t.label.trim().toLowerCase() === cleanLabel.toLowerCase()
+              t.label.trim().toLowerCase() === normLabel
           );
           if (matchIdx >= 0) {
             return prev.map((t, idx) => (idx === matchIdx ? confirmedTable : t));
           }
           return [...prev, confirmedTable];
         });
+
+        if (!sections.includes(tableSection)) {
+          setSections((prev) => [...prev, tableSection]);
+        }
+
+        setIsAddModalOpen(false);
+        setIsAddSectionDropdownOpen(false);
+        setFeedback({
+          type: "success",
+          text: `Table T-${cleanLabel} added! Scannable QR stand & tags generated.`,
+        });
         setViewingQrTable(confirmedTable);
+
+        broadcastSyncEvent({
+          type: "TABLE_CREATED",
+          tableId: confirmedTable.id,
+          tableLabel: cleanLabel,
+          metadata: {
+            id: confirmedTable.id,
+            label: cleanLabel,
+            seats: tableSeats,
+            active: tableActive,
+            section: tableSection,
+          },
+        });
       } else {
-        // Rollback on error
-        setTables(previousTables);
-        setSections(previousSections);
         setFeedback({ type: "error", text: res.message || "Failed to add table." });
       }
-    } catch {
-      setTables(previousTables);
-      setSections(previousSections);
-      setFeedback({ type: "error", text: "An unexpected error occurred." });
+    } catch (err: any) {
+      console.error("Error creating table:", err);
+      setFeedback({
+        type: "error",
+        text: err?.message || "An unexpected error occurred while adding table.",
+      });
+    } finally {
+      setIsLoading(false);
     }
   };
 
-  // Submit Edit Table (0ms instant optimistic update)
+  // Submit Edit Table (with live loading indicator until saved to database)
   const handleSubmitEdit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingTable) return;
@@ -993,56 +972,9 @@ export const TableManager: React.FC<TableManagerProps> = ({
     }
 
     const targetTable = { ...editingTable };
-    const previousTables = tables;
-    const previousSections = sections;
+    setIsLoading(true);
+    setFeedback(null);
 
-    const optimisticUpdatedTable: DiningTableRecord = {
-      ...targetTable,
-      label: cleanLabel,
-      section: tableSection,
-      seats: tableSeats,
-      active: tableActive,
-    };
-
-    // 1. Instant 0ms Optimistic UI update & immediate modal close
-    setTables((prev) => {
-      const seen = new Set<string>();
-      return prev
-        .map((t) =>
-          t.id === targetTable.id || t.label.trim().toLowerCase() === targetTable.label.trim().toLowerCase()
-            ? { ...t, ...optimisticUpdatedTable }
-            : t
-        )
-        .filter((t) => {
-          const norm = t.label.trim().toLowerCase();
-          if (seen.has(norm)) return false;
-          seen.add(norm);
-          return true;
-        });
-    });
-
-    if (!sections.includes(tableSection)) {
-      setSections((prev) => [...prev, tableSection]);
-    }
-
-    setEditingTable(null);
-    setIsEditSectionDropdownOpen(false);
-    setFeedback({ type: "success", text: "Table updated successfully!" });
-
-    broadcastSyncEvent({
-      type: "TABLE_RENAMED",
-      tableLabel: cleanLabel,
-      tableId: targetTable.id,
-      metadata: {
-        id: targetTable.id,
-        label: cleanLabel,
-        active: tableActive,
-        section: tableSection,
-        seats: tableSeats,
-      },
-    });
-
-    // 2. Background database persistence
     try {
       const res = await updateTableAction(targetTable.id, {
         label: cleanLabel,
@@ -1052,21 +984,58 @@ export const TableManager: React.FC<TableManagerProps> = ({
       });
 
       if (!res.success) {
-        // Rollback
-        setTables(previousTables);
-        setSections(previousSections);
         setFeedback({ type: "error", text: res.message || "Failed to update table." });
-      } else if (res.table) {
-        const confirmed = res.table;
-        setTables((prev) =>
-          prev.map((t) => (t.id === targetTable.id ? { ...t, ...confirmed } : t))
-        );
+      } else {
+        const confirmed = res.table || {
+          ...targetTable,
+          label: cleanLabel,
+          section: tableSection,
+          seats: tableSeats,
+          active: tableActive,
+        };
+
+        setTables((prev) => {
+          const seen = new Set<string>();
+          return prev
+            .map((t) =>
+              t.id === targetTable.id || t.label.trim().toLowerCase() === targetTable.label.trim().toLowerCase()
+                ? { ...t, ...confirmed }
+                : t
+            )
+            .filter((t) => {
+              const norm = t.label.trim().toLowerCase();
+              if (seen.has(norm)) return false;
+              seen.add(norm);
+              return true;
+            });
+        });
+
+        if (!sections.includes(tableSection)) {
+          setSections((prev) => [...prev, tableSection]);
+        }
+
+        setEditingTable(null);
+        setIsEditSectionDropdownOpen(false);
+        setFeedback({ type: "success", text: "Table updated successfully!" });
+
+        broadcastSyncEvent({
+          type: "TABLE_RENAMED",
+          tableLabel: cleanLabel,
+          tableId: targetTable.id,
+          metadata: {
+            id: targetTable.id,
+            label: cleanLabel,
+            active: tableActive,
+            section: tableSection,
+            seats: tableSeats,
+          },
+        });
       }
-    } catch {
-      // Rollback
-      setTables(previousTables);
-      setSections(previousSections);
-      setFeedback({ type: "error", text: "An unexpected error occurred." });
+    } catch (err: any) {
+      console.error("Error updating table:", err);
+      setFeedback({ type: "error", text: err?.message || "An unexpected error occurred." });
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -1617,10 +1586,11 @@ export const TableManager: React.FC<TableManagerProps> = ({
                 <input
                   type="text"
                   required
+                  disabled={isLoading}
                   value={tableLabel}
                   onChange={(e) => setTableLabel(e.target.value)}
                   placeholder="e.g. 13, 14, Verandah-A"
-                  className="w-full rounded-xl border border-[#C9AE8B]/50 dark:border-stone-700 bg-white dark:bg-stone-900 px-3 py-2 text-sm font-mono text-[#241F1C] dark:text-white focus:outline-none focus:ring-2 focus:ring-[#B72E35]"
+                  className="w-full rounded-xl border border-[#C9AE8B]/50 dark:border-stone-700 bg-white dark:bg-stone-900 px-3 py-2 text-sm font-mono text-[#241F1C] dark:text-white focus:outline-none focus:ring-2 focus:ring-[#B72E35] disabled:opacity-60"
                 />
               </div>
 
@@ -1784,11 +1754,12 @@ export const TableManager: React.FC<TableManagerProps> = ({
               <div className="flex items-center justify-end gap-2 pt-3 border-t border-[#C9AE8B]/20 dark:border-stone-800">
                 <button
                   type="button"
+                  disabled={isLoading}
                   onClick={() => {
                     setIsAddModalOpen(false);
                     setIsAddSectionDropdownOpen(false);
                   }}
-                  className="rounded-xl px-4 py-2 text-xs font-mono text-stone-600 dark:text-stone-400 hover:bg-black/5 dark:hover:bg-white/5"
+                  className="rounded-xl px-4 py-2 text-xs font-mono text-stone-600 dark:text-stone-400 hover:bg-black/5 dark:hover:bg-white/5 disabled:opacity-50"
                 >
                   Cancel
                 </button>
@@ -1985,11 +1956,12 @@ export const TableManager: React.FC<TableManagerProps> = ({
               <div className="flex items-center justify-end gap-2 pt-3 border-t border-[#C9AE8B]/20 dark:border-stone-800">
                 <button
                   type="button"
+                  disabled={isLoading}
                   onClick={() => {
                     setEditingTable(null);
                     setIsEditSectionDropdownOpen(false);
                   }}
-                  className="rounded-xl px-4 py-2 text-xs font-mono text-stone-600 dark:text-stone-400 hover:bg-black/5 dark:hover:bg-white/5"
+                  className="rounded-xl px-4 py-2 text-xs font-mono text-stone-600 dark:text-stone-400 hover:bg-black/5 dark:hover:bg-white/5 disabled:opacity-50"
                 >
                   Cancel
                 </button>
