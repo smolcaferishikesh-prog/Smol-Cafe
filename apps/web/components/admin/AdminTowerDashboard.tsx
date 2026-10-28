@@ -1633,7 +1633,7 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
       setIsRefreshing(true);
     }
     try {
-      const res = await fetchAdminOverviewAction();
+      const res = await fetchAdminOverviewAction(true);
       if (res.success && res.data) {
         setOverviewData(res.data);
         setOrders(res.data.orders);

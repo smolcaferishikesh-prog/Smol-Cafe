@@ -1,6 +1,7 @@
 "use server";
 
 import { createAdminClient, isMockDatabase } from "@/lib/supabase/admin";
+import { requireStaffAuth } from "@/lib/auth/rbac";
 import { TABLE_ZONES_CONFIG } from "@/lib/table-tag";
 import { broadcastSyncEvent } from "@/lib/sync-events";
 import { getMenuCatalog } from "@/lib/queries/menu";
@@ -326,19 +327,25 @@ export async function fetchAdminOverviewAction(forceRefresh = false): Promise<{
       const upper = (rawMethod || "").toUpperCase();
       const rawPaymentStatus = (o as unknown as { payment_status?: string }).payment_status?.toUpperCase();
       const isComplimentary = upper.includes("COMPLIMENTARY") || upper.includes("PROMO") || upper.includes("FREE");
+      const isVoidedPayment =
+        rawPaymentStatus === "VOIDED" ||
+        rawPaymentStatus === "UNPAID (VOID)" ||
+        rawPaymentStatus?.includes("VOID");
+      const isCancelledOrder = o.status === "CANCELLED" || o.status === "REJECTED";
       
       const hasRecordedPayment =
-        orderPaymentProviderMap.has(o.id) ||
+        !isVoidedPayment &&
+        (orderPaymentProviderMap.has(o.id) ||
         (o.table_session_id ? sessionPaymentProviderMap.has(o.table_session_id) : false) ||
-        rawPaymentStatus === "PAID";
+        rawPaymentStatus === "PAID");
 
       const isAwaitingApproval =
         o.status === "SUBMITTED" ||
         o.status === "DRAFT" ||
         o.status === "PENDING_CONFIRMATION";
 
-      const isPaid = !isComplimentary && (hasRecordedPayment || (!isAwaitingApproval && (o.status === "ACCEPTED" || o.status === "PREPARING" || o.status === "READY" || o.status === "SERVED" || o.status === "COMPLETED")));
-      const isUnpaidPending = !isPaid && !isComplimentary;
+      const isPaid = !isCancelledOrder && !isVoidedPayment && !isComplimentary && (hasRecordedPayment || (!isAwaitingApproval && (o.status === "ACCEPTED" || o.status === "PREPARING" || o.status === "READY" || o.status === "SERVED" || o.status === "COMPLETED")));
+      const isUnpaidPending = !isCancelledOrder && !isVoidedPayment && !isPaid && !isComplimentary;
 
       let methodLabel = "PAID (UPI)";
       let paymentCategory: "UPI" | "CASH" | "CARD" = "UPI";
@@ -462,8 +469,8 @@ export async function fetchAdminOverviewAction(forceRefresh = false): Promise<{
         tableSessionId: o.table_session_id || "",
       });
 
-      // Payments ledger entry
-      if (o.status !== "CANCELLED" && o.status !== "REJECTED") {
+      // Payments ledger entry: ONLY for active or settled orders with valid, non-voided payments
+      if (!isCancelledOrder && !isVoidedPayment) {
         let ledgerStatus = "VERIFIED";
         let ledgerMode = "UPI Direct QR";
         let ledgerTxn = `TXN/${orderDate.getFullYear()}/${(o.id || "").replace(/[^0-9]/g, "").slice(-8) || "89412984"}`;
@@ -750,6 +757,11 @@ export async function updateAdminOrderStatusAction(
   orderId: string,
   newStatus: OrderStatus
 ): Promise<{ success: boolean; message?: string }> {
+  const auth = await requireStaffAuth(["admin", "super_admin"]);
+  if (!auth.authorized) {
+    return { success: false, message: auth.message || "Unauthorized: Admin access required." };
+  }
+
   const supabase = createAdminClient();
 
   try {
@@ -810,6 +822,11 @@ export async function editAdminOrderAction(payload: EditAdminOrderPayload): Prom
   success: boolean;
   message: string;
 }> {
+  const auth = await requireStaffAuth(["admin", "super_admin"]);
+  if (!auth.authorized) {
+    return { success: false, message: auth.message || "Unauthorized: Admin access required." };
+  }
+
   const supabase = createAdminClient();
   const nowIso = new Date().toISOString();
 
@@ -1026,6 +1043,11 @@ export async function deleteAdminOrderAction(orderId: string): Promise<{
   success: boolean;
   message: string;
 }> {
+  const auth = await requireStaffAuth(["admin", "super_admin"]);
+  if (!auth.authorized) {
+    return { success: false, message: auth.message || "Unauthorized: Admin access required." };
+  }
+
   const supabase = createAdminClient();
 
   try {
@@ -1033,29 +1055,46 @@ export async function deleteAdminOrderAction(orderId: string): Promise<{
       return { success: false, message: "Order ID is required." };
     }
 
-    // 1. Fetch order
-    const { data: order, error: fetchErr } = await supabase
-      .from("orders")
-      .select("id, order_no, table_session_id")
-      .eq("id", orderId)
-      .maybeSingle();
+    // 1. Fetch order by UUID or order_no
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(orderId);
+    const parsedOrderNo = parseInt(orderId.replace(/\D/g, "") || "0", 10);
+
+    let query = supabase.from("orders").select("id, order_no, table_session_id");
+    if (isUuid) {
+      query = query.eq("id", orderId);
+    } else if (parsedOrderNo > 0) {
+      query = query.eq("order_no", parsedOrderNo);
+    } else {
+      return { success: false, message: "Invalid order identifier." };
+    }
+
+    const { data: order, error: fetchErr } = await query.maybeSingle();
 
     if (fetchErr || !order) {
       return { success: false, message: "Order not found or already deleted." };
     }
 
-    const orderNo = order.order_no || order.id.slice(-4);
+    const realOrderId = order.id;
+    const orderNo = order.order_no || realOrderId.slice(-4);
     const sessionId = order.table_session_id;
 
     // 2. Delete child items, status history, and the order concurrently
     await Promise.all([
-      supabase.from("order_items").delete().eq("order_id", orderId),
-      supabase.from("order_status_history").delete().eq("order_id", orderId),
+      supabase.from("order_items").delete().eq("order_id", realOrderId),
+      supabase.from("order_status_history").delete().eq("order_id", realOrderId),
     ]);
 
-    const { error: delErr } = await supabase.from("orders").delete().eq("id", orderId);
+    const { error: delErr } = await supabase.from("orders").delete().eq("id", realOrderId);
     if (delErr) {
-      return { success: false, message: delErr.message };
+      console.warn("Direct order deletion fallback to cancelled & voided:", delErr.message);
+      await supabase
+        .from("orders")
+        .update({
+          status: "CANCELLED",
+          payment_status: "VOIDED",
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", realOrderId);
     }
 
     // 4. Update table session bill if other orders remain
@@ -1126,6 +1165,11 @@ export async function deleteMultipleAdminOrdersAction(orderIds: string[]): Promi
   deletedCount: number;
   message: string;
 }> {
+  const auth = await requireStaffAuth(["admin", "super_admin"]);
+  if (!auth.authorized) {
+    return { success: false, deletedCount: 0, message: auth.message || "Unauthorized: Admin access required." };
+  }
+
   if (!orderIds || orderIds.length === 0) {
     return { success: false, deletedCount: 0, message: "No orders specified." };
   }
@@ -1133,24 +1177,57 @@ export async function deleteMultipleAdminOrdersAction(orderIds: string[]): Promi
   const supabase = createAdminClient();
   try {
     // 1. Fetch table sessions for all orders to be deleted in 1 roundtrip
-    const { data: targetOrders } = await supabase
-      .from("orders")
-      .select("id, table_session_id")
-      .in("id", orderIds);
+    const isUuid = (id: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+    const validUuids = orderIds.filter(isUuid);
+    const orderNos = orderIds
+      .filter((id) => !isUuid(id))
+      .map((id) => parseInt(id.replace(/\D/g, "") || "0", 10))
+      .filter((n) => n > 0);
+
+    const allTargetOrders: Array<{ id: string; table_session_id?: string }> = [];
+
+    if (validUuids.length > 0) {
+      const { data: byUuid } = await supabase
+        .from("orders")
+        .select("id, table_session_id")
+        .in("id", validUuids);
+      if (byUuid) allTargetOrders.push(...byUuid);
+    }
+
+    if (orderNos.length > 0) {
+      const { data: byNo } = await supabase
+        .from("orders")
+        .select("id, table_session_id")
+        .in("order_no", orderNos);
+      if (byNo) allTargetOrders.push(...byNo);
+    }
+
+    const realTargetIds = Array.from(new Set(allTargetOrders.map((o) => o.id)));
+    if (realTargetIds.length === 0) {
+      return { success: false, deletedCount: 0, message: "No matching orders found." };
+    }
 
     const sessionIds = Array.from(
-      new Set((targetOrders || []).map((o) => o.table_session_id).filter((id): id is string => Boolean(id)))
+      new Set(allTargetOrders.map((o) => o.table_session_id).filter((id): id is string => Boolean(id)))
     );
 
     // 2. Batch delete child items, logs, and orders concurrently
     await Promise.all([
-      supabase.from("order_items").delete().in("order_id", orderIds),
-      supabase.from("order_status_history").delete().in("order_id", orderIds),
+      supabase.from("order_items").delete().in("order_id", realTargetIds),
+      supabase.from("order_status_history").delete().in("order_id", realTargetIds),
     ]);
 
-    const { error: delErr } = await supabase.from("orders").delete().in("id", orderIds);
+    const { error: delErr } = await supabase.from("orders").delete().in("id", realTargetIds);
     if (delErr) {
-      return { success: false, deletedCount: 0, message: delErr.message };
+      console.warn("Batch hard delete fallback to cancelled & voided:", delErr.message);
+      await supabase
+        .from("orders")
+        .update({
+          status: "CANCELLED",
+          payment_status: "VOIDED",
+          updated_at: new Date().toISOString(),
+        })
+        .in("id", realTargetIds);
     }
 
     // 3. Clean up empty table session bills in background
@@ -1217,15 +1294,32 @@ export async function updateAdminPaymentAction(
   orderIdOrTxn: string,
   newStatus: string
 ): Promise<{ success: boolean; message: string }> {
+  const auth = await requireStaffAuth(["admin", "super_admin"]);
+  if (!auth.authorized) {
+    return { success: false, message: auth.message || "Unauthorized: Admin access required." };
+  }
+
   const supabase = createAdminClient();
   try {
-    const { error } = await supabase
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(orderIdOrTxn);
+    const parsedOrderNo = parseInt(orderIdOrTxn.replace(/\D/g, "") || "0", 10);
+
+    let updateQuery = supabase
       .from("orders")
       .update({
         payment_status: newStatus,
         updated_at: new Date().toISOString(),
-      })
-      .or(`id.eq.${orderIdOrTxn},order_no.eq.${parseInt(orderIdOrTxn.replace(/\D/g, "") || "0", 10)}`);
+      });
+
+    if (isUuid) {
+      updateQuery = updateQuery.eq("id", orderIdOrTxn);
+    } else if (parsedOrderNo > 0) {
+      updateQuery = updateQuery.eq("order_no", parsedOrderNo);
+    } else {
+      return { success: false, message: "Invalid payment order identifier." };
+    }
+
+    const { error } = await updateQuery;
 
     invalidateAdminOverviewCache();
 
@@ -1249,26 +1343,64 @@ export async function updateAdminPaymentAction(
 export async function deleteAdminPaymentAction(
   orderIdOrTxn: string
 ): Promise<{ success: boolean; message: string }> {
+  const auth = await requireStaffAuth(["admin", "super_admin"]);
+  if (!auth.authorized) {
+    return { success: false, message: auth.message || "Unauthorized: Admin access required." };
+  }
+
   const supabase = createAdminClient();
   try {
-    await supabase
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(orderIdOrTxn);
+    const parsedOrderNo = parseInt(orderIdOrTxn.replace(/\D/g, "") || "0", 10);
+
+    let findQuery = supabase.from("orders").select("id, order_no, table_session_id");
+    if (isUuid) {
+      findQuery = findQuery.eq("id", orderIdOrTxn);
+    } else if (parsedOrderNo > 0) {
+      findQuery = findQuery.eq("order_no", parsedOrderNo);
+    } else {
+      return { success: false, message: "Invalid payment order identifier." };
+    }
+
+    const { data: matchedOrder, error: findErr } = await findQuery.maybeSingle();
+
+    if (findErr || !matchedOrder) {
+      return { success: false, message: "Payment order not found." };
+    }
+
+    const realOrderId = matchedOrder.id;
+
+    // Void the order and set payment_status to VOIDED so it permanently disappears from payments log
+    const { error: updateErr } = await supabase
       .from("orders")
       .update({
-        payment_status: "UNPAID (VOID)",
+        payment_status: "VOIDED",
+        status: "CANCELLED",
         updated_at: new Date().toISOString(),
       })
-      .or(`id.eq.${orderIdOrTxn},order_no.eq.${parseInt(orderIdOrTxn.replace(/\D/g, "") || "0", 10)}`);
+      .eq("id", realOrderId);
+
+    if (updateErr) {
+      return { success: false, message: updateErr.message };
+    }
+
+    // Clean up payment attempts for this table session
+    if (matchedOrder.table_session_id) {
+      await supabase.from("payment_attempts").delete().eq("bill_id", matchedOrder.table_session_id);
+    }
 
     invalidateAdminOverviewCache();
 
     broadcastSyncEvent({
       type: "STATUS_CHANGED",
+      orderId: realOrderId,
+      status: "CANCELLED",
       timestamp: Date.now(),
     });
 
     return {
       success: true,
-      message: "Payment transaction record voided and removed from ledger.",
+      message: `Payment for Order #${matchedOrder.order_no} voided and removed from ledger.`,
     };
   } catch (err: any) {
     return { success: false, message: err?.message || "Failed to void payment transaction." };
@@ -1296,6 +1428,11 @@ export async function purgeCustomerOrdersAction(rawPhone: string = "+91930508433
   purgedOrdersCount: number;
   message: string;
 }> {
+  const auth = await requireStaffAuth(["admin", "super_admin"]);
+  if (!auth.authorized) {
+    return { success: false, purgedOrdersCount: 0, message: auth.message || "Unauthorized: Admin access required." };
+  }
+
   try {
     const supabase = createAdminClient();
     const cleanDigits = rawPhone.replace(/\D/g, "");
