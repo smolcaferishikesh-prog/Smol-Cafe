@@ -150,7 +150,7 @@ let isConnecting = false;
 let reconnectTimer: NodeJS.Timeout | null = null;
 let retryFlushTimer: NodeJS.Timeout | null = null;
 let reconnectAttempts = 0;
-const MAX_RECONNECT_ATTEMPTS = 3;
+const MAX_BACKOFF_DELAY_MS = 15000;
 const pendingSupabaseEvents: QueuedEvent[] = [];
 
 async function sendSupabaseEventDirect(channel: RealtimeChannel, payload: SyncPayload): Promise<boolean> {
@@ -190,11 +190,11 @@ async function flushPendingSupabaseEvents(): Promise<void> {
   }
 
   // If there are still failed items to retry, schedule a follow-up flush
-  if (pendingSupabaseEvents.length > 0 && !retryFlushTimer && reconnectAttempts <= MAX_RECONNECT_ATTEMPTS) {
+  if (pendingSupabaseEvents.length > 0 && !retryFlushTimer) {
     retryFlushTimer = setTimeout(() => {
       retryFlushTimer = null;
       flushPendingSupabaseEvents();
-    }, 1000);
+    }, 1500);
   }
 }
 
@@ -209,9 +209,8 @@ function getOrInitSupabaseChannel(): RealtimeChannel | null {
     return globalSupabaseChannel;
   }
 
-  // Stop hammering the websocket if the remote Realtime service has repeatedly failed.
-  // The app will seamlessly continue using BroadcastChannel & localStorage events.
-  if (reconnectAttempts > MAX_RECONNECT_ATTEMPTS) {
+  // Never permanently stop reconnecting while device is online!
+  if (typeof navigator !== "undefined" && !navigator.onLine) {
     return globalSupabaseChannel;
   }
 
@@ -383,20 +382,13 @@ function getOrInitSupabaseChannel(): RealtimeChannel | null {
       } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
         isSupabaseChannelReady = false;
         reconnectAttempts++;
-        if (reconnectAttempts <= MAX_RECONNECT_ATTEMPTS) {
-          if (!reconnectTimer) {
-            const delay = Math.min(3000 * Math.pow(2, reconnectAttempts - 1), 30000);
-            reconnectTimer = setTimeout(() => {
-              reconnectTimer = null;
-              getOrInitSupabaseChannel();
-            }, delay);
-          }
-        } else {
-          // Channel is unreachable/500; gracefully suspend retries and rely on local sync
-          if (reconnectTimer) {
-            clearTimeout(reconnectTimer);
+        if (!reconnectTimer && (typeof navigator === "undefined" || navigator.onLine)) {
+          // Continuous exponential backoff with ceiling (1.5s -> 3s -> 6s -> 12s -> 15s max)
+          const delay = Math.min(1500 * Math.pow(1.5, reconnectAttempts - 1), MAX_BACKOFF_DELAY_MS);
+          reconnectTimer = setTimeout(() => {
             reconnectTimer = null;
-          }
+            getOrInitSupabaseChannel();
+          }, delay);
         }
       }
     });
@@ -420,9 +412,7 @@ if (typeof window !== "undefined") {
 
   window.addEventListener("focus", () => {
     if (!isSupabaseChannelReady) {
-      if (reconnectAttempts <= MAX_RECONNECT_ATTEMPTS) {
-        getOrInitSupabaseChannel();
-      }
+      getOrInitSupabaseChannel();
     } else {
       flushPendingSupabaseEvents();
     }
@@ -431,9 +421,7 @@ if (typeof window !== "undefined") {
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible") {
       if (!isSupabaseChannelReady) {
-        if (reconnectAttempts <= MAX_RECONNECT_ATTEMPTS) {
-          getOrInitSupabaseChannel();
-        }
+        getOrInitSupabaseChannel();
       } else {
         flushPendingSupabaseEvents();
       }
@@ -454,32 +442,38 @@ async function broadcastSyncEventServer(payload: SyncPayload): Promise<void> {
   }
 
   const endpoint = `${supabaseUrl.replace(/\/$/, "")}/realtime/v1/api/broadcast`;
-  try {
-    const res = await fetch(endpoint, {
-      method: "POST",
-      headers: {
-        apikey: apiKey,
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        messages: [
-          {
-            topic: SUPABASE_BROADCAST_CHANNEL,
-            event: "sync",
-            payload,
-          },
-        ],
-      }),
-      signal: AbortSignal.timeout(3500),
-    });
+  
+  // Attempt delivery with 1 immediate retry on failure
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const res = await fetch(endpoint, {
+        method: "POST",
+        headers: {
+          apikey: apiKey,
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          messages: [
+            {
+              topic: SUPABASE_BROADCAST_CHANNEL,
+              event: "sync",
+              payload,
+            },
+          ],
+        }),
+        signal: AbortSignal.timeout(3500),
+      });
 
-    if (!res.ok) {
-      console.warn(`[Supabase Broadcast REST] ${res.status}: ${res.statusText}`);
+      if (res.ok) {
+        return;
+      }
+      console.warn(`[Supabase Broadcast REST] Attempt ${attempt + 1} status: ${res.status}`);
+    } catch (err) {
+      if (attempt === 1) {
+        console.warn("[Supabase Broadcast REST] Broadcast notice:", err);
+      }
     }
-  } catch (err) {
-    // Non-fatal warning: keep going without disrupting server action flow
-    console.warn("[Supabase Broadcast REST] Broadcast notice:", err);
   }
 }
 

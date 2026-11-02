@@ -368,6 +368,22 @@ export async function placeOrderAction(
 
         await supabase.from("order_items").insert(orderItemsPayload);
 
+        // Broadcast ORDER_PLACED so Kitchen KDS, Barista Desk and Admin Tower are immediately notified
+        broadcastSyncEvent({
+          type: "ORDER_PLACED",
+          orderId: fallbackOrderId,
+          orderNo: fallbackOrderNo,
+          tableLabel: session.tableLabel || "01",
+          status: "SUBMITTED",
+          timestamp: Date.now(),
+          metadata: {
+            guestPhone: cleanPhone,
+            guestName: session.guestName,
+            tableSessionId: session.sessionId,
+            fallbackInserted: true,
+          },
+        });
+
         return {
           success: true,
           orderId: fallbackOrderId,
@@ -382,19 +398,12 @@ export async function placeOrderAction(
           message: `Order #${fallbackOrderNo} placed successfully!`,
         };
       } catch (insertErr) {
-        console.warn("Direct order insert fallback notice:", insertErr);
+        console.error("Direct order insert fallback failed:", insertErr);
+        // Do NOT falsely report success if database insertion fails!
         return {
-          success: true,
-          orderId: fallbackOrderId,
-          orderNo: fallbackOrderNo,
-          status: "SUBMITTED",
-          paymentStatus: "PAID",
-          tableLabel: session.tableLabel || "01",
-          verificationCode: fallbackVerification,
-          discountPaise: 0,
-          totalPaise,
-          isDuplicate: false,
-          message: `Order #${fallbackOrderNo} confirmed!`,
+          success: false,
+          error: "DB_ERROR",
+          message: "Unable to save order to the database. Please verify table connectivity and try again.",
         };
       }
     }

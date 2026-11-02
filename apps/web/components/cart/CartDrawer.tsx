@@ -420,29 +420,35 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ tableLabel, guestName = 
         setErrorMessage("Some item prices changed. Please review your cart.");
         return null;
       } else {
-        // Resilient fallback: buffer order locally and proceed
-        const offlineOrder = enqueueOfflineOrder({
-          tableLabel: displayTable,
-          items: orderPayload.map((p) => ({
-            menu_item_id: p.menu_item_id,
-            expected_unit_price_paise: p.expected_unit_price_paise,
-            qty: p.qty,
-            name: p.name || "Artisanal Item",
-          })),
-          totalPaise: grandTotal * 100,
-          instructions: instructions || undefined,
-          paymentMethod,
-          transactionId: transactionId || `OFF-${Date.now().toString().slice(-6)}`,
-        });
+        // Only enqueue offline buffer if truly offline without network
+        if (typeof window !== "undefined" && !navigator.onLine) {
+          const offlineOrder = enqueueOfflineOrder({
+            tableLabel: displayTable,
+            items: orderPayload.map((p) => ({
+              menu_item_id: p.menu_item_id,
+              expected_unit_price_paise: p.expected_unit_price_paise,
+              qty: p.qty,
+              name: p.name || "Artisanal Item",
+            })),
+            totalPaise: grandTotal * 100,
+            instructions: instructions || undefined,
+            paymentMethod,
+            transactionId: transactionId || `OFF-${Date.now().toString().slice(-6)}`,
+          });
 
-        return {
-          orderId: `offline-${offlineOrder.idempotencyKey}`,
-          orderNo: offlineOrder.tempOrderNo,
-          tableLabel: offlineOrder.tableLabel,
-          totalPaise: offlineOrder.totalPaise,
-          verificationCode: offlineOrder.verificationCode,
-          isOffline: true,
-        };
+          return {
+            orderId: `offline-${offlineOrder.idempotencyKey}`,
+            orderNo: offlineOrder.tempOrderNo,
+            tableLabel: offlineOrder.tableLabel,
+            totalPaise: offlineOrder.totalPaise,
+            verificationCode: offlineOrder.verificationCode,
+            isOffline: true,
+          };
+        }
+
+        // Show actual server rejection error rather than dropping silently
+        setErrorMessage(result.message || "Failed to submit order. Please check your table and try again.");
+        return null;
       }
     } catch (netErr) {
       console.warn("Network error during order placement, fallback to offline queue:", netErr);
