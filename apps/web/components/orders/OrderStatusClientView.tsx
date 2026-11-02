@@ -99,6 +99,33 @@ export const OrderStatusClientView: React.FC<OrderStatusClientViewProps> = ({
 
   // Status tracker for audible chime on READY / COMPLETED transition
   const prevStatusesRef = useRef<Record<string, string>>({});
+  // Deduplication guard to ensure an order only chimes & alerts ONCE per ready/completed state
+  const notifiedOrderStatesRef = useRef<Set<string>>(new Set());
+
+  const triggerOrderReadyAlert = useCallback((orderId: string, orderNo: number | undefined, status: string) => {
+    const isReadyStatus = status === "READY" || status === "COMPLETED" || status === "SERVED";
+    if (!isReadyStatus) return;
+
+    const alertKey = `${orderId}:${status}`;
+    if (notifiedOrderStatesRef.current.has(alertKey)) {
+      return; // Already notified for this order and status
+    }
+    notifiedOrderStatesRef.current.add(alertKey);
+
+    soundManager.playOrderReadyChime();
+
+    if (typeof window !== "undefined" && "Notification" in window && Notification.permission === "granted") {
+      try {
+        const displayNo = orderNo ? `#${orderNo}` : `#${orderId.slice(-4)}`;
+        new Notification(`Order ${displayNo} is Ready! ☕`, {
+          body: `Your order at Table ${tableLabel || "01"} is hot & ready to serve.`,
+          icon: "/google-maps-icon.png",
+        });
+      } catch {
+        // Ignore notification constructor errors
+      }
+    }
+  }, [tableLabel]);
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -131,20 +158,8 @@ export const OrderStatusClientView: React.FC<OrderStatusClientViewProps> = ({
         // Detect if any order transitioned to READY or COMPLETED
         res.orders.forEach((ord) => {
           const prevStatus = prevStatusesRef.current[ord.id];
-          if (prevStatus && prevStatus !== ord.status && (ord.status === "READY" || ord.status === "COMPLETED" || ord.status === "SERVED")) {
-            soundManager.playOrderReadyChime();
-
-            // Native browser push notification if enabled
-            if (typeof window !== "undefined" && "Notification" in window && Notification.permission === "granted") {
-              try {
-                new Notification(`Order #${ord.orderNo || ord.id.slice(-4)} is Ready! ☕`, {
-                  body: `Your order at Table ${tableLabel || "01"} is hot & ready to serve.`,
-                  icon: "/google-maps-icon.png",
-                });
-              } catch {
-                // Ignore notification constructor errors
-              }
-            }
+          if (prevStatus && prevStatus !== ord.status) {
+            triggerOrderReadyAlert(ord.id, ord.orderNo, ord.status);
           }
           prevStatusesRef.current[ord.id] = ord.status;
         });
@@ -160,7 +175,7 @@ export const OrderStatusClientView: React.FC<OrderStatusClientViewProps> = ({
     } finally {
       isRefreshingRef.current = false;
     }
-  }, [tableLabel, currentGuestName]);
+  }, [tableLabel, currentGuestName, triggerOrderReadyAlert]);
 
   // 1. Cross-Interface & Cross-Port Supabase Broadcast Subscription with 0ms Instant State Mutation
   useEffect(() => {
@@ -168,18 +183,8 @@ export const OrderStatusClientView: React.FC<OrderStatusClientViewProps> = ({
       if (event.orderId && event.status) {
         const newStatus = event.status as OrderStatus;
         const prevStatus = prevStatusesRef.current[event.orderId];
-        if (prevStatus && prevStatus !== newStatus && (newStatus === "READY" || newStatus === "COMPLETED" || newStatus === "SERVED")) {
-          soundManager.playOrderReadyChime();
-          if (typeof window !== "undefined" && "Notification" in window && Notification.permission === "granted") {
-            try {
-              new Notification(`Order is Ready! ☕`, {
-                body: `Your order at Table ${tableLabel || "01"} is hot & ready to serve.`,
-                icon: "/google-maps-icon.png",
-              });
-            } catch {
-              // ignore
-            }
-          }
+        if (prevStatus && prevStatus !== newStatus) {
+          triggerOrderReadyAlert(event.orderId, event.orderNo, newStatus);
         }
         prevStatusesRef.current[event.orderId] = newStatus;
         const exists = ordersRef.current.some((o) => o.id === event.orderId);
@@ -197,7 +202,7 @@ export const OrderStatusClientView: React.FC<OrderStatusClientViewProps> = ({
       }
     });
     return () => unsub();
-  }, [refreshOrders, tableLabel]);
+  }, [refreshOrders, tableLabel, triggerOrderReadyAlert]);
 
   // 2. Supabase Realtime WebSocket subscription for Customer Order Status Updates
   useSupabaseRealtime({
@@ -207,18 +212,8 @@ export const OrderStatusClientView: React.FC<OrderStatusClientViewProps> = ({
       if (newRow && newRow.id && newRow.status) {
         const newStatus = newRow.status as OrderStatus;
         const prevStatus = prevStatusesRef.current[newRow.id];
-        if (prevStatus && prevStatus !== newStatus && (newStatus === "READY" || newStatus === "COMPLETED" || newStatus === "SERVED")) {
-          soundManager.playOrderReadyChime();
-          if (typeof window !== "undefined" && "Notification" in window && Notification.permission === "granted") {
-            try {
-              new Notification(`Order #${newRow.order_no || newRow.id.slice(-4)} is Ready! ☕`, {
-                body: `Your order at Table ${tableLabel || "01"} is hot & ready to serve.`,
-                icon: "/google-maps-icon.png",
-              });
-            } catch {
-              // ignore
-            }
-          }
+        if (prevStatus && prevStatus !== newStatus) {
+          triggerOrderReadyAlert(newRow.id, newRow.order_no, newStatus);
         }
         prevStatusesRef.current[newRow.id] = newStatus;
         const exists = ordersRef.current.some((o) => o.id === newRow.id);
@@ -245,7 +240,8 @@ export const OrderStatusClientView: React.FC<OrderStatusClientViewProps> = ({
 
     const schedulePoll = () => {
       if (!isMounted) return;
-      const interval = typeof document !== "undefined" && document.visibilityState === "visible" ? 1500 : 8000;
+      // Relaxed 4000ms polling when visible, 12000ms when hidden (prevents notification spam and network hammering)
+      const interval = typeof document !== "undefined" && document.visibilityState === "visible" ? 4000 : 12000;
       pollTimer = setTimeout(async () => {
         if (!isMounted) return;
         await refreshOrders();
