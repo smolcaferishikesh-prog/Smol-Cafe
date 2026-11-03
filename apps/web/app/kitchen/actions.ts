@@ -3,7 +3,7 @@
 import { cookies } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { createAdminClient, isMockDatabase } from "@/lib/supabase/admin";
-import { requireStaffAuth } from "@/lib/auth/rbac";
+import { requireStaffAuth, setStaffSessionCookie } from "@/lib/auth/rbac";
 import { broadcastSyncEvent } from "@/lib/sync-events";
 import { isBeverageItem, isComboWithFoodItem, deriveStationStatus, deriveAggregateOrderStatus } from "@/lib/station-utils";
 import { extractOrderInstructions } from "@/lib/order-instructions";
@@ -533,14 +533,7 @@ export async function staffLoginAction(
   const creds = await getStoredCredentials();
   const trimmed = pinOrPassword.trim();
   if (trimmed === creds.kitchen.pin || (creds.admin.password && trimmed === creds.admin.password)) {
-    const cookieStore = await cookies();
-    cookieStore.set(STAFF_SESSION_COOKIE, "kitchen", {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "lax",
-      maxAge: 60 * 60 * 24 * 7, // 7 days
-      path: "/",
-    });
+    await setStaffSessionCookie("kitchen");
     return { success: true };
   }
 

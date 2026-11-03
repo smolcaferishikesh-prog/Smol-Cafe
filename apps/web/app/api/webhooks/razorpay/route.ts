@@ -75,18 +75,17 @@ export async function POST(req: Request) {
 
     const supabase = createAdminClient();
 
-    // Execute idempotent payment webhook ingestion RPC
-    const { data: rpcResult, error: rpcError } = await supabase.rpc("handle_razorpay_webhook_event", {
+    // Execute idempotent payment webhook ingestion RPC (matches 20260823000006_webhook_events.sql)
+    const { data: rpcResult, error: rpcError } = await supabase.rpc("process_razorpay_webhook", {
       p_event_id: eventId,
-      p_payment_attempt_id: paymentAttemptId,
-      p_gateway_payment_id: razorpayPaymentId,
-      p_captured_amount_paise: capturedAmountPaise,
+      p_event_type: payload.event || "payment.captured",
+      p_payload: payload,
     });
 
     const durationMs = Date.now() - startTime;
 
     if (rpcError) {
-      logger.error("RPC handle_razorpay_webhook_event failed", {
+      logger.error("RPC process_razorpay_webhook failed", {
         requestId,
         action: "razorpayWebhook",
         durationMs,

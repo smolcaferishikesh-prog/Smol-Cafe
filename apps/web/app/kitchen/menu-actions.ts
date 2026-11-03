@@ -1,6 +1,7 @@
 "use server";
 
 import { createAdminClient } from "@/lib/supabase/admin";
+import { requireStaffAuth } from "@/lib/auth/rbac";
 import { revalidatePath } from "next/cache";
 import { getMenuCatalog, getMenuOverridesStore, type CategoryWithItems } from "@/lib/queries/menu";
 import { broadcastSyncEvent } from "@/lib/sync-events";
@@ -176,6 +177,11 @@ export async function updateMenuItemStockAction(
   stockStatus: ItemStockStatus,
   lowStockCount?: number
 ): Promise<{ success: boolean; message: string; itemId: string; stockStatus: ItemStockStatus }> {
+  const auth = await requireStaffAuth(["kitchen", "chef", "barista", "admin", "super_admin"]);
+  if (!auth.authorized) {
+    return { success: false, message: auth.message || "Unauthorized.", itemId, stockStatus };
+  }
+
   try {
     const stockStore = getStockStore();
     const existing = stockStore[itemId] || { stockStatus: "IN_STOCK" };
@@ -251,6 +257,11 @@ export async function bulkSetCategoryStockAction(
   categoryOrStation: string,
   stockStatus: ItemStockStatus
 ): Promise<{ success: boolean; message: string; updatedCount: number; updatedItemIds: string[] }> {
+  const auth = await requireStaffAuth(["kitchen", "chef", "barista", "admin", "super_admin"]);
+  if (!auth.authorized) {
+    return { success: false, message: auth.message || "Unauthorized.", updatedCount: 0, updatedItemIds: [] };
+  }
+
   try {
     const catalog = await getMenuCatalog();
     const stockStore = getStockStore();
@@ -314,6 +325,11 @@ export async function updateChefItemNotesAction(
   chefNotes: string,
   isChefSpecial: boolean
 ): Promise<{ success: boolean; message: string }> {
+  const auth = await requireStaffAuth(["kitchen", "chef", "admin", "super_admin"]);
+  if (!auth.authorized) {
+    return { success: false, message: auth.message || "Unauthorized." };
+  }
+
   try {
     const stockStore = getStockStore();
     const existing = stockStore[itemId] || { stockStatus: "IN_STOCK" };
@@ -359,6 +375,11 @@ export async function updateIngredientStockAction(
   ingredientName: string,
   inStock: boolean
 ): Promise<{ success: boolean; message: string }> {
+  const auth = await requireStaffAuth(["kitchen", "chef", "barista", "admin", "super_admin"]);
+  if (!auth.authorized) {
+    return { success: false, message: auth.message || "Unauthorized." };
+  }
+
   try {
     const ingredientStore = getIngredientStore();
     ingredientStore[ingredientName] = inStock;

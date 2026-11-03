@@ -77,9 +77,12 @@ export interface MockMenuPrice {
 export interface MockBlackboardPost {
   id: string;
   title: string;
+  body?: string;
   content: string;
+  image_url?: string | null;
   starts_at: string;
   ends_at: string;
+  active?: boolean;
   is_active: boolean;
   created_at: string;
   updated_at: string;
@@ -89,9 +92,14 @@ export interface MockCafeEvent {
   id: string;
   title: string;
   description: string;
+  starts_at?: string;
+  ends_at?: string | null;
   date_time: string;
   location: string;
+  join_url_or_note?: string | null;
+  capacity?: number;
   max_capacity: number;
+  active?: boolean;
   is_active: boolean;
   created_at: string;
   updated_at: string;
@@ -108,7 +116,10 @@ export interface MockEventRsvp {
 
 export interface MockMusicSession {
   id: string;
+  location_id?: string;
   status: string;
+  opened_at?: string;
+  closed_at?: string | null;
   started_at: string;
   ended_at: string | null;
   created_at: string;
@@ -116,13 +127,18 @@ export interface MockMusicSession {
 
 export interface MockSongRequest {
   id: string;
+  session_id?: string;
   music_session_id: string;
+  table_session_id?: string;
+  track_name?: string;
   title: string;
   artist: string;
+  vote_count?: number;
   votes: number;
-  status: "PENDING" | "PLAYING" | "PLAYED" | "REJECTED";
+  status: "PENDING" | "QUEUED" | "PLAYING" | "PLAYED" | "REJECTED" | "APPROVED" | "SKIPPED";
   requested_by_table: string;
   created_at: string;
+  updated_at?: string;
 }
 
 export interface MockSongVote {
@@ -134,12 +150,20 @@ export interface MockSongVote {
 
 export interface MockReward {
   id: string;
+  name?: string;
   title: string;
   description: string;
+  type?: string;
+  points_cost?: number;
   points_required: number;
+  discount_value?: number;
   discount_paise: number;
+  menu_item_id?: string | null;
+  expiry_days?: number | null;
+  active?: boolean;
   is_active: boolean;
   created_at: string;
+  updated_at?: string;
 }
 
 export interface MockVendor {
@@ -156,8 +180,11 @@ export interface MockBudget {
   id: string;
   month: string;
   category: string;
+  budgeted_amount_paise?: number;
   allocated_paise: number;
+  notes?: string | null;
   created_at: string;
+  updated_at?: string;
 }
 
 export interface MockIngredient {
@@ -1563,9 +1590,12 @@ export const MOCK_BLACKBOARD_POSTS: MockBlackboardPost[] = [
   {
     id: "bb_01",
     title: "Rishikesh Morning Special",
+    body: "Kanpur Bun Makkhan + Hot Smol Chai at ₹99 all morning. Freshly baked buns with salted Amul butter.",
     content: "Kanpur Bun Makkhan + Hot Smol Chai at ₹99 all morning. Freshly baked buns with salted Amul butter.",
+    image_url: null,
     starts_at: "2026-08-01T00:00:00.000Z",
-    ends_at: "2026-12-31T23:59:59.000Z",
+    ends_at: "2027-12-31T23:59:59.000Z",
+    active: true,
     is_active: true,
     created_at: "2026-08-01T00:00:00.000Z",
     updated_at: "2026-08-01T00:00:00.000Z",
@@ -1573,9 +1603,12 @@ export const MOCK_BLACKBOARD_POSTS: MockBlackboardPost[] = [
   {
     id: "bb_02",
     title: "Himalayan Buransh Fizz",
+    body: "Wild Rhododendron flower cordial, fresh lime and chilled sparkling water — local forage from Garhwal hills.",
     content: "Wild Rhododendron flower cordial, fresh lime and chilled sparkling water — local forage from Garhwal hills.",
+    image_url: null,
     starts_at: "2026-08-01T00:00:00.000Z",
-    ends_at: "2026-12-31T23:59:59.000Z",
+    ends_at: "2027-12-31T23:59:59.000Z",
+    active: true,
     is_active: true,
     created_at: "2026-08-01T00:00:00.000Z",
     updated_at: "2026-08-01T00:00:00.000Z",
@@ -1588,9 +1621,14 @@ export const MOCK_CAFE_EVENTS: MockCafeEvent[] = [
     id: "evt_01",
     title: "Chai & Poetry Circle",
     description: "An intimate evening of Hindi, Urdu & English spoken word by the Ganges. Chai is on the house.",
-    date_time: "2026-08-28T18:00:00.000Z",
+    starts_at: "2026-12-15T18:00:00.000Z",
+    ends_at: "2026-12-15T20:30:00.000Z",
+    date_time: "2026-12-15T18:00:00.000Z",
     location: "Smol Café Rooftop Garden",
+    join_url_or_note: "Smol Café Rooftop Garden",
+    capacity: 25,
     max_capacity: 25,
+    active: true,
     is_active: true,
     created_at: "2026-08-01T00:00:00.000Z",
     updated_at: "2026-08-01T00:00:00.000Z",
@@ -1599,9 +1637,14 @@ export const MOCK_CAFE_EVENTS: MockCafeEvent[] = [
     id: "evt_02",
     title: "Sunday Acoustic Jam",
     description: "Unplugged indie folk & classical guitar session over pour-over brews & warm brownies.",
-    date_time: "2026-08-30T17:30:00.000Z",
+    starts_at: "2026-12-20T17:30:00.000Z",
+    ends_at: "2026-12-20T20:00:00.000Z",
+    date_time: "2026-12-20T17:30:00.000Z",
     location: "Smol Café Ground Floor",
+    join_url_or_note: "Smol Café Ground Floor",
+    capacity: 35,
     max_capacity: 35,
+    active: true,
     is_active: true,
     created_at: "2026-08-01T00:00:00.000Z",
     updated_at: "2026-08-01T00:00:00.000Z",
@@ -1638,7 +1681,10 @@ export const MOCK_EVENT_RSVPS: MockEventRsvp[] = [
 // Jukebox
 export const MOCK_MUSIC_SESSION: MockMusicSession = {
   id: "music_ses_01",
-  status: "ACTIVE",
+  location_id: MOCK_LOCATION_ID,
+  status: "OPEN",
+  opened_at: "2026-08-24T08:00:00.000Z",
+  closed_at: null,
   started_at: "2026-08-24T08:00:00.000Z",
   ended_at: null,
   created_at: "2026-08-24T08:00:00.000Z",
@@ -1647,43 +1693,63 @@ export const MOCK_MUSIC_SESSION: MockMusicSession = {
 export const MOCK_SONG_REQUESTS: MockSongRequest[] = [
   {
     id: "song_01",
+    session_id: "music_ses_01",
     music_session_id: "music_ses_01",
+    table_session_id: "ses_tbl_03",
+    track_name: "Ghar",
     title: "Ghar",
     artist: "Bharat Chauhan",
+    vote_count: 8,
     votes: 8,
     status: "PLAYING",
     requested_by_table: "03",
     created_at: "2026-08-24T09:00:00.000Z",
+    updated_at: "2026-08-24T09:00:00.000Z",
   },
   {
     id: "song_02",
+    session_id: "music_ses_01",
     music_session_id: "music_ses_01",
+    table_session_id: "ses_tbl_05",
+    track_name: "Kasoor (Acoustic)",
     title: "Kasoor (Acoustic)",
     artist: "Prateek Kuhad",
+    vote_count: 5,
     votes: 5,
-    status: "PENDING",
+    status: "QUEUED",
     requested_by_table: "05",
     created_at: "2026-08-24T09:15:00.000Z",
+    updated_at: "2026-08-24T09:15:00.000Z",
   },
   {
     id: "song_03",
+    session_id: "music_ses_01",
     music_session_id: "music_ses_01",
+    table_session_id: "ses_tbl_01",
+    track_name: "Alag Aasmaan",
     title: "Alag Aasmaan",
     artist: "Anuv Jain",
+    vote_count: 4,
     votes: 4,
-    status: "PENDING",
+    status: "QUEUED",
     requested_by_table: "01",
     created_at: "2026-08-24T09:30:00.000Z",
+    updated_at: "2026-08-24T09:30:00.000Z",
   },
   {
     id: "song_04",
+    session_id: "music_ses_01",
     music_session_id: "music_ses_01",
+    table_session_id: "ses_tbl_08",
+    track_name: "Rishikesh Morning Raga",
     title: "Rishikesh Morning Raga",
     artist: "Smol Acoustic Trio",
+    vote_count: 3,
     votes: 3,
-    status: "PENDING",
+    status: "QUEUED",
     requested_by_table: "08",
     created_at: "2026-08-24T09:45:00.000Z",
+    updated_at: "2026-08-24T09:45:00.000Z",
   },
 ];
 
@@ -1691,39 +1757,63 @@ export const MOCK_SONG_REQUESTS: MockSongRequest[] = [
 export const MOCK_REWARDS: MockReward[] = [
   {
     id: "rew_01",
+    name: "Free Smol Chai",
     title: "Free Smol Chai",
     description: "Redeem 50 Smol Points for our signature tapri-style ginger chai.",
+    type: "FIXED_ITEM",
+    points_cost: 50,
     points_required: 50,
+    discount_value: 2900,
     discount_paise: 2900,
+    active: true,
     is_active: true,
     created_at: "2026-08-01T00:00:00.000Z",
+    updated_at: "2026-08-01T00:00:00.000Z",
   },
   {
     id: "rew_02",
+    name: "Kanpur Bun Makkhan",
     title: "Kanpur Bun Makkhan",
     description: "Redeem 100 Smol Points for a warm toasted bun with generous salted butter.",
+    type: "FIXED_ITEM",
+    points_cost: 100,
     points_required: 100,
+    discount_value: 7900,
     discount_paise: 7900,
+    active: true,
     is_active: true,
     created_at: "2026-08-01T00:00:00.000Z",
+    updated_at: "2026-08-01T00:00:00.000Z",
   },
   {
     id: "rew_03",
+    name: "₹50 Off Any Order",
     title: "₹50 Off Any Order",
     description: "Get flat ₹50 discount on your current table bill.",
+    type: "FIXED_VALUE",
+    points_cost: 100,
     points_required: 100,
+    discount_value: 5000,
     discount_paise: 5000,
+    active: true,
     is_active: true,
     created_at: "2026-08-01T00:00:00.000Z",
+    updated_at: "2026-08-01T00:00:00.000Z",
   },
   {
     id: "rew_04",
+    name: "Free Classic Cold Coffee",
     title: "Free Classic Cold Coffee",
     description: "Redeem 150 Smol Points for a tall chilled glass of artisanal cold brew latte.",
+    type: "FIXED_ITEM",
+    points_cost: 150,
     points_required: 150,
+    discount_value: 13900,
     discount_paise: 13900,
+    active: true,
     is_active: true,
     created_at: "2026-08-01T00:00:00.000Z",
+    updated_at: "2026-08-01T00:00:00.000Z",
   },
 ];
 
@@ -1763,28 +1853,32 @@ export const MOCK_BUDGETS: MockBudget[] = [
   {
     id: "bud_01",
     month: "2026-08",
-    category: "Dairy & Eggs",
+    category: "DAIRY",
+    budgeted_amount_paise: 4500000,
     allocated_paise: 4500000,
     created_at: "2026-08-01T00:00:00.000Z",
   },
   {
     id: "bud_02",
     month: "2026-08",
-    category: "Specialty Coffee Beans",
+    category: "COFFEE_BEANS",
+    budgeted_amount_paise: 3500000,
     allocated_paise: 3500000,
     created_at: "2026-08-01T00:00:00.000Z",
   },
   {
     id: "bud_03",
     month: "2026-08",
-    category: "Buns & Breads",
+    category: "BAKERY_RAW",
+    budgeted_amount_paise: 2000000,
     allocated_paise: 2000000,
     created_at: "2026-08-01T00:00:00.000Z",
   },
   {
     id: "bud_04",
     month: "2026-08",
-    category: "Kitchen Dry Goods & Spices",
+    category: "SPICES_TEA",
+    budgeted_amount_paise: 3000000,
     allocated_paise: 3000000,
     created_at: "2026-08-01T00:00:00.000Z",
   },

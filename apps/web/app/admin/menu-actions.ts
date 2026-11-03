@@ -2,6 +2,7 @@
 
 import crypto from "crypto";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { requireStaffAuth } from "@/lib/auth/rbac";
 import { revalidatePath, revalidateTag } from "next/cache";
 import { broadcastSyncEvent } from "@/lib/sync-events";
 import { invalidateAdminOverviewCache } from "@/app/admin/actions";
@@ -161,6 +162,11 @@ async function uploadBase64ToStorage(base64Data: string, itemId: string): Promis
 export async function saveMenuItemAction(
   payload: SaveMenuItemPayload
 ): Promise<{ success: boolean; message: string; itemId: string; imageUrl?: string | null }> {
+  const auth = await requireStaffAuth(["admin", "super_admin"]);
+  if (!auth.authorized) {
+    return { success: false, message: auth.message || "Unauthorized.", itemId: payload.id || "" };
+  }
+
   try {
     const { id, name, categoryId, priceRupees, description, imageUrl, dietary, bestPairing, status } = payload;
     const isEdit = !!id;
@@ -424,6 +430,11 @@ export async function saveMenuItemAction(
 export async function deleteMenuItemAction(
   itemId: string
 ): Promise<{ success: boolean; message: string }> {
+  const auth = await requireStaffAuth(["admin", "super_admin"]);
+  if (!auth.authorized) {
+    return { success: false, message: auth.message || "Unauthorized." };
+  }
+
   try {
     const deletedStore = getDeletedItemsStore();
     deletedStore.add(itemId);
@@ -499,6 +510,11 @@ export async function deleteMenuItemAction(
  * Clear Entire Menu Catalog (Archive all active items & reset custom store)
  */
 export async function clearAllMenuItemsAction(): Promise<{ success: boolean; message: string }> {
+  const auth = await requireStaffAuth(["admin", "super_admin"]);
+  if (!auth.authorized) {
+    return { success: false, message: auth.message || "Unauthorized." };
+  }
+
   try {
     const supabase = createAdminClient();
 
@@ -525,6 +541,7 @@ export async function clearAllMenuItemsAction(): Promise<{ success: boolean; mes
       deletedStore.add(`item_${i.toString().padStart(2, "0")}`);
       deletedStore.add(`item_${i}`);
     }
+    MOCK_MENU_ITEMS.forEach((it) => deletedStore.add(it.id));
 
     // Save to disk
     savePersistedMenuStore();
@@ -566,6 +583,11 @@ export async function clearAllMenuItemsAction(): Promise<{ success: boolean; mes
  * Restore Smol Café Master Menu
  */
 export async function resetToMasterMenuAction(): Promise<{ success: boolean; message: string }> {
+  const auth = await requireStaffAuth(["admin", "super_admin"]);
+  if (!auth.authorized) {
+    return { success: false, message: auth.message || "Unauthorized." };
+  }
+
   try {
     const supabase = createAdminClient();
 
