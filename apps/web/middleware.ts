@@ -1,6 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
 
 const STAFF_SESSION_COOKIE = "smol_staff_session";
+const TABLE_SESSION_COOKIE = "smol_table_session";
+
+// Customer routes that require an active table QR session
+const TABLE_PROTECTED_ROUTES = [
+  "/home",
+  "/menu",
+  "/drinks",
+  "/order",
+  "/orders",
+  "/profile",
+  "/smol-menu",
+  "/bill",
+  "/order-status",
+];
 
 // Role → allowed routes mapping (only valid backdoor routes)
 const ROLE_ROUTES: Record<string, string[]> = {
@@ -65,13 +79,45 @@ export function middleware(request: NextRequest) {
     return NextResponse.redirect(backdoorUrl);
   }
 
-  // 3. Check if this is a protected backdoor staff route
+  // 3. Customer table-protected routes: must have active table QR session
+  const isTableProtectedRoute = TABLE_PROTECTED_ROUTES.some(
+    (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`)
+  );
+
+  if (isTableProtectedRoute) {
+    const hasTableQueryParam =
+      request.nextUrl.searchParams.has("table") ||
+      request.nextUrl.searchParams.has("t");
+    const rawTableCookie = request.cookies.get(TABLE_SESSION_COOKIE)?.value;
+
+    // If no QR table param in URL AND no valid table session cookie -> 404 Table Not Found
+    if (!hasTableQueryParam && (!rawTableCookie || !rawTableCookie.includes("."))) {
+      const notFoundUrl = new URL("/404", request.url);
+      return NextResponse.redirect(notFoundUrl);
+    }
+  }
+
+  // 4. Check if this is a protected backdoor staff route
   const isProtected = PROTECTED_PREFIXES.some((prefix) =>
     pathname.startsWith(prefix)
   );
 
   if (!isProtected) {
-    return NextResponse.next();
+    const rawTableCookie = request.cookies.get(TABLE_SESSION_COOKIE)?.value;
+    const response = NextResponse.next();
+    if (rawTableCookie && rawTableCookie.includes(".")) {
+      if (!request.cookies.has("smol_table_active")) {
+        response.cookies.set("smol_table_active", "1", {
+          path: "/",
+          httpOnly: false,
+          sameSite: "lax",
+          maxAge: 60 * 60 * 12,
+        });
+      }
+    } else if (request.cookies.has("smol_table_active")) {
+      response.cookies.delete("smol_table_active");
+    }
+    return response;
   }
 
   // 4. Read the staff session cookie (supports role or role:signature format)
@@ -114,5 +160,23 @@ export const config = {
     "/smol-backdoor/admin/:path*",
     "/smol-backdoor/barista",
     "/smol-backdoor/barista/:path*",
+    "/home",
+    "/home/:path*",
+    "/menu",
+    "/menu/:path*",
+    "/drinks",
+    "/drinks/:path*",
+    "/order",
+    "/order/:path*",
+    "/orders",
+    "/orders/:path*",
+    "/profile",
+    "/profile/:path*",
+    "/smol-menu",
+    "/smol-menu/:path*",
+    "/bill",
+    "/bill/:path*",
+    "/order-status",
+    "/order-status/:path*",
   ],
 };

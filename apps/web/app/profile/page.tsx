@@ -1,3 +1,4 @@
+import { notFound } from "next/navigation";
 import { getCurrentUserProfileAction, getCustomerOrderHistoryAction } from "@/app/account/actions";
 import { getLoyaltyAccountAction } from "@/app/account/loyalty-actions";
 import { ProfileView } from "@/components/account/ProfileView";
@@ -9,6 +10,11 @@ export const metadata = {
 
 export default async function ProfilePage() {
   const { profile, activeSession } = await getCurrentUserProfileAction();
+
+  if (!activeSession) {
+    notFound();
+  }
+
   const { orders } = await getCustomerOrderHistoryAction();
   const loyalty = await getLoyaltyAccountAction();
 

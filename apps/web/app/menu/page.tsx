@@ -1,3 +1,4 @@
+import { notFound } from "next/navigation";
 import { getTableSessionCookie } from "@/lib/session";
 import { getMenuCatalog } from "@/lib/queries/menu";
 import { MenuClientView } from "@/components/menu/MenuClientView";
@@ -13,6 +14,11 @@ export const metadata = {
 
 export default async function MenuPage() {
   const session = await getTableSessionCookie();
+
+  if (!session || !session.sessionId) {
+    notFound();
+  }
+
   const categories = await getMenuCatalog();
 
   return (

@@ -100,14 +100,8 @@ export async function placeOrderAction(
     const requestId = generateRequestId();
     const startTime = Date.now();
 
-  // 1. Verify Active Table Session from Signed Cookie or fallback to default table
+  // 1. Verify Active Table Session from Signed Cookie
   let session = sessionOverride || (await getTableSessionCookie());
-  if (!session || !session.sessionId || !session.locationId || !isValidUuid(session.sessionId)) {
-    const defaultRes = await resolveQrToken("table-01", true);
-    if (defaultRes.success && defaultRes.session) {
-      session = defaultRes.session;
-    }
-  }
 
   if (!session || !session.sessionId || !session.locationId || !isValidUuid(session.sessionId)) {
     logger.warn("Order placement rejected: No active table session", {

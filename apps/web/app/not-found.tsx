@@ -2,6 +2,7 @@ import React from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { ThemeToggle } from "@/components/common/ThemeToggle";
+import { HideNavbarOnMount } from "@/components/common/HideNavbarOnMount";
 import { ArrowLeft, Coffee, Sparkles } from "lucide-react";
 
 export const metadata = {
@@ -11,7 +12,12 @@ export const metadata = {
 
 export default function NotFound() {
   return (
-    <div className="relative min-h-[100dvh] w-full bg-[#F3E7D3] dark:bg-[#151110] text-[#241F1C] dark:text-[#FAF4EB] flex flex-col justify-between items-center px-4 py-6 sm:py-8 transition-colors duration-300 selection:bg-[#B72E35]/20 selection:text-[#B72E35] overflow-x-hidden">
+    <div
+      data-hide-navbar="true"
+      data-not-found="true"
+      className="relative min-h-[100dvh] w-full bg-[#F3E7D3] dark:bg-[#151110] text-[#241F1C] dark:text-[#FAF4EB] flex flex-col justify-between items-center px-4 py-6 sm:py-8 transition-colors duration-300 selection:bg-[#B72E35]/20 selection:text-[#B72E35] overflow-x-hidden"
+    >
+      <HideNavbarOnMount />
       {/* Ambient background glows */}
       <div className="pointer-events-none absolute -top-24 left-1/2 -translate-x-1/2 w-[500px] h-[350px] bg-gradient-to-b from-[#F2C84B]/20 via-[#B72E35]/10 to-transparent dark:from-[#A855F7]/15 dark:via-[#7E22CE]/10 dark:to-transparent rounded-full blur-3xl opacity-70" />
       <div className="pointer-events-none absolute -bottom-24 right-0 w-[350px] h-[350px] bg-gradient-to-t from-[#B72E35]/15 to-transparent dark:from-[#A855F7]/10 to-transparent rounded-full blur-3xl opacity-50" />

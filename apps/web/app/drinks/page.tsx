@@ -1,3 +1,4 @@
+import { notFound } from "next/navigation";
 import { getTableSessionCookie } from "@/lib/session";
 import { resolveQrToken } from "@/app/t/actions";
 import { getMenuCatalog } from "@/lib/queries/menu";
@@ -30,11 +31,10 @@ export default async function DrinksPage({ searchParams }: DrinksPageProps) {
     if (res.success && res.session) {
       session = res.session;
     }
-  } else if (!session || !session.sessionId) {
-    const res = await resolveQrToken("table-01", true);
-    if (res.success && res.session) {
-      session = res.session;
-    }
+  }
+
+  if (!session || !session.sessionId) {
+    notFound();
   }
 
   const allCategories = await getMenuCatalog();

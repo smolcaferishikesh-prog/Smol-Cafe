@@ -1,3 +1,4 @@
+import { notFound } from "next/navigation";
 import { getTableSessionCookie } from "@/lib/session";
 import { CustomerHomeClientView } from "@/components/home/CustomerHomeClientView";
 
@@ -8,6 +9,10 @@ export const metadata = {
 
 export default async function HomePage() {
   const session = await getTableSessionCookie();
+
+  if (!session || !session.sessionId) {
+    notFound();
+  }
 
   return (
     <CustomerHomeClientView
