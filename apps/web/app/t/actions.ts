@@ -107,15 +107,24 @@ export async function resolveQrToken(
     const finalGuestPhone = guestPhone || existingCookie?.guestPhone;
 
     // 1. Query table_qr_tokens by hash, plain token, or standardized table-XX format
-    const matchDigits = plainToken.match(/(\d+)/);
-    const standardTableLabel = matchDigits ? matchDigits[1].padStart(2, "0") : "";
-    const rawNumberLabel = matchDigits ? parseInt(matchDigits[1], 10).toString() : "";
-    const standardTokenHash = standardTableLabel ? `table-${standardTableLabel}` : "";
+    const extractedLabel = plainToken.replace(/^(?:table|t)[-\s_]*/i, "").trim();
+    const isPureDigits = /^\d+$/.test(extractedLabel);
+    const matchDigits = isPureDigits ? [extractedLabel, extractedLabel] : plainToken.match(/(\d+)/);
+    const standardTableLabel = isPureDigits
+      ? extractedLabel.padStart(2, "0")
+      : extractedLabel || (matchDigits ? matchDigits[1].padStart(2, "0") : "");
+    const rawNumberLabel = isPureDigits
+      ? parseInt(extractedLabel, 10).toString()
+      : extractedLabel || (matchDigits ? parseInt(matchDigits[1], 10).toString() : "");
+    const standardTokenHash = standardTableLabel
+      ? `table-${standardTableLabel.toLowerCase().replace(/\s+/g, "-")}`
+      : "";
 
     // If this table was permanently deleted, immediately reject and never resurrect
     if (
       isTableDeleted(plainToken) ||
       isTableDeleted(tokenHash) ||
+      (extractedLabel && isTableDeleted(extractedLabel)) ||
       (standardTableLabel && isTableDeleted(standardTableLabel)) ||
       (rawNumberLabel && isTableDeleted(rawNumberLabel))
     ) {
@@ -160,14 +169,17 @@ export async function resolveQrToken(
       }
     }
 
-    // Fallback 1: match table number directly or resolve table by label (padded and unpadded)
+    // Fallback 1: match table number directly or resolve table by label (padded, unpadded, or decimal/custom)
     if (!diningTable && (standardTableLabel || plainToken)) {
       const targetLabel = standardTableLabel || plainToken;
       let query = supabase.from("dining_tables").select("*");
-      if (rawNumberLabel && rawNumberLabel !== targetLabel) {
-        query = query.or(`label.eq.${targetLabel},label.eq.${rawNumberLabel}`);
+      const labelCandidates = Array.from(
+        new Set([targetLabel, rawNumberLabel, extractedLabel].filter(Boolean))
+      );
+      if (labelCandidates.length > 1) {
+        query = query.or(labelCandidates.map((l) => `label.eq.${l}`).join(","));
       } else {
-        query = query.eq("label", targetLabel);
+        query = query.eq("label", labelCandidates[0] || targetLabel);
       }
       const { data: tableByLabel } = await query.limit(1).maybeSingle();
 
@@ -221,6 +233,8 @@ export async function resolveQrToken(
       .select("*")
       .eq("table_id", diningTable.id)
       .eq("status", "OPEN")
+      .order("opened_at", { ascending: false })
+      .limit(1)
       .maybeSingle();
 
     // Auto-close stale sessions (> 3 hours inactive)
@@ -421,7 +435,8 @@ export async function clearTableSession(): Promise<void> {
  * Server Action: Switches the active table session dynamically for multi-user/multi-table support.
  */
 export async function switchTableSessionAction(tableLabel: string): Promise<{ success: boolean; message?: string }> {
-  const token = `table-${tableLabel.toString().padStart(2, "0")}`;
+  const cleanTbl = tableLabel.toString().replace(/^(?:table|t)[-\s_]*/i, "").trim();
+  const token = `table-${/^\d+$/.test(cleanTbl) ? cleanTbl.padStart(2, "0") : cleanTbl}`;
   const result = await resolveQrToken(token, true);
   return {
     success: result.success,
@@ -496,9 +511,9 @@ export async function fetchActiveTablesAction(): Promise<ClientTableInfo[]> {
 
     // Natural sort tables by numeric value or alphanumeric string
     return mappedTables.sort((a, b) => {
-      const numA = parseInt(a.label, 10);
-      const numB = parseInt(b.label, 10);
-      if (!isNaN(numA) && !isNaN(numB)) {
+      const numA = parseFloat(a.label);
+      const numB = parseFloat(b.label);
+      if (!isNaN(numA) && !isNaN(numB) && numA !== numB) {
         return numA - numB;
       }
       return a.label.localeCompare(b.label);
@@ -519,7 +534,8 @@ export async function requestStaffAssistanceAction(
   reason?: string
 ): Promise<{ success: boolean; message: string }> {
   try {
-    const cleanLabel = (tableLabel || "01").replace(/^(table|t)[-\s_]*/i, "").trim().padStart(2, "0");
+    const rawClean = (tableLabel || "01").replace(/^(table|t)[-\s_]*/i, "").trim();
+    const cleanLabel = /^\d+$/.test(rawClean) ? rawClean.padStart(2, "0") : rawClean;
 
     const requestId = `help_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
 
@@ -567,5 +583,3 @@ export async function requestStaffAssistanceAction(
     };
   }
 }
-
-

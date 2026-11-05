@@ -1,38 +1,94 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import Image from "next/image";
-import { Lock } from "lucide-react";
 import { ThemeToggle } from "@/components/common/ThemeToggle";
+import { staffBackdoorLoginAction } from "@/app/smol-backdoor/actions";
 
 interface AdminLoginGateProps {
   onSuccess: () => void;
 }
+
+const ADMIN_SESSION_TTL_MS = 12 * 60 * 60 * 1000; // 12 hours
 
 export const AdminLoginGate: React.FC<AdminLoginGateProps> = ({ onSuccess }) => {
   const [pin, setPin] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem("smol_staff_session_12h");
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (
+          parsed &&
+          parsed.role === "admin" &&
+          parsed.issuedAt &&
+          Date.now() - Number(parsed.issuedAt) < ADMIN_SESSION_TTL_MS
+        ) {
+          sessionStorage.setItem("smol_admin_auth", "true");
+          onSuccess();
+        }
+      }
+    } catch {}
+  }, [onSuccess]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!pin.trim()) return;
 
     setIsLoading(true);
     setError(null);
 
-    setTimeout(() => {
-      // ONLY allow access with legitimate Admin PIN 9227 (or master password smol2026)
-      if (pin.trim() === "9227" || pin.trim() === "smol2026") {
+    try {
+      const trimmed = pin.trim();
+      const res = await staffBackdoorLoginAction({
+        role: "admin",
+        pin: trimmed,
+        password: trimmed,
+      });
+
+      if (res.success || trimmed === "9227" || trimmed === "smol2026") {
+        const now = Date.now();
+        const issuedAt = res.issuedAt || now;
+        const expiresAt = res.expiresAt || issuedAt + ADMIN_SESSION_TTL_MS;
         if (typeof window !== "undefined") {
           sessionStorage.setItem("smol_admin_auth", "true");
+          localStorage.setItem(
+            "smol_staff_session_12h",
+            JSON.stringify({
+              role: "admin",
+              redirectTo: "/smol-backdoor/admin",
+              issuedAt,
+              expiresAt,
+            })
+          );
         }
+        onSuccess();
+      } else {
+        setError(res.message || "Invalid admin passcode. Please enter PIN: 9227.");
+      }
+    } catch {
+      if (pin.trim() === "9227" || pin.trim() === "smol2026") {
+        const now = Date.now();
+        sessionStorage.setItem("smol_admin_auth", "true");
+        localStorage.setItem(
+          "smol_staff_session_12h",
+          JSON.stringify({
+            role: "admin",
+            redirectTo: "/smol-backdoor/admin",
+            issuedAt: now,
+            expiresAt: now + ADMIN_SESSION_TTL_MS,
+          })
+        );
         onSuccess();
       } else {
         setError("Invalid admin passcode. Please enter PIN: 9227.");
       }
+    } finally {
       setIsLoading(false);
-    }, 400);
+    }
   };
 
   return (
@@ -92,7 +148,6 @@ export const AdminLoginGate: React.FC<AdminLoginGateProps> = ({ onSuccess }) => 
             {isLoading ? "verifying..." : "open admin dashboard"}
           </button>
         </form>
-
       </div>
     </div>
   );

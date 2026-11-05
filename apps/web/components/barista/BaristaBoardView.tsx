@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { useStaffSessionKeepAlive } from "@/lib/auth/use-staff-session-keepalive";
 import Image from "next/image";
 import type { BaristaTicket, BaristaOrderItem } from "@/app/barista/actions";
 import {
@@ -34,6 +35,7 @@ interface BaristaBoardViewProps {
 }
 
 export const BaristaBoardView: React.FC<BaristaBoardViewProps> = ({ initialOrders }) => {
+  useStaffSessionKeepAlive("barista");
   const [orders, setOrders] = useState<BaristaTicket[]>(initialOrders);
   const [dismissedTicketIds, setDismissedTicketIds] = useState<Set<string>>(new Set());
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -308,16 +310,9 @@ export const BaristaBoardView: React.FC<BaristaBoardViewProps> = ({ initialOrder
     scheduleNextPoll();
 
     const unsubscribe = subscribeToSyncEvents((event) => {
-      // Automatic real-time logout if PIN/password changed by Admin
+      // Preserve active 12-hour staff session (do not auto-logout before 12 hours)
       if (event.type === "STAFF_CREDENTIALS_CHANGED") {
-        const target = (event.metadata?.role as string) || event.station?.toLowerCase();
-        if (target === "barista" || target === "all" || event.station === "ALL") {
-          try {
-            alert("⚠️ Security Notice: Barista desk credentials (PIN) were updated by Admin. Redirecting to login...");
-          } catch {}
-          window.location.href = "/smol-backdoor";
-          return;
-        }
+        return;
       }
 
       // Ignore orders awaiting cashier approval in Barista Desk
@@ -649,6 +644,10 @@ export const BaristaBoardView: React.FC<BaristaBoardViewProps> = ({ initialOrder
             {/* Logout */}
             <button
               onClick={async () => {
+                try {
+                  localStorage.removeItem("smol_staff_session_12h");
+                  sessionStorage.removeItem("smol_admin_auth");
+                } catch {}
                 await staffLogoutAction();
                 window.location.href = "/smol-backdoor";
               }}

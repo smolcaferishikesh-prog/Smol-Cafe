@@ -41,6 +41,7 @@ import {
 import { JsonTagInspectorModal } from "@/components/table/JsonTagInspectorModal";
 import { createTableJsonTag, type TableJsonTag } from "@/lib/table-tag";
 import { broadcastSyncEvent, subscribeToSyncEvents } from "@/lib/sync-events";
+import { useSupabaseRealtime } from "@/hooks/useSupabaseRealtime";
 import { normalizeTableLabel } from "@/lib/table-label";
 
 export const DEFAULT_QR_DOMAIN = "https://www.smolcafe.in";
@@ -550,22 +551,98 @@ export const TableManager: React.FC<TableManagerProps> = ({
         } else {
           refreshTables();
         }
-      } else if (event.type === "STATUS_CHANGED" || event.type === "ORDER_PLACED") {
-        refreshTables();
+      } else if (event.type === "TABLE_AVAILABILITY_CHANGED") {
+        const meta = event.metadata || {};
+        const targetId = event.tableId || (meta.tableId as string) || (meta.id as string);
+        const targetLabel = (event.tableLabel || (meta.label as string) || "").replace(/^(?:table|t)[-\s_]*/i, "").trim().toLowerCase();
+        const isOccupied = meta.isOccupied !== undefined ? Boolean(meta.isOccupied) : event.status === "OCCUPIED";
+
+        if (targetId || targetLabel) {
+          setTables((prev) => {
+            const updated = prev.map((t) => {
+              const cleanT = t.label.replace(/^(?:table|t)[-\s_]*/i, "").trim().toLowerCase();
+              const isMatch =
+                (targetId && t.id === targetId) ||
+                (targetLabel && (cleanT === targetLabel || cleanT.padStart(2, "0") === targetLabel.padStart(2, "0")));
+              return isMatch ? { ...t, isOccupied } : t;
+            });
+            __cachedTablesMemory = updated;
+            return updated;
+          });
+        }
+        void refreshTables();
+      } else if (event.type === "ORDER_PLACED" || event.type === "ORDER_PENDING_CASHIER") {
+        const meta = event.metadata || {};
+        const targetId = event.tableId || (meta.tableId as string);
+        const targetLabel = (event.tableLabel || (meta.label as string) || "").replace(/^(?:table|t)[-\s_]*/i, "").trim().toLowerCase();
+
+        if (targetId || targetLabel) {
+          setTables((prev) => {
+            const updated = prev.map((t) => {
+              const cleanT = t.label.replace(/^(?:table|t)[-\s_]*/i, "").trim().toLowerCase();
+              const isMatch =
+                (targetId && t.id === targetId) ||
+                (targetLabel && (cleanT === targetLabel || cleanT.padStart(2, "0") === targetLabel.padStart(2, "0")));
+              return isMatch ? { ...t, isOccupied: true } : t;
+            });
+            __cachedTablesMemory = updated;
+            return updated;
+          });
+        }
+        void refreshTables();
+      } else if (
+        event.type === "STATUS_CHANGED" ||
+        event.type === "ORDER_CONFIRMED" ||
+        event.type === "BILL_SETTLED"
+      ) {
+        void refreshTables();
       }
     });
 
     return () => unsubscribe();
   }, [refreshTables]);
 
-  // Fast fallback refresh when network resumes
+  useSupabaseRealtime({ table: "table_sessions", onData: () => void refreshTables() });
+  useSupabaseRealtime({ table: "orders", onData: () => void refreshTables() });
+
+  // Fast fallback refresh & periodic sync when tab is visible
   useEffect(() => {
-    const handleOnline = () => {
-      void refreshTables();
+    let isMounted = true;
+    let pollTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const schedulePoll = () => {
+      if (!isMounted) return;
+      const interval = typeof document !== "undefined" && document.visibilityState === "visible" ? 3000 : 12000;
+      pollTimer = setTimeout(async () => {
+        if (!isMounted) return;
+        await refreshTables();
+        schedulePoll();
+      }, interval);
     };
+
+    const handleOnline = () => {
+      if (isMounted) void refreshTables();
+    };
+    const handleFocus = () => {
+      if (isMounted) void refreshTables();
+    };
+    const handleVisibility = () => {
+      if (isMounted && document.visibilityState === "visible") {
+        void refreshTables();
+      }
+    };
+
     window.addEventListener("online", handleOnline);
+    window.addEventListener("focus", handleFocus);
+    document.addEventListener("visibilitychange", handleVisibility);
+    schedulePoll();
+
     return () => {
+      isMounted = false;
+      if (pollTimer) clearTimeout(pollTimer);
       window.removeEventListener("online", handleOnline);
+      window.removeEventListener("focus", handleFocus);
+      document.removeEventListener("visibilitychange", handleVisibility);
     };
   }, [refreshTables]);
 

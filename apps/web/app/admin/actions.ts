@@ -197,13 +197,14 @@ export async function fetchAdminOverviewAction(forceRefresh = false): Promise<{
       d.toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
     const istTodayString = getISTDateString(new Date());
 
+    const openSessionIds = new Set<string>();
     for (const s of tableSessions) {
       const label = tableMap.get(s.table_id) || "01";
       sessionToTableMap.set(s.id, label);
-      if (s.status === "ACTIVE" || s.status === "OPEN") {
+      if (s.status === "ACTIVE" || s.status === "OPEN" || s.status === "PAYMENT_PENDING") {
         const sessionAgeMs = Date.now() - new Date(s.opened_at || s.created_at || Date.now()).getTime();
         if (sessionAgeMs <= 18 * 60 * 60 * 1000) {
-          activeTableIds.add(label);
+          openSessionIds.add(s.id);
         }
       }
     }
@@ -307,12 +308,12 @@ export async function fetchAdminOverviewAction(forceRefresh = false): Promise<{
         }
       }
 
-      // Add to active tables only if order is actively in progress and recent (< 14 hours)
+      // Mark table occupied ONLY if order belongs to an open table session (not yet marked available by Cashier)
       if (
-        o.status !== "COMPLETED" &&
+        o.table_session_id &&
+        openSessionIds.has(o.table_session_id) &&
         o.status !== "CANCELLED" &&
-        o.status !== "REJECTED" &&
-        orderAgeMs <= 14 * 60 * 60 * 1000
+        o.status !== "REJECTED"
       ) {
         activeTableIds.add(tableLabel);
       }
@@ -918,7 +919,9 @@ export async function editAdminOrderAction(payload: EditAdminOrderPayload): Prom
         .from("table_sessions")
         .select("id")
         .eq("table_id", matchedTable.id)
-        .eq("status", "ACTIVE")
+        .eq("status", "OPEN")
+        .order("opened_at", { ascending: false })
+        .limit(1)
         .maybeSingle();
 
       if (sessionForTable) {
@@ -928,7 +931,9 @@ export async function editAdminOrderAction(payload: EditAdminOrderPayload): Prom
         await supabase.from("table_sessions").insert({
           id: newSessionId,
           table_id: matchedTable.id,
-          status: "ACTIVE",
+          status: "OPEN",
+          opened_at: nowIso,
+          last_activity_at: nowIso,
           created_at: nowIso,
         });
         targetSessionId = newSessionId;

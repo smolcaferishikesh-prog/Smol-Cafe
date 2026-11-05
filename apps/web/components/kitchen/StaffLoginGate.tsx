@@ -9,6 +9,8 @@ interface StaffLoginGateProps {
   onSuccess?: () => void;
 }
 
+const STAFF_SESSION_TTL_MS = 12 * 60 * 60 * 1000; // 12 hours
+
 export const StaffLoginGate: React.FC<StaffLoginGateProps> = ({ onSuccess }) => {
   const [pin, setPin] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -24,6 +26,18 @@ export const StaffLoginGate: React.FC<StaffLoginGateProps> = ({ onSuccess }) => 
     try {
       const result = await staffLoginAction(pin);
       if (result.success) {
+        const now = Date.now();
+        try {
+          localStorage.setItem(
+            "smol_staff_session_12h",
+            JSON.stringify({
+              role: "kitchen",
+              redirectTo: "/smol-backdoor/kitchen",
+              issuedAt: now,
+              expiresAt: now + STAFF_SESSION_TTL_MS,
+            })
+          );
+        } catch {}
         if (onSuccess) {
           onSuccess();
         } else {
@@ -97,7 +111,6 @@ export const StaffLoginGate: React.FC<StaffLoginGateProps> = ({ onSuccess }) => 
             {isLoading ? "unlocking..." : "enter kitchen gds"}
           </button>
         </form>
-
       </div>
     </div>
   );
