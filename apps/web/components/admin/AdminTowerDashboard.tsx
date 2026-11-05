@@ -1804,6 +1804,59 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
         }
 
 
+        if (ev.type === "TABLE_CREATED") {
+          const meta = ev.metadata || {};
+          const id = ev.tableId || (meta.id as string) || `tbl_${Date.now()}`;
+          const label = (ev.tableLabel || (meta.label as string) || "").trim();
+          const seats = Number(meta.seats) || 2;
+          const isActive = meta.active !== undefined ? Boolean(meta.active) : true;
+          const section = (meta.section as string) || "smol-cafe";
+          setOverviewData((prev) => {
+            if (!prev) return prev;
+            const exists = (prev.tables || []).some(
+              (t) => t.id === id || (label && t.label.trim().toLowerCase() === label.toLowerCase())
+            );
+            const updatedTables = exists
+              ? (prev.tables || []).map((t) =>
+                  t.id === id || (label && t.label.trim().toLowerCase() === label.toLowerCase())
+                    ? { ...t, id, label: label || t.label, seats, isActive, section }
+                    : t
+                )
+              : [...(prev.tables || []), { id, label, seats, isActive, section, isOccupied: false }];
+            return {
+              ...prev,
+              tables: updatedTables,
+              kpis: {
+                ...prev.kpis,
+                totalTablesCount: Math.max(1, updatedTables.length),
+              },
+            };
+          });
+          return;
+        }
+
+        if (ev.type === "TABLE_RENAMED") {
+          const meta = ev.metadata || {};
+          const id = ev.tableId || (meta.id as string);
+          const label = (ev.tableLabel || (meta.label as string) || "").trim();
+          setOverviewData((prev) => {
+            if (!prev) return prev;
+            const updatedTables = (prev.tables || []).map((t) =>
+              (id && t.id === id) || (label && t.label.trim().toLowerCase() === label.toLowerCase())
+                ? {
+                    ...t,
+                    label: label || t.label,
+                    seats: meta.seats !== undefined ? Number(meta.seats) : t.seats,
+                    isActive: meta.active !== undefined ? Boolean(meta.active) : t.isActive,
+                    section: (meta.section as string) || t.section,
+                  }
+                : t
+            );
+            return { ...prev, tables: updatedTables };
+          });
+          return;
+        }
+
         if (ev.type === "TABLE_DELETED") {
           const targetId = ev.tableId || (ev.metadata?.id as string);
           const targetLabel = (ev.tableLabel || (ev.metadata?.label as string) || "").trim().toLowerCase();
@@ -1821,6 +1874,91 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
               },
             };
           });
+          return;
+        }
+
+        if (ev.type === "ITEM_AVAILABILITY_CHANGED") {
+          const meta = (ev.metadata as Record<string, unknown>) || {};
+          const itemId = ev.itemId || (meta.id as string);
+          const isDeleted =
+            ev.stockStatus === "ARCHIVED" ||
+            ev.availability === "ARCHIVED" ||
+            meta.status === "ARCHIVED" ||
+            Boolean(meta.deleted);
+
+          if (meta.clearedAll) {
+            setOverviewData((prev) => (prev ? { ...prev, menuItems: [] } : prev));
+            return;
+          }
+
+          if (itemId) {
+            setOverviewData((prev) => {
+              if (!prev) return prev;
+              const existingItems = prev.menuItems || [];
+              if (isDeleted) {
+                return {
+                  ...prev,
+                  menuItems: existingItems.filter((i) => i.id !== itemId),
+                };
+              }
+              const exists = existingItems.some((i) => i.id === itemId);
+              const priceRupees =
+                ev.priceRupees !== undefined
+                  ? ev.priceRupees
+                  : meta.priceRupees !== undefined
+                  ? Number(meta.priceRupees)
+                  : undefined;
+              const newStatus =
+                ev.stockStatus === "SOLD_OUT" || meta.status === "SOLD_OUT" ? "SOLD_OUT" : "AVAILABLE";
+
+              if (exists) {
+                return {
+                  ...prev,
+                  menuItems: existingItems.map((i) =>
+                    i.id === itemId
+                      ? {
+                          ...i,
+                          name: typeof meta.name === "string" ? meta.name : i.name,
+                          price: priceRupees !== undefined ? `₹${priceRupees}` : i.price,
+                          priceRupees: priceRupees !== undefined ? priceRupees : i.priceRupees,
+                          description: typeof meta.description === "string" ? meta.description : i.description,
+                          imageUrl: meta.imageUrl !== undefined ? (meta.imageUrl as string | null) : i.imageUrl,
+                          dietary: typeof meta.dietary === "string" ? meta.dietary : i.dietary,
+                          bestPairing: typeof meta.best_pairing === "string" ? meta.best_pairing : i.bestPairing,
+                          status: newStatus,
+                        }
+                      : i
+                  ),
+                };
+              }
+
+              if (typeof meta.name === "string") {
+                const catId = (meta.categoryId as string) || "";
+                const catObj = (prev.menuCategoryOptions || []).find((c) => c.id === catId);
+                return {
+                  ...prev,
+                  menuItems: [
+                    {
+                      id: itemId,
+                      name: meta.name,
+                      categoryId: catId,
+                      category: catObj?.name || "Menu Specials",
+                      price: `₹${priceRupees ?? 120}`,
+                      priceRupees: priceRupees ?? 120,
+                      description: (meta.description as string) || "",
+                      imageUrl: (meta.imageUrl as string | null) || null,
+                      dietary: (meta.dietary as string) || "veg",
+                      bestPairing: (meta.best_pairing as string) || "",
+                      status: newStatus,
+                    },
+                    ...existingItems,
+                  ],
+                };
+              }
+              return prev;
+            });
+            return;
+          }
         }
 
         void refreshData(true);
@@ -2987,13 +3125,37 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
 
         {/* Tab 3: TABLES & SECTIONS MANAGEMENT */}
         <div className={activeTab === "tables" ? "block" : "hidden"}>
-          <TableManager />
+          <TableManager
+            initialTables={(overviewData?.tables || []).map((t) => ({
+              id: t.id,
+              location_id: t.location_id || "",
+              label: t.label,
+              seats: t.seats || 2,
+              active: t.isActive,
+              section: t.section || "smol-cafe",
+              isOccupied: Boolean(t.isOccupied),
+            }))}
+          />
         </div>
 
         {/* Tab 4: MENU MANAGEMENT & DISH EDITOR */}
         {activeTab === "menu" && (
           <div className="p-3 sm:p-6 pb-32 max-w-7xl animate-fade-in">
-            <AdminMenuManager onItemChange={() => void refreshData(true)} />
+            <AdminMenuManager
+              initialCategories={overviewData?.menuCategoryOptions}
+              initialItems={(overviewData?.menuItems || []).map((m) => ({
+                id: m.id,
+                name: m.name,
+                categoryId: m.categoryId || "",
+                categoryName: m.category,
+                priceRupees: m.priceRupees ?? (parseInt(String(m.price).replace(/[^0-9]/g, ""), 10) || 0),
+                description: m.description || "",
+                imageUrl: m.imageUrl ?? null,
+                dietary: m.dietary || "veg",
+                bestPairing: m.bestPairing || "",
+                status: m.status || "AVAILABLE",
+              }))}
+            />
           </div>
         )}
 

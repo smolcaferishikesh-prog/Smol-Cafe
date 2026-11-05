@@ -3,7 +3,7 @@
 import crypto from "crypto";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireStaffAuth } from "@/lib/auth/rbac";
-import { revalidatePath, revalidateTag } from "next/cache";
+import { revalidateTag } from "next/cache";
 import { broadcastSyncEvent } from "@/lib/sync-events";
 import { invalidateAdminOverviewCache } from "@/app/admin/actions";
 import {
@@ -12,6 +12,7 @@ import {
   getMenuOverridesStore,
   getDeletedItemsStore,
   savePersistedMenuStore,
+  invalidateMenuCatalogCache,
   type MenuItemWithDetails,
 } from "@/lib/queries/menu";
 import {
@@ -154,10 +155,7 @@ async function uploadBase64ToStorage(base64Data: string, itemId: string): Promis
 }
 
 /**
- * Add or Edit a Menu Item with real-time propagation to Customer Menu & KDS
- */
-/**
- * Add or Edit a Menu Item with real-time propagation to Customer Menu & KDS
+ * Add or Edit a Menu Item with instant memory/disk persistence and background DB sync
  */
 export async function saveMenuItemAction(
   payload: SaveMenuItemPayload
@@ -175,56 +173,56 @@ export async function saveMenuItemAction(
 
     const supabase = createAdminClient();
 
-    // Resolve categoryId to a valid category UUID if needed
+    // Fast category resolution using MOCK_CATEGORIES first (0ms), fallback to DB only if unknown
     let resolvedCategoryId = categoryId;
     if (!isUuid(resolvedCategoryId)) {
-      try {
-        const { data: allDbCats } = await supabase.from("menu_categories").select("id, name");
-        const matched = allDbCats?.find(
-          (c) =>
-            c.id === categoryId ||
-            c.name.toLowerCase() === categoryId.toLowerCase() ||
-            c.name.toLowerCase().includes(categoryId.toLowerCase())
-        );
-        if (matched) {
-          resolvedCategoryId = matched.id;
-        } else if (allDbCats && allDbCats.length > 0) {
-          resolvedCategoryId = allDbCats[0].id;
-        }
-      } catch {
-        // keep as is
-      }
-    }
-
-    // Determine final UUID for database persistence
-    let finalItemId = id && isUuid(id) ? id : "";
-    if (!finalItemId) {
-      if (isEdit && id) {
-        // Try looking up in Supabase by name if legacy ID was provided
+      const mockMatch = MOCK_CATEGORIES.find(
+        (c) =>
+          c.id === categoryId ||
+          c.name.toLowerCase() === categoryId.toLowerCase() ||
+          c.name.toLowerCase().includes(categoryId.toLowerCase())
+      );
+      if (mockMatch) {
+        resolvedCategoryId = mockMatch.id;
+      } else {
         try {
-          const { data: existingDbItem } = await supabase
-            .from("menu_items")
-            .select("id")
-            .ilike("name", name.trim())
-            .maybeSingle();
-          if (existingDbItem?.id) {
-            finalItemId = existingDbItem.id;
+          const { data: allDbCats } = await supabase.from("menu_categories").select("id, name");
+          const matched = allDbCats?.find(
+            (c) =>
+              c.id === categoryId ||
+              c.name.toLowerCase() === categoryId.toLowerCase() ||
+              c.name.toLowerCase().includes(categoryId.toLowerCase())
+          );
+          if (matched) {
+            resolvedCategoryId = matched.id;
+          } else if (allDbCats && allDbCats.length > 0) {
+            resolvedCategoryId = allDbCats[0].id;
           }
         } catch {}
       }
-      if (!finalItemId) {
+    }
+
+    // Determine final UUID immediately (deterministic UUID for legacy mock IDs if needed)
+    let finalItemId = id && isUuid(id) ? id : "";
+    if (!finalItemId) {
+      if (isEdit && id) {
+        const mockItem = MOCK_MENU_ITEMS.find((m) => m.id === id || m.name.toLowerCase() === name.trim().toLowerCase());
+        if (mockItem && isUuid(mockItem.id)) {
+          finalItemId = mockItem.id;
+        } else {
+          finalItemId = id;
+        }
+      } else {
         finalItemId = crypto.randomUUID();
       }
     }
 
-    // Auto-upload base64 to Supabase Storage if present
-    const finalImageUrl = imageUrl ? await uploadBase64ToStorage(imageUrl, finalItemId) : null;
+    const initialImageUrl = imageUrl || null;
 
     const customStore = getCustomItemsStore();
     const overridesStore = getMenuOverridesStore();
     const deletedStore = getDeletedItemsStore();
 
-    // Ensure it's not marked deleted (both finalItemId and legacy id if provided)
     deletedStore.delete(finalItemId);
     if (id) deletedStore.delete(id);
 
@@ -234,7 +232,7 @@ export async function saveMenuItemAction(
         categoryId: resolvedCategoryId,
         pricePaise: amountPaise,
         description: description || "",
-        imageUrl: finalImageUrl,
+        imageUrl: initialImageUrl,
         status: itemStatus,
         metadata: {
           ...(overridesStore[finalItemId]?.metadata || {}),
@@ -257,7 +255,7 @@ export async function saveMenuItemAction(
           categoryId: resolvedCategoryId,
           pricePaise: amountPaise,
           description: description || "",
-          imageUrl: finalImageUrl,
+          imageUrl: initialImageUrl,
           status: itemStatus,
           metadata: {
             ...customStore[existingCustomIdx].metadata,
@@ -275,7 +273,7 @@ export async function saveMenuItemAction(
         status: itemStatus,
         description: description || "",
         pricePaise: amountPaise,
-        imageUrl: finalImageUrl,
+        imageUrl: initialImageUrl,
         metadata: {
           dietary: dietary || "veg",
           best_pairing: bestPairing?.trim() || "",
@@ -285,88 +283,7 @@ export async function saveMenuItemAction(
       customStore.push(newItem);
     }
 
-    savePersistedMenuStore();
-
-    // Persist to Supabase PostgreSQL
-    try {
-      if (isEdit && isUuid(finalItemId)) {
-        await Promise.all([
-          supabase
-            .from("menu_items")
-            .update({
-              name: name.trim(),
-              category_id: resolvedCategoryId,
-              status: itemStatus,
-              updated_at: new Date().toISOString(),
-              metadata: {
-                dietary: dietary || "veg",
-                best_pairing: bestPairing?.trim() || "",
-              },
-            })
-            .eq("id", finalItemId),
-          supabase
-            .from("menu_prices")
-            .upsert({
-              menu_item_id: finalItemId,
-              amount_paise: amountPaise,
-              currency: "INR",
-              effective_from: new Date().toISOString(),
-            }),
-          supabase
-            .from("menu_item_versions")
-            .insert({
-              menu_item_id: finalItemId,
-              description: description || "",
-              image_url: finalImageUrl || null,
-              metadata: {
-                dietary: dietary || "veg",
-                best_pairing: bestPairing?.trim() || "",
-              },
-            }),
-        ]);
-      } else {
-        const itemRes = await supabase
-          .from("menu_items")
-          .insert({
-            id: finalItemId,
-            category_id: resolvedCategoryId,
-            name: name.trim(),
-            status: itemStatus,
-            metadata: {
-              dietary: dietary || "veg",
-              best_pairing: bestPairing?.trim() || "",
-            },
-          });
-
-        if (!itemRes.error) {
-          await Promise.all([
-            supabase
-              .from("menu_prices")
-              .insert({
-                menu_item_id: finalItemId,
-                amount_paise: amountPaise,
-                currency: "INR",
-                effective_from: new Date().toISOString(),
-              }),
-            supabase
-              .from("menu_item_versions")
-              .insert({
-                menu_item_id: finalItemId,
-                description: description || "",
-                image_url: finalImageUrl || null,
-                metadata: {
-                  dietary: dietary || "veg",
-                  best_pairing: bestPairing?.trim() || "",
-                },
-              }),
-          ]);
-        }
-      }
-    } catch (pgErr) {
-      console.warn("Notice updating Supabase menu tables:", pgErr);
-    }
-
-    // Ensure kitchen stock store is 100% in sync
+    // Ensure kitchen stock store is 100% in sync immediately
     if (!globalThis.__SMOL_KITCHEN_MENU_STOCK__) {
       globalThis.__SMOL_KITCHEN_MENU_STOCK__ = {};
     }
@@ -376,7 +293,66 @@ export async function saveMenuItemAction(
       chefNotes: description || "",
     };
 
-    broadcastSyncEvent({
+    savePersistedMenuStore();
+    void invalidateAdminOverviewCache();
+
+    // Persist to Supabase PostgreSQL & Storage in parallel/background without blocking the UI response
+    void (async () => {
+      try {
+        const finalImageUrl =
+          initialImageUrl && initialImageUrl.startsWith("data:image")
+            ? await uploadBase64ToStorage(initialImageUrl, finalItemId)
+            : initialImageUrl;
+
+        if (finalImageUrl !== initialImageUrl) {
+          if (overridesStore[finalItemId]) {
+            overridesStore[finalItemId].imageUrl = finalImageUrl;
+          }
+          const cIdx = customStore.findIndex((i) => i.id === finalItemId);
+          if (cIdx >= 0) {
+            customStore[cIdx].imageUrl = finalImageUrl;
+          }
+          savePersistedMenuStore();
+        }
+
+        const dbItemId = isUuid(finalItemId) ? finalItemId : undefined;
+        if (!dbItemId) return;
+
+        await Promise.all([
+          supabase.from("menu_items").upsert({
+            id: dbItemId,
+            category_id: resolvedCategoryId,
+            name: name.trim(),
+            status: itemStatus,
+            updated_at: new Date().toISOString(),
+            metadata: {
+              dietary: dietary || "veg",
+              best_pairing: bestPairing?.trim() || "",
+            },
+          }),
+          supabase.from("menu_prices").upsert({
+            menu_item_id: dbItemId,
+            amount_paise: amountPaise,
+            currency: "INR",
+            effective_from: new Date().toISOString(),
+          }),
+          supabase.from("menu_item_versions").upsert({
+            menu_item_id: dbItemId,
+            description: description || "",
+            image_url: finalImageUrl || null,
+            metadata: {
+              dietary: dietary || "veg",
+              best_pairing: bestPairing?.trim() || "",
+            },
+          }),
+        ]);
+        invalidateMenuCatalogCache();
+      } catch (pgErr) {
+        console.warn("Notice updating Supabase menu tables:", pgErr);
+      }
+    })();
+
+    void broadcastSyncEvent({
       type: "ITEM_AVAILABILITY_CHANGED",
       itemId: finalItemId,
       stockStatus: itemStatus === "SOLD_OUT" ? "SOLD_OUT" : "IN_STOCK",
@@ -393,26 +369,19 @@ export async function saveMenuItemAction(
         best_pairing: bestPairing?.trim() || "",
         status: itemStatus,
         stockStatus: itemStatus === "SOLD_OUT" ? "SOLD_OUT" : "IN_STOCK",
-        imageUrl: finalImageUrl,
+        imageUrl: initialImageUrl,
       },
     });
 
     try {
       revalidateTag("menu-catalog");
-      revalidatePath("/");
-      revalidatePath("/admin/menu");
-      revalidatePath("/menu");
-    } catch {
-      // ignore
-    }
-
-    invalidateAdminOverviewCache();
+    } catch {}
 
     return {
       success: true,
       message: isEdit ? `Dish "${name.trim()}" updated successfully.` : `Dish "${name.trim()}" created and added to menu.`,
       itemId: finalItemId,
-      imageUrl: finalImageUrl,
+      imageUrl: initialImageUrl,
     };
   } catch (error: any) {
     console.error("saveMenuItemAction error:", error);
@@ -425,7 +394,7 @@ export async function saveMenuItemAction(
 }
 
 /**
- * Delete / Archive a Menu Item permanently
+ * Delete / Archive a Menu Item permanently (Instant return)
  */
 export async function deleteMenuItemAction(
   itemId: string
@@ -439,7 +408,6 @@ export async function deleteMenuItemAction(
     const deletedStore = getDeletedItemsStore();
     deletedStore.add(itemId);
 
-    // Also remove from custom store if present
     const customStore = getCustomItemsStore();
     const idx = customStore.findIndex((i) => i.id === itemId);
     let deletedItemName = "";
@@ -448,28 +416,32 @@ export async function deleteMenuItemAction(
       customStore.splice(idx, 1);
     }
 
-    // Save deletion to disk immediately
+    // Save deletion to disk & invalidate memory cache immediately
     savePersistedMenuStore();
+    void invalidateAdminOverviewCache();
 
-    // Mark archived in Supabase PostgreSQL
-    try {
-      const supabase = createAdminClient();
-      if (isUuid(itemId)) {
-        await supabase
-          .from("menu_items")
-          .update({ status: "ARCHIVED", updated_at: new Date().toISOString() })
-          .eq("id", itemId);
-      } else if (deletedItemName) {
-        await supabase
-          .from("menu_items")
-          .update({ status: "ARCHIVED", updated_at: new Date().toISOString() })
-          .ilike("name", deletedItemName);
+    // Mark archived in Supabase PostgreSQL in background
+    void (async () => {
+      try {
+        const supabase = createAdminClient();
+        if (isUuid(itemId)) {
+          await supabase
+            .from("menu_items")
+            .update({ status: "ARCHIVED", updated_at: new Date().toISOString() })
+            .eq("id", itemId);
+        } else if (deletedItemName) {
+          await supabase
+            .from("menu_items")
+            .update({ status: "ARCHIVED", updated_at: new Date().toISOString() })
+            .ilike("name", deletedItemName);
+        }
+        invalidateMenuCatalogCache();
+      } catch (dbErr) {
+        console.warn("Notice updating Supabase archive status:", dbErr);
       }
-    } catch (dbErr) {
-      console.warn("Notice updating Supabase archive status:", dbErr);
-    }
+    })();
 
-    broadcastSyncEvent({
+    void broadcastSyncEvent({
       type: "ITEM_AVAILABILITY_CHANGED",
       itemId,
       stockStatus: "ARCHIVED",
@@ -484,14 +456,7 @@ export async function deleteMenuItemAction(
 
     try {
       revalidateTag("menu-catalog");
-      revalidatePath("/");
-      revalidatePath("/admin/menu");
-      revalidatePath("/menu");
-    } catch {
-      // ignore
-    }
-
-    invalidateAdminOverviewCache();
+    } catch {}
 
     return {
       success: true,
@@ -516,37 +481,44 @@ export async function clearAllMenuItemsAction(): Promise<{ success: boolean; mes
   }
 
   try {
-    const supabase = createAdminClient();
-
-    // 1. Archive all active items in Supabase
-    try {
-      await supabase
-        .from("menu_items")
-        .update({ status: "ARCHIVED", updated_at: new Date().toISOString() })
-        .neq("status", "ARCHIVED");
-    } catch (dbErr) {
-      console.warn("Notice archiving Supabase items:", dbErr);
-    }
-
-    // 2. Clear local custom items & overrides
+    // 1. Clear local custom items & overrides immediately
     const customStore = getCustomItemsStore();
     customStore.length = 0;
 
     const overridesStore = getMenuOverridesStore();
     Object.keys(overridesStore).forEach((key) => delete overridesStore[key]);
 
-    // 3. Mark all 66 default mock IDs as deleted in deletedStore
+    // 2. Mark all default mock IDs and current cached IDs as deleted in deletedStore
     const deletedStore = getDeletedItemsStore();
     for (let i = 1; i <= 66; i++) {
       deletedStore.add(`item_${i.toString().padStart(2, "0")}`);
       deletedStore.add(`item_${i}`);
     }
     MOCK_MENU_ITEMS.forEach((it) => deletedStore.add(it.id));
+    if (globalThis.__SMOL_MENU_CATALOG_CACHE__) {
+      globalThis.__SMOL_MENU_CATALOG_CACHE__.allCategories.forEach((cat) =>
+        cat.items.forEach((it) => deletedStore.add(it.id))
+      );
+    }
 
-    // Save to disk
     savePersistedMenuStore();
+    void invalidateAdminOverviewCache();
 
-    broadcastSyncEvent({
+    // 3. Archive all active items in Supabase in background
+    void (async () => {
+      try {
+        const supabase = createAdminClient();
+        await supabase
+          .from("menu_items")
+          .update({ status: "ARCHIVED", updated_at: new Date().toISOString() })
+          .neq("status", "ARCHIVED");
+        invalidateMenuCatalogCache();
+      } catch (dbErr) {
+        console.warn("Notice archiving Supabase items:", dbErr);
+      }
+    })();
+
+    void broadcastSyncEvent({
       type: "ITEM_AVAILABILITY_CHANGED",
       stockStatus: "ARCHIVED",
       availability: "ARCHIVED",
@@ -559,12 +531,7 @@ export async function clearAllMenuItemsAction(): Promise<{ success: boolean; mes
 
     try {
       revalidateTag("menu-catalog");
-      revalidatePath("/");
-      revalidatePath("/admin/menu");
-      revalidatePath("/menu");
     } catch {}
-
-    invalidateAdminOverviewCache();
 
     return {
       success: true,
@@ -580,7 +547,7 @@ export async function clearAllMenuItemsAction(): Promise<{ success: boolean; mes
 }
 
 /**
- * Restore Smol Café Master Menu
+ * Restore Smol Café Master Menu (Batched Bulk Upserts instead of 190 sequential loops)
  */
 export async function resetToMasterMenuAction(): Promise<{ success: boolean; message: string }> {
   const auth = await requireStaffAuth(["admin", "super_admin"]);
@@ -589,96 +556,7 @@ export async function resetToMasterMenuAction(): Promise<{ success: boolean; mes
   }
 
   try {
-    const supabase = createAdminClient();
-
-    // 1. Mark existing Supabase items as ARCHIVED so previous non-master items are deactivated
-    try {
-      await supabase
-        .from("menu_items")
-        .update({ status: "ARCHIVED", updated_at: new Date().toISOString() })
-        .neq("status", "ARCHIVED");
-    } catch (dbErr) {
-      console.warn("Notice archiving existing Supabase items:", dbErr);
-    }
-
-    // 2. Upsert the 10 official categories
-    try {
-      for (const cat of MOCK_CATEGORIES) {
-        await supabase.from("menu_categories").upsert({
-          id: cat.id,
-          location_id: cat.location_id,
-          name: cat.name,
-          sort_order: cat.sort_order,
-          updated_at: new Date().toISOString(),
-        });
-      }
-
-      // Clean up any extra categories not in the official 10
-      const officialCatIds = MOCK_CATEGORIES.map((c) => c.id);
-      const { data: allCats } = await supabase.from("menu_categories").select("id");
-      if (allCats) {
-        const extraCats = allCats.filter((c) => !officialCatIds.includes(c.id));
-        for (const ec of extraCats) {
-          try {
-            await supabase.from("menu_categories").delete().eq("id", ec.id);
-          } catch {}
-        }
-      }
-    } catch (catErr) {
-      console.warn("Notice syncing categories:", catErr);
-    }
-
-    // 3. Upsert official menu items into Supabase
-    try {
-      for (const item of MOCK_MENU_ITEMS) {
-        const isDrink = [
-          "Tea",
-          "Coffee Classics",
-          "Flavoured & Sweet Coffee",
-          "Specialty Drinks & Refreshers",
-        ].some((catName) => {
-          const cat = MOCK_CATEGORIES.find((c) => c.id === item.category_id);
-          return cat?.name === catName;
-        });
-
-        await supabase.from("menu_items").upsert({
-          id: item.id,
-          category_id: item.category_id,
-          name: item.name,
-          status: item.status || "AVAILABLE",
-          metadata: item.metadata,
-          station_id: isDrink ? "COLD_BAR" : "HOT_KITCHEN",
-          base_prep_seconds: 300,
-          updated_at: new Date().toISOString(),
-        });
-      }
-
-      // Upsert versions and prices
-      for (const ver of MOCK_MENU_VERSIONS) {
-        await supabase.from("menu_item_versions").upsert({
-          id: ver.id,
-          menu_item_id: ver.menu_item_id,
-          description: ver.description,
-          image_url: ver.image_url,
-          metadata: ver.metadata,
-        });
-      }
-
-      for (const prc of MOCK_MENU_PRICES) {
-        await supabase.from("menu_prices").upsert({
-          id: prc.id,
-          menu_item_id: prc.menu_item_id,
-          amount_paise: prc.amount_paise,
-          currency: prc.currency || "INR",
-          effective_from: prc.effective_from || new Date().toISOString(),
-          effective_to: null,
-        });
-      }
-    } catch (itemErr) {
-      console.warn("Notice seeding Supabase master items:", itemErr);
-    }
-
-    // 4. Clear memory and disk stores (custom items, overrides, deleted items)
+    // 1. Clear memory and disk stores immediately so getMenuCatalog returns master items right away
     const deletedStore = getDeletedItemsStore();
     deletedStore.clear();
 
@@ -688,11 +566,83 @@ export async function resetToMasterMenuAction(): Promise<{ success: boolean; mes
     const overridesStore = getMenuOverridesStore();
     Object.keys(overridesStore).forEach((key) => delete overridesStore[key]);
 
-    // Save empty stores to disk
     savePersistedMenuStore();
+    void invalidateAdminOverviewCache();
 
-    // 5. Broadcast sync event across network
-    broadcastSyncEvent({
+    // 2. Sync Supabase in background using bulk array upserts (3 queries total instead of 190 serial queries)
+    void (async () => {
+      try {
+        const supabase = createAdminClient();
+        const nowIso = new Date().toISOString();
+
+        await supabase
+          .from("menu_items")
+          .update({ status: "ARCHIVED", updated_at: nowIso })
+          .neq("status", "ARCHIVED");
+
+        await supabase.from("menu_categories").upsert(
+          MOCK_CATEGORIES.map((cat) => ({
+            id: cat.id,
+            location_id: cat.location_id,
+            name: cat.name,
+            sort_order: cat.sort_order,
+            updated_at: nowIso,
+          }))
+        );
+
+        await supabase.from("menu_items").upsert(
+          MOCK_MENU_ITEMS.map((item) => {
+            const isDrink = [
+              "Tea",
+              "Coffee Classics",
+              "Flavoured & Sweet Coffee",
+              "Specialty Drinks & Refreshers",
+            ].some((catName) => {
+              const cat = MOCK_CATEGORIES.find((c) => c.id === item.category_id);
+              return cat?.name === catName;
+            });
+            return {
+              id: item.id,
+              category_id: item.category_id,
+              name: item.name,
+              status: item.status || "AVAILABLE",
+              metadata: item.metadata,
+              station_id: isDrink ? "COLD_BAR" : "HOT_KITCHEN",
+              base_prep_seconds: 300,
+              updated_at: nowIso,
+            };
+          })
+        );
+
+        await Promise.all([
+          supabase.from("menu_item_versions").upsert(
+            MOCK_MENU_VERSIONS.map((ver) => ({
+              id: ver.id,
+              menu_item_id: ver.menu_item_id,
+              description: ver.description,
+              image_url: ver.image_url,
+              metadata: ver.metadata,
+            }))
+          ),
+          supabase.from("menu_prices").upsert(
+            MOCK_MENU_PRICES.map((prc) => ({
+              id: prc.id,
+              menu_item_id: prc.menu_item_id,
+              amount_paise: prc.amount_paise,
+              currency: prc.currency || "INR",
+              effective_from: prc.effective_from || nowIso,
+              effective_to: null,
+            }))
+          ),
+        ]);
+        invalidateMenuCatalogCache();
+      } catch (itemErr) {
+        console.warn("Notice seeding Supabase master items:", itemErr);
+      }
+    })();
+
+    // 3. Broadcast sync event across network
+    void broadcastSyncEvent({
       type: "ITEM_AVAILABILITY_CHANGED",
       stockStatus: "AVAILABLE",
       availability: "AVAILABLE",
@@ -705,14 +655,7 @@ export async function resetToMasterMenuAction(): Promise<{ success: boolean; mes
 
     try {
       revalidateTag("menu-catalog");
-      revalidatePath("/");
-      revalidatePath("/admin/menu");
-      revalidatePath("/menu");
-      revalidatePath("/drinks");
-      revalidatePath("/smol-menu");
     } catch {}
-
-    invalidateAdminOverviewCache();
 
     return {
       success: true,

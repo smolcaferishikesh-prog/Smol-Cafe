@@ -10,6 +10,10 @@ export interface PersistedTablesStore {
 
 const isServer = typeof window === "undefined";
 
+declare global {
+  var __SMOL_PERSISTED_TABLES_STORE_CACHE__: PersistedTablesStore | undefined;
+}
+
 function getPersistenceFilePath(): string | null {
   if (!isServer) return null;
   try {
@@ -24,6 +28,10 @@ function getPersistenceFilePath(): string | null {
 }
 
 function loadPersistedStore(): PersistedTablesStore {
+  if (isServer && globalThis.__SMOL_PERSISTED_TABLES_STORE_CACHE__) {
+    return globalThis.__SMOL_PERSISTED_TABLES_STORE_CACHE__;
+  }
+
   const defaultStore: PersistedTablesStore = {
     deletedTableIds: [],
     deletedTableLabels: [],
@@ -40,22 +48,26 @@ function loadPersistedStore(): PersistedTablesStore {
     if (fs.existsSync(filePath)) {
       const raw = fs.readFileSync(filePath, "utf-8");
       const parsed = JSON.parse(raw);
-      return {
+      const loaded: PersistedTablesStore = {
         deletedTableIds: Array.isArray(parsed.deletedTableIds) ? parsed.deletedTableIds : [],
         deletedTableLabels: Array.isArray(parsed.deletedTableLabels) ? parsed.deletedTableLabels : [],
         tableSectionsMap: typeof parsed.tableSectionsMap === "object" && parsed.tableSectionsMap !== null ? parsed.tableSectionsMap : {},
         customSections: Array.isArray(parsed.customSections) ? parsed.customSections : [],
       };
+      globalThis.__SMOL_PERSISTED_TABLES_STORE_CACHE__ = loaded;
+      return loaded;
     }
   } catch (err) {
     console.warn("[tables-store] Could not read tables-store.json:", err);
   }
 
+  globalThis.__SMOL_PERSISTED_TABLES_STORE_CACHE__ = defaultStore;
   return defaultStore;
 }
 
 function savePersistedStore(store: PersistedTablesStore): void {
   if (!isServer) return;
+  globalThis.__SMOL_PERSISTED_TABLES_STORE_CACHE__ = store;
   const filePath = getPersistenceFilePath();
   if (!filePath) return;
 
@@ -79,7 +91,6 @@ import { normalizeTableLabel } from "./table-label";
 export function isTableDeleted(idOrLabel: string): boolean {
   if (!idOrLabel) return false;
   const store = loadPersistedStore();
-  const query = idOrLabel.trim().toLowerCase();
 
   if (store.deletedTableIds.includes(idOrLabel.trim())) {
     return true;
@@ -113,25 +124,34 @@ export function recordDeletedTable(id: string, label: string): void {
   }
 
   savePersistedStore({
+    ...store,
     deletedTableIds: Array.from(newIds),
     deletedTableLabels: Array.from(newLabels),
   });
 }
 
 /**
- * Remove deleted status when an admin re-creates a table with that name
+ * Remove deleted status when an admin re-creates a table with that name or multiple variants
  */
-export function unrecordDeletedTable(idOrLabel: string): void {
-  if (!idOrLabel || !idOrLabel.trim()) return;
-  const store = loadPersistedStore();
-  const raw = idOrLabel.trim();
-  const variations = new Set(normalizeTableLabel(raw).map((v) => v.toLowerCase()));
-  variations.add(raw.toLowerCase());
+export function unrecordDeletedTable(idOrLabel: string | string[]): void {
+  const inputs = Array.isArray(idOrLabel) ? idOrLabel : [idOrLabel];
+  const validInputs = inputs.map((x) => (x || "").trim()).filter(Boolean);
+  if (validInputs.length === 0) return;
 
-  const updatedIds = store.deletedTableIds.filter((id) => id !== raw);
+  const store = loadPersistedStore();
+  const rawSet = new Set(validInputs);
+  const variations = new Set<string>();
+
+  for (const raw of validInputs) {
+    variations.add(raw.toLowerCase());
+    normalizeTableLabel(raw).forEach((v) => variations.add(v.toLowerCase()));
+  }
+
+  const updatedIds = store.deletedTableIds.filter((id) => !rawSet.has(id));
   const updatedLabels = store.deletedTableLabels.filter((lbl) => !variations.has(lbl.toLowerCase()));
 
   savePersistedStore({
+    ...store,
     deletedTableIds: updatedIds,
     deletedTableLabels: updatedLabels,
   });
@@ -139,8 +159,6 @@ export function unrecordDeletedTable(idOrLabel: string): void {
 
 /**
  * Helper to filter out any deleted tables from a list.
- * Note: Database tables with a real UUID (not present in deletedTableIds) are always
- * considered active and never suppressed by stale label tombstones.
  */
 export function filterDeletedTables<T extends { id?: string; label?: string }>(tables: T[]): T[] {
   const store = loadPersistedStore();
@@ -148,9 +166,7 @@ export function filterDeletedTables<T extends { id?: string; label?: string }>(t
   const deletedLabels = new Set(store.deletedTableLabels.map((l) => l.toLowerCase()));
 
   return tables.filter((t) => {
-    // 1. If explicit table ID is in tombstone, filter it out
     if (t.id && deletedIds.has(t.id)) return false;
-    // 2. Also check label tombstones so newly created tables with mismatched IDs or variations are filtered
     if (t.label) {
       const vars = normalizeTableLabel(t.label);
       if (vars.some((v) => deletedLabels.has(v))) return false;

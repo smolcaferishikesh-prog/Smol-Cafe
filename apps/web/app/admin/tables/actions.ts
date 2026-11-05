@@ -1,15 +1,14 @@
 "use server";
 
+import crypto from "crypto";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireStaffAuth } from "@/lib/auth/rbac";
-import { revalidatePath } from "next/cache";
 import { broadcastSyncEvent } from "@/lib/sync-events";
 import { invalidateAdminOverviewCache } from "@/app/admin/actions";
 import {
   filterDeletedTables,
   recordDeletedTable,
   unrecordDeletedTable,
-  isTableDeleted,
   getPersistedSectionsMap,
   getPersistedCustomSections,
   recordTableSection,
@@ -63,6 +62,8 @@ const LEGACY_SECTIONS = new Set([
 declare global {
   var __SMOL_CUSTOM_SECTIONS__: string[] | undefined;
   var __SMOL_TABLE_SECTIONS_MAP__: Record<string, string> | undefined;
+  var __SMOL_DEFAULT_LOCATION_ID__: string | undefined;
+  var __SMOL_HAS_SECTION_COLUMN__: boolean | undefined;
 }
 
 const DEFAULT_ZONE_MAP: Record<string, string> = {
@@ -143,8 +144,12 @@ export async function fetchTablesAndSectionsAction(): Promise<{
     const tablesData = tablesRes.data;
     const sessionsData = sessionsRes.data;
 
-    const occupiedTableIds = new Set((sessionsData || []).map((s: { table_id: string }) => s.table_id));
+    // Cache location_id from existing tables so createTableAction never needs an extra DB lookup
+    if (tablesData && tablesData.length > 0 && tablesData[0].location_id) {
+      globalThis.__SMOL_DEFAULT_LOCATION_ID__ = tablesData[0].location_id;
+    }
 
+    const occupiedTableIds = new Set((sessionsData || []).map((s: { table_id: string }) => s.table_id));
     const sectionMap = getActiveSectionsMap();
 
     const tables: DiningTableRecord[] = (tablesData || []).map((t: any) => {
@@ -183,7 +188,7 @@ export async function fetchTablesAndSectionsAction(): Promise<{
 }
 
 /**
- * Add a new dining table
+ * Add a new dining table (Parallelized & Non-Blocking)
  */
 export async function createTableAction(input: CreateTableInput): Promise<{
   success: boolean;
@@ -202,97 +207,105 @@ export async function createTableAction(input: CreateTableInput): Promise<{
     }
 
     const supabase = createAdminClient();
-
-    // Check if table label already exists
-    const { data: existing } = await supabase
-      .from("dining_tables")
-      .select("id")
-      .eq("label", label)
-      .maybeSingle();
-
-    if (existing) {
-      return { success: false, message: `Table "${label}" already exists. Please choose a unique name.` };
-    }
-
     const cleanNum = label.padStart(2, "0");
     const section = input.section?.trim() || "smol-cafe";
     const seats = Number(input.seats) || 2;
     const active = input.active !== undefined ? input.active : true;
 
-    // 1. Fetch valid location UUID (cached to eliminate serial DB lookup latency)
-    let locationId: string | null = (globalThis as unknown as { __SMOL_DEFAULT_LOCATION_ID__?: string }).__SMOL_DEFAULT_LOCATION_ID__ || null;
+    // 1. Check duplicate label AND resolve locationId in parallel in a single round-trip
+    const cachedLocationId = globalThis.__SMOL_DEFAULT_LOCATION_ID__ || null;
+    const [existingRes, locRes] = await Promise.all([
+      supabase
+        .from("dining_tables")
+        .select("id, active")
+        .eq("label", label)
+        .maybeSingle(),
+      cachedLocationId
+        ? Promise.resolve({ data: { id: cachedLocationId } })
+        : supabase.from("locations").select("id").limit(1).maybeSingle(),
+    ]);
+
+    let locationId = cachedLocationId || locRes?.data?.id || null;
     if (!locationId) {
-      const { data: loc } = await supabase.from("locations").select("id").limit(1).maybeSingle();
-      if (loc) {
-        locationId = loc.id;
-        (globalThis as unknown as { __SMOL_DEFAULT_LOCATION_ID__?: string }).__SMOL_DEFAULT_LOCATION_ID__ = loc.id;
-      } else {
-        const { data: newLoc } = await supabase
-          .from("locations")
-          .insert({ name: "smol café · rishikesh", timezone: "Asia/Kolkata" })
-          .select("id")
-          .single();
-        locationId = newLoc?.id || null;
-        if (locationId) {
-          (globalThis as unknown as { __SMOL_DEFAULT_LOCATION_ID__?: string }).__SMOL_DEFAULT_LOCATION_ID__ = locationId;
+      const { data: newLoc } = await supabase
+        .from("locations")
+        .insert({ name: "smol café · rishikesh", timezone: "Asia/Kolkata" })
+        .select("id")
+        .single();
+      locationId = newLoc?.id || "11111111-1111-1111-1111-111111111111";
+    }
+    globalThis.__SMOL_DEFAULT_LOCATION_ID__ = locationId;
+
+    // If a soft-deleted/inactive table with this label exists in DB, reactivate & update it in 1 step
+    let tableId = "";
+    if (existingRes.data?.id) {
+      const existingTable = existingRes.data as { id: string; active?: boolean };
+      const isCurrentlyDeleted = !existingTable.active;
+      if (!isCurrentlyDeleted) {
+        // Also check if it was marked deleted in table-store
+        const activeFiltered = filterDeletedTables([{ id: existingTable.id, label }]);
+        if (activeFiltered.length > 0) {
+          return { success: false, message: `Table "${label}" already exists. Please choose a unique name.` };
         }
       }
-    }
-
-    if (!locationId) {
-      return { success: false, message: "Could not resolve restaurant location." };
-    }
-
-    // 2. Insert dining table (with section support for PostgreSQL dining_tables schema)
-    let inserted: any = null;
-    let insertError: any = null;
-
-    const res = await supabase
-      .from("dining_tables")
-      .insert({
+      tableId = existingTable.id;
+      const updatePayload: Record<string, unknown> = {
+        label,
+        seats,
+        active,
+        ...(globalThis.__SMOL_HAS_SECTION_COLUMN__ !== false ? { section } : {}),
+      };
+      const upd = await supabase.from("dining_tables").update(updatePayload).eq("id", tableId);
+      if (upd.error && upd.error.message?.includes("section")) {
+        globalThis.__SMOL_HAS_SECTION_COLUMN__ = false;
+        await supabase.from("dining_tables").update({ label, seats, active }).eq("id", tableId);
+      }
+    } else {
+      // 2. Insert new dining table directly
+      const generatedId = crypto.randomUUID();
+      const insertPayload: Record<string, unknown> = {
+        id: generatedId,
         location_id: locationId,
         label,
         seats,
         active,
-        section,
-      } as any)
-      .select()
-      .single();
+        ...(globalThis.__SMOL_HAS_SECTION_COLUMN__ !== false ? { section } : {}),
+      };
 
-    if (res.error && res.error.message?.includes("section")) {
-      // Graceful fallback if PostgreSQL section column migration hasn't been executed yet
-      const fallback = await supabase
+      const res = await supabase
         .from("dining_tables")
-        .insert({
-          location_id: locationId,
-          label,
-          seats,
-          active,
-        })
-        .select()
+        .insert(insertPayload as any)
+        .select("id")
         .single();
-      inserted = fallback.data;
-      insertError = fallback.error;
-    } else {
-      inserted = res.data;
-      insertError = res.error;
+
+      if (res.error && res.error.message?.includes("section")) {
+        globalThis.__SMOL_HAS_SECTION_COLUMN__ = false;
+        const fallback = await supabase
+          .from("dining_tables")
+          .insert({
+            id: generatedId,
+            location_id: locationId,
+            label,
+            seats,
+            active,
+          })
+          .select("id")
+          .single();
+        if (fallback.error) {
+          return { success: false, message: fallback.error.message };
+        }
+        tableId = fallback.data?.id || generatedId;
+      } else if (res.error) {
+        return { success: false, message: res.error.message };
+      } else {
+        tableId = res.data?.id || generatedId;
+      }
     }
 
-    if (insertError) {
-      return { success: false, message: insertError.message };
-    }
-
-    const tableId = inserted.id;
-
-    // Unrecord from deleted tables store in case this name was previously deleted
-    unrecordDeletedTable(label);
-    unrecordDeletedTable(cleanNum);
-    unrecordDeletedTable(`table-${cleanNum}`);
-    unrecordDeletedTable(`t-${cleanNum}`);
-    unrecordDeletedTable(tableId);
-
-    // 3. Save section mapping in persistent store & runtime registry
+    // 3. Single batched write to clear tombstones and record section
+    unrecordDeletedTable([label, cleanNum, `table-${cleanNum}`, `t-${cleanNum}`, tableId]);
     recordTableSection(tableId, label, section);
+
     if (!globalThis.__SMOL_TABLE_SECTIONS_MAP__) {
       globalThis.__SMOL_TABLE_SECTIONS_MAP__ = {};
     }
@@ -300,15 +313,6 @@ export async function createTableAction(input: CreateTableInput): Promise<{
     globalThis.__SMOL_TABLE_SECTIONS_MAP__[label] = section;
     globalThis.__SMOL_TABLE_SECTIONS_MAP__[cleanNum] = section;
 
-    // 4. Generate table QR token
-    const tokenStr = `table-${label.toLowerCase().replace(/\s+/g, "-")}`;
-    await supabase.from("table_qr_tokens").insert({
-      table_id: tableId,
-      token_hash: tokenStr,
-      version: 1,
-    });
-
-    // Make sure section is registered in custom sections if new
     if (!DEFAULT_SECTIONS.includes(section)) {
       recordCustomSection(section);
       if (!globalThis.__SMOL_CUSTOM_SECTIONS__) {
@@ -319,14 +323,21 @@ export async function createTableAction(input: CreateTableInput): Promise<{
       }
     }
 
-    try {
-      revalidatePath("/admin/tables");
-      revalidatePath("/");
-    } catch {
-      // Non-fatal if revalidation context is absent
-    }
+    // 4. Fire-and-forget QR token upsert and Realtime broadcast so response returns immediately
+    const tokenStr = `table-${label.toLowerCase().replace(/\s+/g, "-")}`;
+    void supabase
+      .from("table_qr_tokens")
+      .upsert(
+        {
+          table_id: tableId,
+          token_hash: tokenStr,
+          version: 1,
+        },
+        { onConflict: "token_hash" }
+      )
+      .then(() => {});
 
-    invalidateAdminOverviewCache();
+    void invalidateAdminOverviewCache();
 
     const newTable: DiningTableRecord = {
       id: tableId,
@@ -338,7 +349,7 @@ export async function createTableAction(input: CreateTableInput): Promise<{
       isOccupied: false,
     };
 
-    broadcastSyncEvent({
+    void broadcastSyncEvent({
       type: "TABLE_CREATED",
       tableId,
       tableLabel: label,
@@ -365,7 +376,7 @@ export async function createTableAction(input: CreateTableInput): Promise<{
 }
 
 /**
- * Edit an existing dining table
+ * Edit an existing dining table (Single Round-Trip)
  */
 export async function updateTableAction(
   tableId: string,
@@ -383,12 +394,13 @@ export async function updateTableAction(
   try {
     const supabase = createAdminClient();
 
-    // Update columns in PostgreSQL dining_tables schema (including section)
     const dbUpdates: Record<string, unknown> = {};
     if (input.label !== undefined) dbUpdates.label = input.label.trim();
     if (input.seats !== undefined) dbUpdates.seats = Number(input.seats);
     if (input.active !== undefined) dbUpdates.active = input.active;
-    if (input.section !== undefined) dbUpdates.section = input.section.trim();
+    if (input.section !== undefined && globalThis.__SMOL_HAS_SECTION_COLUMN__ !== false) {
+      dbUpdates.section = input.section.trim();
+    }
 
     let updated: Record<string, unknown> | null = null;
     if (Object.keys(dbUpdates).length > 0) {
@@ -399,8 +411,8 @@ export async function updateTableAction(
         .select()
         .single();
 
-      // Graceful fallback if PostgreSQL section column migration hasn't been executed yet
       if (updateError && updateError.message?.includes("section")) {
+        globalThis.__SMOL_HAS_SECTION_COLUMN__ = false;
         delete dbUpdates.section;
         const retry = await supabase
           .from("dining_tables")
@@ -416,19 +428,11 @@ export async function updateTableAction(
         return { success: false, message: updateError.message };
       }
       updated = data as Record<string, unknown>;
-    } else {
-      const { data } = await supabase
-        .from("dining_tables")
-        .select("*")
-        .eq("id", tableId)
-        .single();
-      updated = data as Record<string, unknown>;
     }
 
     const cleanNum = (updated?.label || input.label || "").toString().padStart(2, "0");
     const targetLabel = (updated?.label as string) || input.label || "";
 
-    // Handle section update in persistent store & runtime memory
     const effectiveSection =
       (input.section ? input.section.trim() : undefined) ||
       (updated?.section as string) ||
@@ -457,25 +461,18 @@ export async function updateTableAction(
       }
     }
 
-    try {
-      revalidatePath("/admin/tables");
-      revalidatePath("/");
-    } catch {
-      // Non-fatal if revalidation context is absent
-    }
-
-    invalidateAdminOverviewCache();
+    void invalidateAdminOverviewCache();
 
     const updatedTable: DiningTableRecord = {
       id: (updated?.id as string) || tableId,
-      location_id: (updated?.location_id as string) || "",
+      location_id: (updated?.location_id as string) || globalThis.__SMOL_DEFAULT_LOCATION_ID__ || "",
       label: (updated?.label as string) || input.label || "",
       seats: updated?.seats !== undefined ? Number(updated.seats) : (input.seats || 2),
       active: updated?.active !== undefined ? Boolean(updated.active) : (input.active !== undefined ? input.active : true),
       section: effectiveSection,
     };
 
-    broadcastSyncEvent({
+    void broadcastSyncEvent({
       type: "TABLE_RENAMED",
       tableId: updatedTable.id,
       tableLabel: updatedTable.label,
@@ -501,7 +498,7 @@ export async function updateTableAction(
 }
 
 /**
- * Delete a dining table
+ * Delete a dining table (Parallelized & Instant Return)
  */
 export async function deleteTableAction(tableId: string, knownLabel?: string): Promise<{
   success: boolean;
@@ -520,22 +517,17 @@ export async function deleteTableAction(tableId: string, knownLabel?: string): P
 
     const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(tableId);
 
-    // 0. Fetch table details to get label or resolve real UUID if tableId was temporary
-    if (isUuid) {
+    // Only query DB for ID/label if one of them is missing
+    if (isUuid && !tableLabel) {
       try {
         const { data: tbl } = await supabase
           .from("dining_tables")
           .select("id, label")
           .eq("id", tableId)
           .maybeSingle();
-        if (tbl?.label) {
-          tableLabel = tbl.label;
-        }
-      } catch {
-        // ignore
-      }
-    } else if (tableLabel) {
-      // Resolve actual UUID from database by matching label
+        if (tbl?.label) tableLabel = tbl.label;
+      } catch {}
+    } else if (!isUuid && tableLabel) {
       try {
         const { data: tbl } = await supabase
           .from("dining_tables")
@@ -546,12 +538,10 @@ export async function deleteTableAction(tableId: string, knownLabel?: string): P
           resolvedTableId = tbl.id;
           if (tbl.label) tableLabel = tbl.label;
         }
-      } catch {
-        // ignore
-      }
+      } catch {}
     }
 
-    // Record to persistent deleted store immediately (prevent resurrection)
+    // 1. Record to persistent deleted store immediately (prevent resurrection)
     if (resolvedTableId) {
       recordDeletedTable(resolvedTableId, tableLabel);
     }
@@ -559,46 +549,7 @@ export async function deleteTableAction(tableId: string, knownLabel?: string): P
       recordDeletedTable(tableId, tableLabel);
     }
 
-    const targetUuid = isUuid
-      ? tableId
-      : /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(resolvedTableId)
-      ? resolvedTableId
-      : null;
-
-    if (targetUuid) {
-      // 1. Close or delete any existing table sessions for this table
-      const { error: sessionDelError } = await supabase
-        .from("table_sessions")
-        .delete()
-        .eq("table_id", targetUuid);
-
-      if (sessionDelError) {
-        // Fallback: try closing if delete is restricted by foreign keys
-        await supabase
-          .from("table_sessions")
-          .update({ status: "CLOSED", closed_at: new Date().toISOString() })
-          .eq("table_id", targetUuid);
-      }
-
-      // 2. Remove associated QR tokens
-      await supabase.from("table_qr_tokens").delete().eq("table_id", targetUuid);
-
-      // 3. Delete the table itself
-      const { error: deleteError } = await supabase
-        .from("dining_tables")
-        .delete()
-        .eq("id", targetUuid);
-
-      if (deleteError) {
-        // If hard delete fails due to historical orders, deactivate table so it never shows
-        await supabase
-          .from("dining_tables")
-          .update({ active: false })
-          .eq("id", targetUuid);
-      }
-    }
-
-    // 4. Clean up runtime memory map
+    // 2. Clean up runtime memory map immediately
     if (globalThis.__SMOL_TABLE_SECTIONS_MAP__) {
       delete globalThis.__SMOL_TABLE_SECTIONS_MAP__[tableId];
       if (resolvedTableId) {
@@ -609,17 +560,39 @@ export async function deleteTableAction(tableId: string, knownLabel?: string): P
       }
     }
 
-    try {
-      revalidatePath("/admin/tables");
-      revalidatePath("/smol-backdoor/admin");
-      revalidatePath("/");
-    } catch {
-      // Non-fatal if context is absent
+    const targetUuid = isUuid
+      ? tableId
+      : /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(resolvedTableId)
+      ? resolvedTableId
+      : null;
+
+    // 3. Execute DB cleanup in parallel
+    if (targetUuid) {
+      await Promise.all([
+        supabase
+          .from("table_sessions")
+          .update({ status: "CLOSED", closed_at: new Date().toISOString() })
+          .eq("table_id", targetUuid)
+          .eq("status", "OPEN"),
+        supabase.from("table_qr_tokens").delete().eq("table_id", targetUuid),
+      ]);
+
+      const { error: deleteError } = await supabase
+        .from("dining_tables")
+        .delete()
+        .eq("id", targetUuid);
+
+      if (deleteError) {
+        await supabase
+          .from("dining_tables")
+          .update({ active: false })
+          .eq("id", targetUuid);
+      }
     }
 
-    invalidateAdminOverviewCache();
+    void invalidateAdminOverviewCache();
 
-    broadcastSyncEvent({
+    void broadcastSyncEvent({
       type: "TABLE_DELETED",
       tableId: resolvedTableId || tableId,
       tableLabel,
@@ -673,28 +646,16 @@ export async function createSectionAction(name: string): Promise<{
     globalThis.__SMOL_CUSTOM_SECTIONS__.push(trimmed);
     recordCustomSection(trimmed);
 
-    try {
-      revalidatePath("/admin");
-      revalidatePath("/admin/tables");
-      revalidatePath("/smol-backdoor/admin");
-    } catch {
-      // Non-fatal if revalidation context is absent
-    }
-
     const allSections = Array.from(new Set([...DEFAULT_SECTIONS, ...globalThis.__SMOL_CUSTOM_SECTIONS__, ...getPersistedCustomSections()]));
 
-    try {
-      await broadcastSyncEvent({
-        type: "SETTINGS_UPDATED",
-        metadata: {
-          action: "SECTIONS_UPDATED",
-          sections: allSections,
-        },
-        timestamp: Date.now(),
-      });
-    } catch {
-      // Non-fatal broadcast
-    }
+    void broadcastSyncEvent({
+      type: "SETTINGS_UPDATED",
+      metadata: {
+        action: "SECTIONS_UPDATED",
+        sections: allSections,
+      },
+      timestamp: Date.now(),
+    });
 
     return {
       success: true,
@@ -750,28 +711,16 @@ export async function deleteSectionAction(name: string): Promise<{
     }
     deleteCustomSectionFromStore(trimmed);
 
-    try {
-      revalidatePath("/admin");
-      revalidatePath("/admin/tables");
-      revalidatePath("/smol-backdoor/admin");
-    } catch {
-      // Non-fatal if revalidation context is absent
-    }
-
     const allSections = Array.from(new Set([...DEFAULT_SECTIONS, ...(globalThis.__SMOL_CUSTOM_SECTIONS__ || []), ...getPersistedCustomSections()]));
 
-    try {
-      await broadcastSyncEvent({
-        type: "SETTINGS_UPDATED",
-        metadata: {
-          action: "SECTIONS_UPDATED",
-          sections: allSections,
-        },
-        timestamp: Date.now(),
-      });
-    } catch {
-      // Non-fatal broadcast
-    }
+    void broadcastSyncEvent({
+      type: "SETTINGS_UPDATED",
+      metadata: {
+        action: "SECTIONS_UPDATED",
+        sections: allSections,
+      },
+      timestamp: Date.now(),
+    });
 
     return {
       success: true,

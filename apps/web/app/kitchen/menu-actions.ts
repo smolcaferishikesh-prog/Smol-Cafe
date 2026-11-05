@@ -3,7 +3,7 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireStaffAuth } from "@/lib/auth/rbac";
 import { revalidatePath } from "next/cache";
-import { getMenuCatalog, getMenuOverridesStore, type CategoryWithItems } from "@/lib/queries/menu";
+import { getMenuCatalog, getMenuOverridesStore, savePersistedMenuStore, invalidateMenuCatalogCache, type CategoryWithItems } from "@/lib/queries/menu";
 import { broadcastSyncEvent } from "@/lib/sync-events";
 
 export type ItemStockStatus = "IN_STOCK" | "LOW_STOCK" | "SOLD_OUT";
@@ -204,25 +204,30 @@ export async function updateMenuItemStockAction(
       },
     };
 
-    // Also update in Supabase / Mock database if available
-    try {
-      const supabase = createAdminClient();
-      await supabase
-        .from("menu_items")
-        .update({
-          status: effectiveAdminStatus,
-          metadata: {
-            availability: stockStatus,
-            low_stock_portions: stockStatus === "LOW_STOCK" ? (lowStockCount ?? 3) : null,
-          },
-        })
-        .eq("id", itemId);
-    } catch {
-      // ignore
-    }
+    savePersistedMenuStore();
+
+    // Update in Supabase in background without blocking UI response
+    void (async () => {
+      try {
+        const supabase = createAdminClient();
+        await supabase
+          .from("menu_items")
+          .update({
+            status: effectiveAdminStatus,
+            metadata: {
+              availability: stockStatus,
+              low_stock_portions: stockStatus === "LOW_STOCK" ? (lowStockCount ?? 3) : null,
+            },
+          })
+          .eq("id", itemId);
+        invalidateMenuCatalogCache();
+      } catch {
+        // ignore
+      }
+    })();
 
     // Broadcast sync event to all connected interfaces (Customer, Admin, KDS, Barista)
-    broadcastSyncEvent({
+    void broadcastSyncEvent({
       type: "ITEM_AVAILABILITY_CHANGED",
       itemId,
       stockStatus,
