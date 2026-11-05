@@ -1,3 +1,4 @@
+import { notFound } from "next/navigation";
 import { getTableSessionCookie } from "@/lib/session";
 import { resolveQrToken } from "@/app/t/actions";
 import { getMenuCatalog } from "@/lib/queries/menu";
@@ -33,12 +34,10 @@ export default async function SmolMenuPage({ searchParams }: SmolMenuPageProps) 
     if (res.success && res.session) {
       session = res.session;
     }
-  } else if (!session || !session.sessionId) {
-    // Default fallback to Table 01 for direct visits
-    const res = await resolveQrToken("table-01", true);
-    if (res.success && res.session) {
-      session = res.session;
-    }
+  }
+
+  if (!session || !session.sessionId) {
+    notFound();
   }
 
   // Fetch pending order for customer editing flow

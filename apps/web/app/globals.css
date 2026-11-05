@@ -659,3 +659,18 @@ html.dark .hero-brighter-days,
   color: #c084fc !important;
   text-decoration-color: #c084fc !important;
 }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   STRICT NAVBAR SUPPRESSION ON 404, ERROR, OR UNASSIGNED TABLE SCREENS
+   ══════════════════════════════════════════════════════════════════════════ */
+body[data-hide-navbar="true"] nav[aria-label="Dining navigation"],
+body[data-is404="true"] nav[aria-label="Dining navigation"],
+body:has([data-hide-navbar="true"]) nav[aria-label="Dining navigation"],
+body:has([data-not-found="true"]) nav[aria-label="Dining navigation"],
+[data-hide-navbar="true"] ~ nav[aria-label="Dining navigation"],
+[data-not-found="true"] ~ nav[aria-label="Dining navigation"] {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}

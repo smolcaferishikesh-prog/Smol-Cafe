@@ -3,6 +3,7 @@
 import { getTableSessionCookie, isValidUuid } from "@/lib/session";
 import { resolveQrToken } from "@/app/t/actions";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { requireStaffAuth } from "@/lib/auth/rbac";
 import type { TableSessionStatus, OrderStatus } from "@smol-cafe/db";
 import { getPhoneUuid, normalizePhoneNumber, doesOrderMatchCustomerPhone } from "@/lib/customer-phone";
 
@@ -258,6 +259,11 @@ export async function bypassPaymentAction(params?: {
   amountPaise?: number;
   tableLabel?: string;
 }): Promise<BypassPaymentResult> {
+  const auth = await requireStaffAuth(["cashier", "admin", "super_admin"]);
+  if (!auth.authorized) {
+    return { success: false, message: auth.message || "Unauthorized: Staff access required." };
+  }
+
   let session = await getTableSessionCookie();
 
   if (!session || !session.sessionId || !isValidUuid(session.sessionId)) {
@@ -397,6 +403,11 @@ export async function recordCashPaymentAction(
   staffIdentifier = "Staff",
   idempotencyKey?: string
 ): Promise<RecordCashPaymentResult> {
+  const auth = await requireStaffAuth(["cashier", "admin", "super_admin"]);
+  if (!auth.authorized) {
+    return { success: false, error: "UNAUTHORIZED", message: auth.message || "Unauthorized: Cashier access required." };
+  }
+
   const supabase = createAdminClient();
 
   try {

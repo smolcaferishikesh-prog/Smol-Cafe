@@ -60,13 +60,17 @@ export const metadata: Metadata = {
   },
 };
 
+import { getTableSessionCookie } from "@/lib/session";
 import { LayoutShell } from "@/components/navigation/LayoutShell";
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const session = await getTableSessionCookie();
+  const hasTableSession = Boolean(session?.sessionId);
+
   return (
     <html
       lang="en"
@@ -119,7 +123,7 @@ export default function RootLayout({
         suppressHydrationWarning
         className="antialiased min-h-screen bg-[#F3E7D3] dark:bg-[#241F1C] text-[#241F1C] dark:text-[#F3E7D3] font-sans selection:bg-[#B72E35]/20 selection:text-[#B72E35]"
       >
-        <LayoutShell>
+        <LayoutShell initialHasTableSession={hasTableSession}>
           {children}
         </LayoutShell>
       </body>

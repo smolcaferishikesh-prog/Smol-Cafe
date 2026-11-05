@@ -4,6 +4,7 @@ import { AlertTriangle, Home } from "lucide-react";
 import { TableActionBar } from "@/components/table/TableActionBar";
 import { TableGuestOnboardingForm } from "@/components/table/TableGuestOnboardingForm";
 import { ThemeToggle } from "@/components/common/ThemeToggle";
+import { HideNavbarOnMount } from "@/components/common/HideNavbarOnMount";
 
 export const dynamic = "force-dynamic";
 
@@ -45,7 +46,12 @@ export default async function TableEntryPage({ params }: PageProps) {
   // 1. Invalid or Revoked QR Error Screen (Refined smol café brand aesthetic)
   if (!result.success || !result.session) {
     return (
-      <div className="relative min-h-[100dvh] flex flex-col justify-between items-center bg-[#F3E7D3] dark:bg-[#151110] text-[#241F1C] dark:text-[#FAF4EB] px-4 py-6 transition-colors duration-200 select-none overflow-x-hidden">
+      <div
+        data-hide-navbar="true"
+        data-not-found="true"
+        className="relative min-h-[100dvh] flex flex-col justify-between items-center bg-[#F3E7D3] dark:bg-[#151110] text-[#241F1C] dark:text-[#FAF4EB] px-4 py-6 transition-colors duration-200 select-none overflow-x-hidden"
+      >
+        <HideNavbarOnMount />
         {/* Floating Theme Toggle (Day / Night switch) */}
         <div className="absolute top-4 right-4 z-40">
           <ThemeToggle variant="icon" />

@@ -5,23 +5,67 @@ import { usePathname } from "next/navigation";
 import { InstallAppPrompt } from "@/components/common/InstallAppPrompt";
 import { OfflineSyncBanner } from "@/components/common/OfflineSyncBanner";
 import { BottomNavBar } from "@/components/navigation/BottomNavBar";
-import { AppSplashScreen } from "@/components/common/AppSplashScreen";
 import { CartProvider } from "@/context/CartContext";
 
 interface LayoutShellProps {
   children: React.ReactNode;
+  initialHasTableSession?: boolean;
 }
 
 /**
  * Wraps children and conditionally renders the RoleSwitcherBar and BottomNavBar.
  * Persistent across client navigations so BottomNavBar never flickers or disappears.
+ * Ensures the bottom navbar is strictly visible ONLY for active table customers and hidden on all 404/error pages.
  */
-export const LayoutShell: React.FC<LayoutShellProps> = ({ children }) => {
+export const LayoutShell: React.FC<LayoutShellProps> = ({
+  children,
+  initialHasTableSession = false,
+}) => {
   const pathname = usePathname();
+  const [hasTableSession, setHasTableSession] = React.useState(initialHasTableSession);
+  const [isErrorOr404, setIsErrorOr404] = React.useState(false);
 
-  // The RoleSwitcherBar is an internal staff development/operations bar.
-  // It must NEVER be shown to customers (not on landing "/", not on table routes "/t/...",
-  // nor on customer menu, cart, orders, or bill).
+  React.useEffect(() => {
+    const updateSessionState = () => {
+      if (typeof document !== "undefined") {
+        const hasCookie = document.cookie.includes("smol_table_active=1");
+        const isTableRoute =
+          Boolean(pathname?.startsWith("/t/")) ||
+          Boolean(pathname?.startsWith("/smol-cafe/table-")) ||
+          Boolean(pathname?.includes("/table-"));
+
+        setHasTableSession(hasCookie || isTableRoute || initialHasTableSession);
+
+        const isMarkedHide =
+          document.body.dataset.hideNavbar === "true" ||
+          document.body.dataset.is404 === "true" ||
+          document.querySelector("[data-hide-navbar='true']") !== null ||
+          pathname === "/404" ||
+          pathname?.startsWith("/404");
+
+        setIsErrorOr404(Boolean(isMarkedHide));
+      }
+    };
+
+    updateSessionState();
+
+    const observer = new MutationObserver(() => {
+      updateSessionState();
+    });
+
+    if (typeof document !== "undefined") {
+      observer.observe(document.body, {
+        attributes: true,
+        attributeFilter: ["data-hide-navbar", "data-is404"],
+        childList: true,
+      });
+    }
+
+    return () => {
+      observer.disconnect();
+    };
+  }, [pathname, initialHasTableSession]);
+
   const isCustomerFacingRoute =
     pathname === "/" ||
     pathname === "/home" ||
@@ -41,7 +85,7 @@ export const LayoutShell: React.FC<LayoutShellProps> = ({ children }) => {
     pathname?.startsWith("/music") ||
     pathname?.startsWith("/drinks");
 
-  const showBottomNavBar =
+  const isCustomerNavRoute =
     pathname === "/home" ||
     pathname?.startsWith("/home") ||
     pathname?.startsWith("/smol-menu") ||
@@ -53,6 +97,13 @@ export const LayoutShell: React.FC<LayoutShellProps> = ({ children }) => {
     pathname?.startsWith("/account") ||
     pathname?.startsWith("/events") ||
     pathname?.startsWith("/music");
+
+  // Bottom navbar ONLY shows if user has an active table session AND is on a customer route AND not on 404/error
+  const showBottomNavBar =
+    !isErrorOr404 &&
+    pathname !== "/404" &&
+    hasTableSession &&
+    isCustomerNavRoute;
 
   // Real-time synchronization of mobile status bar color (<meta name="theme-color">)
   React.useEffect(() => {
@@ -90,7 +141,6 @@ export const LayoutShell: React.FC<LayoutShellProps> = ({ children }) => {
 
   return (
     <CartProvider>
-      <AppSplashScreen />
       {/* Offline sync banner disabled as requested */}
       {/* <OfflineSyncBanner /> */}
       {children}

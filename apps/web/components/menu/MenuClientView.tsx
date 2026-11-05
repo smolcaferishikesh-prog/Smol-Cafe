@@ -66,7 +66,7 @@ const MenuContentInner: React.FC<MenuClientViewProps> = ({
             name: ordItem.name,
             description: "Customer ordered item",
             pricePaise: ordItem.unitPricePaise,
-            imageUrl: "/images/food-placeholder.png",
+            imageUrl: null,
             categoryId: "cat_default",
             status: "ACTIVE",
             metadata: { dietary: "Vegetarian" },

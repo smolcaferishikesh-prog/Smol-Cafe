@@ -1,3 +1,4 @@
+import { notFound } from "next/navigation";
 import { fetchActiveOrdersAction } from "./actions";
 import { OrderStatusClientView } from "@/components/orders/OrderStatusClientView";
 
@@ -8,6 +9,10 @@ export const metadata = {
 
 export default async function OrdersPage() {
   const result = await fetchActiveOrdersAction();
+
+  if (!result.hasSession) {
+    notFound();
+  }
 
   return (
     <OrderStatusClientView

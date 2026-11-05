@@ -1,8 +1,9 @@
 "use server";
 
 import { createAdminClient } from "@/lib/supabase/admin";
+import { requireStaffAuth } from "@/lib/auth/rbac";
 import { revalidatePath } from "next/cache";
-import { getMenuCatalog, getMenuOverridesStore, type CategoryWithItems } from "@/lib/queries/menu";
+import { getMenuCatalog, getMenuOverridesStore, savePersistedMenuStore, invalidateMenuCatalogCache, type CategoryWithItems } from "@/lib/queries/menu";
 import { broadcastSyncEvent } from "@/lib/sync-events";
 
 export type ItemStockStatus = "IN_STOCK" | "LOW_STOCK" | "SOLD_OUT";
@@ -176,6 +177,11 @@ export async function updateMenuItemStockAction(
   stockStatus: ItemStockStatus,
   lowStockCount?: number
 ): Promise<{ success: boolean; message: string; itemId: string; stockStatus: ItemStockStatus }> {
+  const auth = await requireStaffAuth(["kitchen", "chef", "barista", "admin", "super_admin"]);
+  if (!auth.authorized) {
+    return { success: false, message: auth.message || "Unauthorized.", itemId, stockStatus };
+  }
+
   try {
     const stockStore = getStockStore();
     const existing = stockStore[itemId] || { stockStatus: "IN_STOCK" };
@@ -198,25 +204,30 @@ export async function updateMenuItemStockAction(
       },
     };
 
-    // Also update in Supabase / Mock database if available
-    try {
-      const supabase = createAdminClient();
-      await supabase
-        .from("menu_items")
-        .update({
-          status: effectiveAdminStatus,
-          metadata: {
-            availability: stockStatus,
-            low_stock_portions: stockStatus === "LOW_STOCK" ? (lowStockCount ?? 3) : null,
-          },
-        })
-        .eq("id", itemId);
-    } catch {
-      // ignore
-    }
+    savePersistedMenuStore();
+
+    // Update in Supabase in background without blocking UI response
+    void (async () => {
+      try {
+        const supabase = createAdminClient();
+        await supabase
+          .from("menu_items")
+          .update({
+            status: effectiveAdminStatus,
+            metadata: {
+              availability: stockStatus,
+              low_stock_portions: stockStatus === "LOW_STOCK" ? (lowStockCount ?? 3) : null,
+            },
+          })
+          .eq("id", itemId);
+        invalidateMenuCatalogCache();
+      } catch {
+        // ignore
+      }
+    })();
 
     // Broadcast sync event to all connected interfaces (Customer, Admin, KDS, Barista)
-    broadcastSyncEvent({
+    void broadcastSyncEvent({
       type: "ITEM_AVAILABILITY_CHANGED",
       itemId,
       stockStatus,
@@ -251,6 +262,11 @@ export async function bulkSetCategoryStockAction(
   categoryOrStation: string,
   stockStatus: ItemStockStatus
 ): Promise<{ success: boolean; message: string; updatedCount: number; updatedItemIds: string[] }> {
+  const auth = await requireStaffAuth(["kitchen", "chef", "barista", "admin", "super_admin"]);
+  if (!auth.authorized) {
+    return { success: false, message: auth.message || "Unauthorized.", updatedCount: 0, updatedItemIds: [] };
+  }
+
   try {
     const catalog = await getMenuCatalog();
     const stockStore = getStockStore();
@@ -314,6 +330,11 @@ export async function updateChefItemNotesAction(
   chefNotes: string,
   isChefSpecial: boolean
 ): Promise<{ success: boolean; message: string }> {
+  const auth = await requireStaffAuth(["kitchen", "chef", "admin", "super_admin"]);
+  if (!auth.authorized) {
+    return { success: false, message: auth.message || "Unauthorized." };
+  }
+
   try {
     const stockStore = getStockStore();
     const existing = stockStore[itemId] || { stockStatus: "IN_STOCK" };
@@ -359,6 +380,11 @@ export async function updateIngredientStockAction(
   ingredientName: string,
   inStock: boolean
 ): Promise<{ success: boolean; message: string }> {
+  const auth = await requireStaffAuth(["kitchen", "chef", "barista", "admin", "super_admin"]);
+  if (!auth.authorized) {
+    return { success: false, message: auth.message || "Unauthorized." };
+  }
+
   try {
     const ingredientStore = getIngredientStore();
     ingredientStore[ingredientName] = inStock;

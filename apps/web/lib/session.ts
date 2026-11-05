@@ -2,6 +2,7 @@ import crypto from "crypto";
 import { cookies } from "next/headers";
 
 export const TABLE_SESSION_COOKIE = "smol_table_session";
+export const TABLE_ACTIVE_COOKIE = "smol_table_active";
 
 export interface TableSessionData {
   sessionId: string;
@@ -100,6 +101,15 @@ export async function setTableSessionCookie(data: TableSessionData): Promise<voi
       path: "/",
       maxAge: 60 * 60 * 12, // 12 hours
     });
+
+    // Companion client-accessible flag for UI components (e.g. BottomNavBar visibility)
+    cookieStore.set(TABLE_ACTIVE_COOKIE, "1", {
+      httpOnly: false,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      path: "/",
+      maxAge: 60 * 60 * 12,
+    });
   } catch {
     // Ignored if called during Server Component render phase
   }
@@ -127,6 +137,7 @@ export async function clearTableSessionCookie(): Promise<void> {
   try {
     const cookieStore = await cookies();
     cookieStore.delete(TABLE_SESSION_COOKIE);
+    cookieStore.delete(TABLE_ACTIVE_COOKIE);
   } catch {
     // Outside active request context
   }

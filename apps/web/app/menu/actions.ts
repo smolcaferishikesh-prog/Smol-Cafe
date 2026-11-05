@@ -100,14 +100,8 @@ export async function placeOrderAction(
     const requestId = generateRequestId();
     const startTime = Date.now();
 
-  // 1. Verify Active Table Session from Signed Cookie or fallback to default table
+  // 1. Verify Active Table Session from Signed Cookie
   let session = sessionOverride || (await getTableSessionCookie());
-  if (!session || !session.sessionId || !session.locationId || !isValidUuid(session.sessionId)) {
-    const defaultRes = await resolveQrToken("table-01", true);
-    if (defaultRes.success && defaultRes.session) {
-      session = defaultRes.session;
-    }
-  }
 
   if (!session || !session.sessionId || !session.locationId || !isValidUuid(session.sessionId)) {
     logger.warn("Order placement rejected: No active table session", {
@@ -716,22 +710,29 @@ export async function editPendingOrderAction(
       };
     }
 
-    // 2. Fetch fresh prices from menu_items
+    // 2. Fetch fresh prices from menu_items and menu_prices
     const itemIds = items.map((i) => i.menu_item_id).filter((id) => isValidUuid(id));
-    const { data: dbMenuItems } = await supabase
-      .from("menu_items")
-      .select("id, name, price_paise")
-      .in("id", itemIds);
+    const [{ data: dbMenuItems }, { data: dbMenuPrices }] = await Promise.all([
+      supabase.from("menu_items").select("id, name").in("id", itemIds),
+      supabase.from("menu_prices").select("menu_item_id, amount_paise").in("menu_item_id", itemIds),
+    ]);
 
-    const priceMap = new Map<string, { name: string; pricePaise: number }>();
+    const priceLookup = new Map<string, number>();
+    for (const p of (dbMenuPrices as Array<{ menu_item_id: string; amount_paise: number }>) || []) {
+      if (!priceLookup.has(p.menu_item_id)) {
+        priceLookup.set(p.menu_item_id, p.amount_paise);
+      }
+    }
+
+    const priceMap = new Map<string, { name: string; pricePaise?: number }>();
     for (const m of dbMenuItems || []) {
-      priceMap.set(m.id, { name: m.name, pricePaise: m.price_paise });
+      priceMap.set(m.id, { name: m.name, pricePaise: priceLookup.get(m.id) });
     }
 
     let subtotalPaise = 0;
     const orderItemsPayload = items.map((it) => {
       const verified = priceMap.get(it.menu_item_id);
-      const unitPrice = verified ? verified.pricePaise : it.expected_unit_price_paise;
+      const unitPrice = verified?.pricePaise ?? it.expected_unit_price_paise;
       const name = verified ? verified.name : (it.name || "Item");
       const lineSubtotal = unitPrice * it.qty;
       subtotalPaise += lineSubtotal;
@@ -808,9 +809,9 @@ export async function editPendingOrderAction(
         await supabase
           .from("bills")
           .update({
-            subtotal_paise: sessionSubtotal,
-            tax_paise: sessionTax,
-            total_paise: sessionTotal,
+            subtotal: sessionSubtotal,
+            tax: sessionTax,
+            total: sessionTotal,
             updated_at: nowIso,
           })
           .eq("table_session_id", existingOrder.table_session_id);

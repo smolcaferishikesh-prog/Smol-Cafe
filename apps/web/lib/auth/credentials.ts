@@ -59,9 +59,16 @@ export const DEFAULT_ROLE_CREDENTIALS: RoleCredentialsMap = {
 
 declare global {
   var __SMOL_ROLE_CREDENTIALS__: RoleCredentialsMap | undefined;
+  var __SMOL_ROLE_CREDENTIALS_FETCHING__: boolean | undefined;
 }
 
-const CREDENTIALS_FILE_PATH = path.join(process.cwd(), "data", "staff-credentials.json");
+function getCredentialsFilePath(): string {
+  const cwd = process.cwd();
+  if (cwd.endsWith("apps/web")) {
+    return path.join(cwd, "data", "staff-credentials.json");
+  }
+  return path.join(cwd, "apps/web/data/staff-credentials.json");
+}
 
 export function mergeWithDefaults(saved: Partial<RoleCredentialsMap>): RoleCredentialsMap {
   return {
@@ -117,19 +124,9 @@ export function generateRoleCredentialToken(
     .slice(0, 16);
 }
 
-/**
- * Returns current role credentials with multi-tier persistence:
- * 1. In-memory hot cache
- * 2. Supabase PostgreSQL database (budgets table: category='STAFF_RBAC', month='CONFIG')
- * 3. Local persistent file (data/staff-credentials.json)
- * 4. Default credentials fallback
- */
-export async function getStoredCredentials(): Promise<RoleCredentialsMap> {
-  if (globalThis.__SMOL_ROLE_CREDENTIALS__) {
-    return globalThis.__SMOL_ROLE_CREDENTIALS__;
-  }
-
-  // Tier 1: Supabase Database
+async function refreshCredentialsFromSupabaseInBackground(): Promise<void> {
+  if (globalThis.__SMOL_ROLE_CREDENTIALS_FETCHING__) return;
+  globalThis.__SMOL_ROLE_CREDENTIALS_FETCHING__ = true;
   try {
     const supabase = createAdminClient();
     const { data, error } = await supabase
@@ -140,43 +137,56 @@ export async function getStoredCredentials(): Promise<RoleCredentialsMap> {
       .maybeSingle();
 
     if (!error && data?.notes) {
-      try {
-        const parsed = JSON.parse(data.notes);
-        if (parsed && typeof parsed === "object") {
-          const merged = mergeWithDefaults(parsed);
-          globalThis.__SMOL_ROLE_CREDENTIALS__ = merged;
-          try {
-            const dir = path.dirname(CREDENTIALS_FILE_PATH);
-            if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-            fs.writeFileSync(CREDENTIALS_FILE_PATH, JSON.stringify(merged, null, 2), "utf-8");
-          } catch {}
-          return merged;
-        }
-      } catch (parseErr) {
-        console.error("Failed to parse stored credentials from Supabase:", parseErr);
+      const parsed = JSON.parse(data.notes);
+      if (parsed && typeof parsed === "object") {
+        const merged = mergeWithDefaults(parsed);
+        globalThis.__SMOL_ROLE_CREDENTIALS__ = merged;
+        try {
+          const filePath = getCredentialsFilePath();
+          const dir = path.dirname(filePath);
+          if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+          fs.writeFileSync(filePath, JSON.stringify(merged, null, 2), "utf-8");
+        } catch {}
       }
     }
-  } catch (dbErr) {
-    console.warn("Could not load credentials from Supabase:", dbErr);
+  } catch {
+    // ignore background refresh notice
+  } finally {
+    globalThis.__SMOL_ROLE_CREDENTIALS_FETCHING__ = false;
+  }
+}
+
+/**
+ * Returns current role credentials with multi-tier persistence (0ms fast path):
+ * 1. In-memory hot cache
+ * 2. Local persistent file (data/staff-credentials.json)
+ * 3. Default credentials fallback + non-blocking background Supabase sync
+ */
+export async function getStoredCredentials(): Promise<RoleCredentialsMap> {
+  if (globalThis.__SMOL_ROLE_CREDENTIALS__) {
+    return globalThis.__SMOL_ROLE_CREDENTIALS__;
   }
 
-  // Tier 2: Persistent Local File
+  // Tier 1: Fast local file read (< 1ms) so auth checks never block on cold DB calls
   try {
-    if (fs.existsSync(CREDENTIALS_FILE_PATH)) {
-      const fileContent = fs.readFileSync(CREDENTIALS_FILE_PATH, "utf-8");
+    const filePath = getCredentialsFilePath();
+    if (fs.existsSync(filePath)) {
+      const fileContent = fs.readFileSync(filePath, "utf-8");
       const parsed = JSON.parse(fileContent);
       if (parsed && typeof parsed === "object") {
         const merged = mergeWithDefaults(parsed);
         globalThis.__SMOL_ROLE_CREDENTIALS__ = merged;
+        void refreshCredentialsFromSupabaseInBackground();
         return merged;
       }
     }
-  } catch (fsErr) {
-    console.warn("Could not read credentials from local file:", fsErr);
+  } catch {
+    // ignore local file error
   }
 
-  // Tier 3: Default Credentials
+  // Tier 2: Immediate default credentials + non-blocking background DB sync
   globalThis.__SMOL_ROLE_CREDENTIALS__ = { ...DEFAULT_ROLE_CREDENTIALS };
+  void refreshCredentialsFromSupabaseInBackground();
   return globalThis.__SMOL_ROLE_CREDENTIALS__;
 }
 
@@ -185,9 +195,10 @@ export async function persistCredentials(creds: RoleCredentialsMap): Promise<voi
 
   // 1. Persist to local filesystem
   try {
-    const dir = path.dirname(CREDENTIALS_FILE_PATH);
+    const filePath = getCredentialsFilePath();
+    const dir = path.dirname(filePath);
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(CREDENTIALS_FILE_PATH, JSON.stringify(creds, null, 2), "utf-8");
+    fs.writeFileSync(filePath, JSON.stringify(creds, null, 2), "utf-8");
   } catch (fsErr) {
     console.warn("Failed to write credentials to local file:", fsErr);
   }
@@ -214,7 +225,7 @@ export async function persistCredentials(creds: RoleCredentialsMap): Promise<voi
 
   // 3. Realtime broadcast for live propagation across tabs
   try {
-    broadcastSyncEvent({
+    void broadcastSyncEvent({
       type: "SETTINGS_UPDATED",
       timestamp: Date.now(),
     });

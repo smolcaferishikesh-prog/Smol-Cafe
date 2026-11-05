@@ -219,7 +219,9 @@ class MockDatabaseStore {
     // Initial Order #101 on Table 01
     const order1Id = "ord_init_101";
     const bunItem = this.menu_items.find((i) => i.name.includes("Bun Makkhan")) || this.menu_items[0];
-    const chaiItem = this.menu_items.find((i) => i.name.includes("Smol Chai")) || this.menu_items[1];
+    const chaiItem =
+      this.menu_items.find((i) => i.name.includes("Masala Milk Tea") || i.name.includes("Chai")) ||
+      this.menu_items[10];
 
     const order: MockOrder = {
       id: order1Id,
@@ -529,6 +531,35 @@ export class MockQueryBuilder {
       return matched;
     }
 
+    if (this.mutationType === "UPSERT") {
+      const items = Array.isArray(this.mutationPayload)
+        ? this.mutationPayload
+        : [this.mutationPayload];
+      const now = new Date().toISOString();
+      return items.map((rawItem) => {
+        const item = (rawItem || {}) as Record<string, unknown>;
+        const existingIdx = table.findIndex((r) =>
+          (item.id && r.id === item.id) ||
+          (this.tableName === "budgets" && r.category === item.category && r.month === item.month) ||
+          (this.tableName === "profiles" && ((item.id && r.id === item.id) || (item.phone && r.phone === item.phone))) ||
+          (this.tableName === "menu_prices" && r.menu_item_id === item.menu_item_id)
+        );
+        if (existingIdx >= 0) {
+          Object.assign(table[existingIdx], item, { updated_at: now });
+          return table[existingIdx];
+        }
+        const id = (item.id as string) || `mock_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+        const record = {
+          ...item,
+          id,
+          created_at: item.created_at || now,
+          updated_at: item.updated_at || now,
+        };
+        table.push(record);
+        return record;
+      });
+    }
+
     if (this.mutationType === "DELETE") {
       const toDeleteIndices: number[] = [];
       table.forEach((row, idx) => {
@@ -567,6 +598,20 @@ export class MockQueryBuilder {
 
     if (this.limitCount !== null) {
       result = result.slice(0, this.limitCount);
+    }
+
+    // Attach relational joins when requested in selectCols (e.g. "*, order_items(*)")
+    if (this.selectCols && this.tableName === "orders" && this.selectCols.includes("order_items")) {
+      result = result.map((row) => ({
+        ...row,
+        order_items: mockStore.order_items.filter((oi) => oi.order_id === row.id),
+      }));
+    }
+    if (this.selectCols && this.tableName === "bills" && this.selectCols.includes("payment_attempts")) {
+      result = result.map((row) => ({
+        ...row,
+        payment_attempts: mockStore.payment_attempts.filter((pa) => pa.bill_id === row.id),
+      }));
     }
 
     return result;
@@ -1239,6 +1284,52 @@ export class MockSupabaseClient {
         },
         error: null,
       };
+    }
+
+    if (fnName === "process_razorpay_webhook" || fnName === "handle_razorpay_webhook_event") {
+      return {
+        data: {
+          success: true,
+          is_duplicate: false,
+          status: "PROCESSED",
+          message: "Webhook processed successfully.",
+        },
+        error: null,
+      };
+    }
+
+    if (fnName === "submit_song_request") {
+      const sessionId = (params.p_location_id as string) ? (mockStore.music_sessions[0]?.id || "music_ses_01") : "music_ses_01";
+      const tableSessionId = (params.p_table_session_id as string) || "ses_tbl_01_init";
+      const trackName = (params.p_track_name as string) || "Untitled Track";
+      const artist = (params.p_artist as string) || "Unknown Artist";
+      const newReq = {
+        id: `song_${Date.now()}`,
+        session_id: sessionId,
+        music_session_id: sessionId,
+        table_session_id: tableSessionId,
+        requested_by_table: "01",
+        track_name: trackName,
+        title: trackName,
+        artist,
+        status: "QUEUED" as const,
+        vote_count: 1,
+        votes: 1,
+        created_at: now,
+        updated_at: now,
+      };
+      mockStore.song_requests.push(newReq as any);
+      return { data: { success: true, request_id: newReq.id, message: "Song added to jukebox queue!" }, error: null };
+    }
+
+    if (fnName === "cast_song_vote") {
+      const requestId = params.p_request_id as string;
+      const track = mockStore.song_requests.find((t) => t.id === requestId) as any;
+      if (track) {
+        track.vote_count = (track.vote_count || track.votes || 0) + 1;
+        track.votes = track.vote_count;
+      }
+      return { data: { success: true, vote_count: track?.vote_count || 1, message: "Vote recorded!" }, error: null };
     }
 
     return { data: { success: true }, error: null };

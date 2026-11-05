@@ -82,17 +82,25 @@ export interface AdminPaymentSplit {
 export interface AdminMenuItemRecord {
   id: string;
   name: string;
+  categoryId?: string;
   category: string;
   price: string;
+  priceRupees?: number;
+  description?: string;
+  imageUrl?: string | null;
   dietary: string;
+  bestPairing?: string;
   status: string;
 }
 
 export interface AdminTableRecord {
   id: string;
+  location_id?: string;
   label: string;
   seats: number;
   isActive: boolean;
+  section?: string;
+  isOccupied?: boolean;
 }
 
 export interface AdminAnalyticsMetrics {
@@ -113,6 +121,7 @@ export interface AdminOverviewData {
   cumulativeRevenuePoints: number[];
   menuItems: AdminMenuItemRecord[];
   menuCategories: string[];
+  menuCategoryOptions?: Array<{ id: string; name: string }>;
   tables: AdminTableRecord[];
   analyticsMetrics: AdminAnalyticsMetrics;
 }
@@ -163,7 +172,7 @@ export async function fetchAdminOverviewAction(forceRefresh = false): Promise<{
       supabase
         .from("bills")
         .select("id, table_session_id, payment_attempts(id, provider, status, idempotency_key, created_at)"),
-      getMenuCatalog(),
+      getMenuCatalog(true),
     ]);
 
     if (ordersRes.error) {
@@ -603,33 +612,48 @@ export async function fetchAdminOverviewAction(forceRefresh = false): Promise<{
     const validOrdersCount = mappedOrders.filter((o) => o.status !== "CANCELLED" && o.status !== "REJECTED").length;
     const avgOrderRupees = validOrdersCount > 0 ? Math.round(grossRevenueRupees / validOrdersCount) : 0;
 
-    // 9. Process 59-Item Menu Catalog & Categories (fetched concurrently in parallel)
+    // 9. Process Menu Catalog & Categories (fetched concurrently in parallel)
     const allMenuItems: AdminMenuItemRecord[] = [];
     const menuCategories: string[] = ["ALL"];
+    const menuCategoryOptions: Array<{ id: string; name: string }> = [];
 
     for (const cat of catalogData || []) {
+      menuCategoryOptions.push({ id: cat.id, name: cat.name });
       if (!menuCategories.includes(cat.name)) {
         menuCategories.push(cat.name);
       }
       for (const item of cat.items) {
+        const priceRupees = Math.round(item.pricePaise / 100);
         allMenuItems.push({
           id: item.id,
           name: item.name,
+          categoryId: cat.id,
           category: cat.name,
-          price: `₹${Math.round(item.pricePaise / 100)}`,
-          dietary: item.metadata?.dietary || "Vegetarian",
-          status: item.status || "ACTIVE",
+          price: `₹${priceRupees}`,
+          priceRupees,
+          description: item.description || "",
+          imageUrl: item.imageUrl || null,
+          dietary: item.metadata?.dietary || "veg",
+          bestPairing: item.metadata?.best_pairing || "",
+          status: item.status || "AVAILABLE",
         });
       }
     }
 
     // 10. Map real tables & compute live session analytics
-    const mappedTables: AdminTableRecord[] = (diningTables || []).map((t) => ({
-      id: t.id,
-      label: t.label,
-      seats: t.seats || 2,
-      isActive: Boolean(t.is_active ?? true),
-    }));
+    const mappedTables: AdminTableRecord[] = (diningTables || []).map((t) => {
+      const cleanNum = (t.label || "").toString().padStart(2, "0");
+      const section = (t as any).section || TABLE_ZONES_CONFIG[cleanNum]?.zone || "smol-cafe";
+      return {
+        id: t.id,
+        location_id: t.location_id || "",
+        label: t.label,
+        seats: t.seats || 2,
+        isActive: Boolean((t as any).active ?? t.is_active ?? true),
+        section,
+        isOccupied: activeTableIds.has(t.label) || activeTableIds.has(cleanNum),
+      };
+    });
 
     // Table Turn Duration from closed sessions
     const closedSessions = (tableSessions || []).filter((s) => s.closed_at && s.opened_at);
@@ -720,6 +744,7 @@ export async function fetchAdminOverviewAction(forceRefresh = false): Promise<{
       cumulativeRevenuePoints: [0, Math.round(todayGrossRevenueRupees * 0.25), Math.round(todayGrossRevenueRupees * 0.6), todayGrossRevenueRupees],
       menuItems: allMenuItems,
       menuCategories,
+      menuCategoryOptions,
       tables: mappedTables,
       analyticsMetrics: {
         tableTurnDurationMinutes,

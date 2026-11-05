@@ -2,6 +2,7 @@
 
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { requireStaffAuth } from "@/lib/auth/rbac";
 import { getTableSessionCookie } from "@/lib/session";
 import type { LoyaltyAccount, LoyaltyLedgerEntry } from "@smol-cafe/db";
 import { normalizePhoneNumber, getPhoneUuid } from "@/lib/customer-phone";
@@ -29,6 +30,11 @@ export async function getLoyaltyConfigAction(): Promise<LoyaltyConfig> {
 export async function updateLoyaltyConfigAction(
   newConfig: Partial<LoyaltyConfig>
 ): Promise<{ success: boolean; config: LoyaltyConfig; message: string }> {
+  const auth = await requireStaffAuth(["admin", "super_admin"]);
+  if (!auth.authorized) {
+    return { success: false, config: getLoyaltyConfigStore(), message: auth.message || "Unauthorized." };
+  }
+
   const current = getLoyaltyConfigStore();
   globalThis.__SMOL_LOYALTY_CONFIG__ = {
     ...current,
@@ -545,6 +551,11 @@ export async function grantLoyaltyPointsManualAction(
   pointsDelta: number,
   reason: string
 ): Promise<{ success: boolean; message: string }> {
+  const auth = await requireStaffAuth(["admin", "super_admin"]);
+  if (!auth.authorized) {
+    return { success: false, message: auth.message || "Unauthorized." };
+  }
+
   return {
     success: true,
     message: `Successfully ${pointsDelta >= 0 ? "credited" : "deducted"} ${Math.abs(pointsDelta)} points (${reason}).`,

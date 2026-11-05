@@ -813,7 +813,7 @@ export async function clearAllPendingCashierOrdersAction(
     const { data: pendingOrders, error: fetchErr } = await supabase
       .from("orders")
       .select("id, order_no")
-      .in("status", ["PENDING_CONFIRMATION", "SUBMITTED", "DRAFT", "PENDING", "PLACED", "NEW"]);
+      .in("status", ["PENDING_CONFIRMATION", "SUBMITTED", "DRAFT"]);
 
     if (fetchErr) {
       return { success: false, count: 0, message: `Failed to fetch queue: ${fetchErr.message}` };
