@@ -441,10 +441,9 @@ export const TableManager: React.FC<TableManagerProps> = ({
 
         return [...serverTables, ...localPending];
       });
-      // Always refresh from server in background to ensure fresh data
-      refreshTables();
+      setIsInitialLoading(false);
     } else {
-      refreshTables();
+      void refreshTables();
     }
   }, [initialTables, refreshTables]);
 
@@ -559,16 +558,14 @@ export const TableManager: React.FC<TableManagerProps> = ({
     return () => unsubscribe();
   }, [refreshTables]);
 
-  // Fast fallback refresh when tab or network resumes
+  // Fast fallback refresh when network resumes
   useEffect(() => {
-    const handleFocus = () => {
-      refreshTables();
+    const handleOnline = () => {
+      void refreshTables();
     };
-    window.addEventListener("focus", handleFocus);
-    window.addEventListener("online", handleFocus);
+    window.addEventListener("online", handleOnline);
     return () => {
-      window.removeEventListener("focus", handleFocus);
-      window.removeEventListener("online", handleFocus);
+      window.removeEventListener("online", handleOnline);
     };
   }, [refreshTables]);
 
@@ -885,7 +882,7 @@ export const TableManager: React.FC<TableManagerProps> = ({
     setFeedback(null);
   };
 
-  // Submit Add Table (with live loading indicator until saved to database)
+  // Submit Add Table (Instant 0ms Optimistic UI Update & Non-Blocking Persistence)
   const handleSubmitAdd = async (e: React.FormEvent) => {
     e.preventDefault();
     const cleanLabel = tableLabel.trim();
@@ -894,9 +891,63 @@ export const TableManager: React.FC<TableManagerProps> = ({
       return;
     }
 
-    setIsLoading(true);
-    setFeedback(null);
+    const normLabel = cleanLabel.toLowerCase();
+    if (tables.some((t) => t.label.trim().toLowerCase() === normLabel)) {
+      setFeedback({ type: "error", text: `Table "${cleanLabel}" already exists.` });
+      return;
+    }
 
+    const tempId =
+      typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+        ? crypto.randomUUID()
+        : `tbl_${Date.now()}`;
+
+    const optimisticTable: DiningTableRecord = {
+      id: tempId,
+      location_id: "",
+      label: cleanLabel,
+      seats: tableSeats,
+      active: tableActive,
+      section: tableSection,
+      isOccupied: false,
+    };
+
+    const prevTables = tables;
+    clearDeletedRefs(tempId, cleanLabel);
+
+    // 1. Instant 0ms Optimistic UI update & modal transition
+    setTables((prev) => {
+      const updated = [...prev, optimisticTable];
+      __cachedTablesMemory = updated;
+      return updated;
+    });
+
+    if (!sections.includes(tableSection)) {
+      setSections((prev) => [...prev, tableSection]);
+    }
+
+    setIsAddModalOpen(false);
+    setIsAddSectionDropdownOpen(false);
+    setFeedback({
+      type: "success",
+      text: `Table T-${cleanLabel} added! Scannable QR stand & tags generated.`,
+    });
+    setViewingQrTable(optimisticTable);
+
+    broadcastSyncEvent({
+      type: "TABLE_CREATED",
+      tableId: tempId,
+      tableLabel: cleanLabel,
+      metadata: {
+        id: tempId,
+        label: cleanLabel,
+        seats: tableSeats,
+        active: tableActive,
+        section: tableSection,
+      },
+    });
+
+    // 2. Background database persistence
     try {
       const res = await createTableAction({
         label: cleanLabel,
@@ -908,60 +959,37 @@ export const TableManager: React.FC<TableManagerProps> = ({
       if (res.success && res.table) {
         const confirmedTable = res.table;
         clearDeletedRefs(confirmedTable.id, confirmedTable.label);
-        clearDeletedRefs(confirmedTable.id, cleanLabel);
 
         setTables((prev) => {
-          const normLabel = cleanLabel.toLowerCase();
-          const matchIdx = prev.findIndex(
-            (t) =>
-              t.id === confirmedTable.id ||
-              t.label.trim().toLowerCase() === normLabel
+          const updated = prev.map((t) =>
+            t.id === tempId || t.label.trim().toLowerCase() === normLabel ? confirmedTable : t
           );
-          if (matchIdx >= 0) {
-            return prev.map((t, idx) => (idx === matchIdx ? confirmedTable : t));
-          }
-          return [...prev, confirmedTable];
+          __cachedTablesMemory = updated;
+          return updated;
         });
 
-        if (!sections.includes(tableSection)) {
-          setSections((prev) => [...prev, tableSection]);
-        }
-
-        setIsAddModalOpen(false);
-        setIsAddSectionDropdownOpen(false);
-        setFeedback({
-          type: "success",
-          text: `Table T-${cleanLabel} added! Scannable QR stand & tags generated.`,
-        });
-        setViewingQrTable(confirmedTable);
-
-        broadcastSyncEvent({
-          type: "TABLE_CREATED",
-          tableId: confirmedTable.id,
-          tableLabel: cleanLabel,
-          metadata: {
-            id: confirmedTable.id,
-            label: cleanLabel,
-            seats: tableSeats,
-            active: tableActive,
-            section: tableSection,
-          },
-        });
-      } else {
+        setViewingQrTable((curr) =>
+          curr && (curr.id === tempId || curr.label === cleanLabel) ? confirmedTable : curr
+        );
+      } else if (!res.success) {
+        setTables(prevTables);
+        __cachedTablesMemory = prevTables;
+        setViewingQrTable(null);
         setFeedback({ type: "error", text: res.message || "Failed to add table." });
       }
     } catch (err: any) {
       console.error("Error creating table:", err);
+      setTables(prevTables);
+      __cachedTablesMemory = prevTables;
+      setViewingQrTable(null);
       setFeedback({
         type: "error",
         text: err?.message || "An unexpected error occurred while adding table.",
       });
-    } finally {
-      setIsLoading(false);
     }
   };
 
-  // Submit Edit Table (with live loading indicator until saved to database)
+  // Submit Edit Table (Instant 0ms Optimistic UI Update & Non-Blocking Persistence)
   const handleSubmitEdit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingTable) return;
@@ -972,9 +1000,56 @@ export const TableManager: React.FC<TableManagerProps> = ({
     }
 
     const targetTable = { ...editingTable };
-    setIsLoading(true);
-    setFeedback(null);
+    const prevTables = tables;
+    const optimisticUpdated: DiningTableRecord = {
+      ...targetTable,
+      label: cleanLabel,
+      section: tableSection,
+      seats: tableSeats,
+      active: tableActive,
+    };
 
+    // 1. Instant 0ms Optimistic UI update & modal close
+    setTables((prev) => {
+      const seen = new Set<string>();
+      const updated = prev
+        .map((t) =>
+          t.id === targetTable.id || t.label.trim().toLowerCase() === targetTable.label.trim().toLowerCase()
+            ? optimisticUpdated
+            : t
+        )
+        .filter((t) => {
+          const norm = t.label.trim().toLowerCase();
+          if (seen.has(norm)) return false;
+          seen.add(norm);
+          return true;
+        });
+      __cachedTablesMemory = updated;
+      return updated;
+    });
+
+    if (!sections.includes(tableSection)) {
+      setSections((prev) => [...prev, tableSection]);
+    }
+
+    setEditingTable(null);
+    setIsEditSectionDropdownOpen(false);
+    setFeedback({ type: "success", text: "Table updated successfully!" });
+
+    broadcastSyncEvent({
+      type: "TABLE_RENAMED",
+      tableLabel: cleanLabel,
+      tableId: targetTable.id,
+      metadata: {
+        id: targetTable.id,
+        label: cleanLabel,
+        active: tableActive,
+        section: tableSection,
+        seats: tableSeats,
+      },
+    });
+
+    // 2. Background database persistence
     try {
       const res = await updateTableAction(targetTable.id, {
         label: cleanLabel,
@@ -984,58 +1059,15 @@ export const TableManager: React.FC<TableManagerProps> = ({
       });
 
       if (!res.success) {
+        setTables(prevTables);
+        __cachedTablesMemory = prevTables;
         setFeedback({ type: "error", text: res.message || "Failed to update table." });
-      } else {
-        const confirmed = res.table || {
-          ...targetTable,
-          label: cleanLabel,
-          section: tableSection,
-          seats: tableSeats,
-          active: tableActive,
-        };
-
-        setTables((prev) => {
-          const seen = new Set<string>();
-          return prev
-            .map((t) =>
-              t.id === targetTable.id || t.label.trim().toLowerCase() === targetTable.label.trim().toLowerCase()
-                ? { ...t, ...confirmed }
-                : t
-            )
-            .filter((t) => {
-              const norm = t.label.trim().toLowerCase();
-              if (seen.has(norm)) return false;
-              seen.add(norm);
-              return true;
-            });
-        });
-
-        if (!sections.includes(tableSection)) {
-          setSections((prev) => [...prev, tableSection]);
-        }
-
-        setEditingTable(null);
-        setIsEditSectionDropdownOpen(false);
-        setFeedback({ type: "success", text: "Table updated successfully!" });
-
-        broadcastSyncEvent({
-          type: "TABLE_RENAMED",
-          tableLabel: cleanLabel,
-          tableId: targetTable.id,
-          metadata: {
-            id: targetTable.id,
-            label: cleanLabel,
-            active: tableActive,
-            section: tableSection,
-            seats: tableSeats,
-          },
-        });
       }
     } catch (err: any) {
       console.error("Error updating table:", err);
+      setTables(prevTables);
+      __cachedTablesMemory = prevTables;
       setFeedback({ type: "error", text: err?.message || "An unexpected error occurred." });
-    } finally {
-      setIsLoading(false);
     }
   };
 
@@ -1077,56 +1109,54 @@ export const TableManager: React.FC<TableManagerProps> = ({
     }
   };
 
-  // Delete Table (Awaits database deletion with persistent tombstone)
+  // Delete Table (Instant 0ms Optimistic UI Update & Non-Blocking Persistence)
   const handleConfirmDelete = async () => {
     if (!deletingTable || isDeletingTable) return;
     const target = deletingTable;
+    const prevTables = tables;
 
-    setIsDeletingTable(true);
     deletedIdsRef.current.add(target.id);
     deletedLabelsRef.current.add(target.label.trim().toLowerCase());
     addSessionDeletedTable(target.id, target.label);
 
+    // 1. Instant 0ms Optimistic removal & modal close
+    setTables((prev) => {
+      const updated = prev.filter(
+        (t) =>
+          t.id !== target.id &&
+          t.label.trim().toLowerCase() !== target.label.trim().toLowerCase()
+      );
+      __cachedTablesMemory = updated;
+      return updated;
+    });
+    setDeletingTable(null);
+    setFeedback({ type: "success", text: `Table ${target.label} deleted successfully.` });
+
+    broadcastSyncEvent({
+      type: "TABLE_DELETED",
+      tableId: target.id,
+      tableLabel: target.label,
+      metadata: { id: target.id, label: target.label },
+    });
+
+    // 2. Background database deletion
     try {
       const res = await deleteTableAction(target.id, target.label);
-      if (res.success) {
-        // Remove from local table state
-        setTables((prev) =>
-          prev.filter(
-            (t) =>
-              t.id !== target.id &&
-              t.label.trim().toLowerCase() !== target.label.trim().toLowerCase()
-          )
-        );
-        setDeletingTable(null);
-        setFeedback({ type: "success", text: res.message || `Table ${target.label} deleted successfully.` });
-
-        broadcastSyncEvent({
-          type: "TABLE_DELETED",
-          tableId: target.id,
-          tableLabel: target.label,
-          metadata: { id: target.id, label: target.label },
-        });
-
-        try {
-          router.refresh();
-        } catch {}
-      } else {
-        // Rollback
+      if (!res.success) {
         deletedIdsRef.current.delete(target.id);
         deletedLabelsRef.current.delete(target.label.trim().toLowerCase());
         clearSessionDeletedTable(target.id, target.label);
+        setTables(prevTables);
+        __cachedTablesMemory = prevTables;
         setFeedback({ type: "error", text: res.message || "Could not delete table." });
-        setDeletingTable(null);
       }
     } catch {
       deletedIdsRef.current.delete(target.id);
       deletedLabelsRef.current.delete(target.label.trim().toLowerCase());
       clearSessionDeletedTable(target.id, target.label);
+      setTables(prevTables);
+      __cachedTablesMemory = prevTables;
       setFeedback({ type: "error", text: "Error deleting table." });
-      setDeletingTable(null);
-    } finally {
-      setIsDeletingTable(false);
     }
   };
 

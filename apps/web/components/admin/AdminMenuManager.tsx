@@ -12,14 +12,9 @@ import {
   AlertTriangle,
   RefreshCw,
   Sparkles,
-  Tag,
-  DollarSign,
-  Layers,
   X,
   Check,
   Ban,
-  Eye,
-  Image as ImageIcon,
 } from "lucide-react";
 import {
   fetchAdminMenuCatalogAction,
@@ -36,17 +31,67 @@ import { getFoodImage } from "@/lib/food-images";
 import { DishImagePicker } from "@/components/common/DishImagePicker";
 import { useSupabaseRealtime } from "@/hooks/useSupabaseRealtime";
 
+// Module-level memory cache for instant 0ms tab switching
+let __cachedAdminMenuItems: AdminMenuItem[] | null = null;
+let __cachedAdminMenuCategories: AdminCategoryOption[] | null = null;
+
 interface AdminMenuManagerProps {
   onItemChange?: () => void;
+  initialItems?: AdminMenuItem[];
+  initialCategories?: AdminCategoryOption[];
 }
 
-export const AdminMenuManager: React.FC<AdminMenuManagerProps> = ({ onItemChange }) => {
-  const [categories, setCategories] = useState<AdminCategoryOption[]>([]);
-  const [items, setItems] = useState<AdminMenuItem[]>([]);
-  const [isLoading, setIsLoading] = useState<boolean>(true);
+export const AdminMenuManager: React.FC<AdminMenuManagerProps> = ({
+  onItemChange,
+  initialItems,
+  initialCategories,
+}) => {
+  const [categories, setCategories] = useState<AdminCategoryOption[]>(() => {
+    if (initialCategories && initialCategories.length > 0) {
+      __cachedAdminMenuCategories = initialCategories;
+      return initialCategories;
+    }
+    if (__cachedAdminMenuCategories && __cachedAdminMenuCategories.length > 0) {
+      return __cachedAdminMenuCategories;
+    }
+    return [];
+  });
+
+  const [items, setItems] = useState<AdminMenuItem[]>(() => {
+    if (initialItems && initialItems.length > 0) {
+      __cachedAdminMenuItems = initialItems;
+      return initialItems;
+    }
+    if (__cachedAdminMenuItems && __cachedAdminMenuItems.length > 0) {
+      return __cachedAdminMenuItems;
+    }
+    return [];
+  });
+
+  const [isLoading, setIsLoading] = useState<boolean>(() => {
+    if (initialItems && initialItems.length > 0) return false;
+    if (__cachedAdminMenuItems && __cachedAdminMenuItems.length > 0) return false;
+    return true;
+  });
+
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
   const itemsCountRef = useRef(0);
   itemsCountRef.current = items.length;
+  const lastLoadTimeRef = useRef(0);
+
+  // Keep module-level cache synchronized with local items & categories
+  useEffect(() => {
+    if (items.length > 0) {
+      __cachedAdminMenuItems = items;
+    }
+  }, [items]);
+
+  useEffect(() => {
+    if (categories.length > 0) {
+      __cachedAdminMenuCategories = categories;
+    }
+  }, [categories]);
+
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [selectedCategory, setSelectedCategory] = useState<string>("ALL");
   const [statusFilter, setStatusFilter] = useState<"ALL" | "AVAILABLE" | "SOLD_OUT">("ALL");
@@ -90,10 +135,47 @@ export const AdminMenuManager: React.FC<AdminMenuManagerProps> = ({ onItemChange
   const [isClearingAll, setIsClearingAll] = useState<boolean>(false);
   const [isRestoringMaster, setIsRestoringMaster] = useState<boolean>(false);
 
+  const loadMenu = useCallback(async (isBackground = false) => {
+    const now = Date.now();
+    if (isBackground && now - lastLoadTimeRef.current < 5000) {
+      return;
+    }
+    lastLoadTimeRef.current = now;
+
+    if (!isBackground && itemsCountRef.current === 0) {
+      setIsLoading(true);
+    }
+    setIsRefreshing(true);
+    try {
+      const res = await fetchAdminMenuCatalogAction();
+      if (res.success && res.items) {
+        setCategories(res.categories);
+        setItems(res.items);
+        __cachedAdminMenuCategories = res.categories;
+        __cachedAdminMenuItems = res.items;
+      }
+    } catch {
+      setFeedback({ type: "error", text: "Failed to load menu catalog." });
+    } finally {
+      setIsLoading(false);
+      setIsRefreshing(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (itemsCountRef.current > 0) {
+      // Already hydrated from props or memory cache; refresh silently in background
+      void loadMenu(true);
+    } else {
+      void loadMenu(false);
+    }
+  }, [loadMenu]);
+
   const handleClearAllCatalog = async () => {
     setIsClearingAll(true);
     setShowClearConfirm(false);
     setItems([]);
+    __cachedAdminMenuItems = [];
     setFeedback({ type: "success", text: "Clearing entire menu catalog..." });
     try {
       const res = await clearAllMenuItemsAction();
@@ -102,11 +184,11 @@ export const AdminMenuManager: React.FC<AdminMenuManagerProps> = ({ onItemChange
         if (onItemChange) onItemChange();
       } else {
         setFeedback({ type: "error", text: res.message });
-        loadMenu();
+        void loadMenu(false);
       }
     } catch {
       setFeedback({ type: "error", text: "Failed to clear menu." });
-      loadMenu();
+      void loadMenu(false);
     } finally {
       setIsClearingAll(false);
     }
@@ -120,7 +202,8 @@ export const AdminMenuManager: React.FC<AdminMenuManagerProps> = ({ onItemChange
       const res = await resetToMasterMenuAction();
       if (res.success) {
         setFeedback({ type: "success", text: res.message });
-        await loadMenu();
+        lastLoadTimeRef.current = 0;
+        await loadMenu(false);
         if (onItemChange) onItemChange();
       } else {
         setFeedback({ type: "error", text: res.message });
@@ -131,29 +214,6 @@ export const AdminMenuManager: React.FC<AdminMenuManagerProps> = ({ onItemChange
       setIsRestoringMaster(false);
     }
   };
-
-  const loadMenu = useCallback(async (isBackground = false) => {
-    if (!isBackground && itemsCountRef.current === 0) {
-      setIsLoading(true);
-    }
-    setIsRefreshing(true);
-    try {
-      const res = await fetchAdminMenuCatalogAction();
-      if (res.success && res.items) {
-        setCategories(res.categories);
-        setItems(res.items);
-      }
-    } catch {
-      setFeedback({ type: "error", text: "Failed to load menu catalog." });
-    } finally {
-      setIsLoading(false);
-      setIsRefreshing(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    loadMenu();
-  }, [loadMenu]);
 
   // Realtime Supabase CDC WebSocket subscription for Postgres menu_items changes
   useSupabaseRealtime<{ id?: string; name?: string; status?: string; price_snapshot?: number }>({
@@ -265,24 +325,6 @@ export const AdminMenuManager: React.FC<AdminMenuManagerProps> = ({ onItemChange
     return () => unsub();
   }, [categories]);
 
-  // Fast fallback refresh when tab or network resumes (silent background sync)
-  useEffect(() => {
-    let focusTimer: NodeJS.Timeout | null = null;
-    const handleFocus = () => {
-      if (focusTimer) clearTimeout(focusTimer);
-      focusTimer = setTimeout(() => {
-        loadMenu(true);
-      }, 500);
-    };
-    window.addEventListener("focus", handleFocus);
-    window.addEventListener("online", handleFocus);
-    return () => {
-      if (focusTimer) clearTimeout(focusTimer);
-      window.removeEventListener("focus", handleFocus);
-      window.removeEventListener("online", handleFocus);
-    };
-  }, [loadMenu]);
-
   // Open modal for New Item
   const handleOpenAdd = () => {
     setEditingItem(null);
@@ -311,7 +353,7 @@ export const AdminMenuManager: React.FC<AdminMenuManagerProps> = ({ onItemChange
     setIsModalOpen(true);
   };
 
-  // Add or Edit Dish
+  // Add or Edit Dish (Instant 0ms Optimistic UI & Non-Blocking Persistence)
   const handleSubmitForm = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formName.trim()) {
@@ -325,140 +367,156 @@ export const AdminMenuManager: React.FC<AdminMenuManagerProps> = ({ onItemChange
 
     const dishPrice = Number(formPriceRupees);
     const category = categories.find((c) => c.id === formCategoryId);
+    const cleanName = formName.trim();
+    const cleanDesc = formDescription.trim();
+    const cleanPairing = formBestPairing.trim();
+    const cleanImg = formImageUrl.trim() || null;
 
     if (editingItem) {
-      // 1. Optimistic Edit Update (0ms)
+      const prevItems = items;
+      // 1. Instant 0ms Optimistic Edit Update & Modal Close
       const updatedItem: AdminMenuItem = {
         ...editingItem,
-        name: formName.trim(),
+        name: cleanName,
         categoryId: formCategoryId || editingItem.categoryId,
         categoryName: category?.name || editingItem.categoryName,
         priceRupees: dishPrice,
-        description: formDescription.trim(),
-        imageUrl: formImageUrl.trim() || null,
+        description: cleanDesc,
+        imageUrl: cleanImg,
         dietary: formDietary,
-        bestPairing: formBestPairing.trim(),
+        bestPairing: cleanPairing,
         status: formStatus,
       };
 
       setItems((prev) => prev.map((i) => (i.id === editingItem.id ? updatedItem : i)));
       setIsModalOpen(false);
-      setIsSubmitting(true);
-      setFeedback({ type: "success", text: `Updating "${formName.trim()}"...` });
+      setFeedback({ type: "success", text: `Dish "${cleanName}" updated successfully!` });
 
+      broadcastSyncEvent({
+        type: "ITEM_AVAILABILITY_CHANGED",
+        itemId: editingItem.id,
+        priceRupees: dishPrice,
+        stockStatus: formStatus === "SOLD_OUT" ? "SOLD_OUT" : "IN_STOCK",
+        availability: formStatus === "SOLD_OUT" ? "SOLD_OUT" : "IN_STOCK",
+        timestamp: Date.now(),
+        metadata: {
+          id: editingItem.id,
+          name: cleanName,
+          categoryId: formCategoryId,
+          priceRupees: dishPrice,
+          description: cleanDesc,
+          dietary: formDietary,
+          best_pairing: cleanPairing,
+          status: formStatus,
+          imageUrl: cleanImg,
+        },
+      });
+      if (onItemChange) onItemChange();
+
+      // 2. Background database persistence
       try {
         const res = await saveMenuItemAction({
           id: editingItem.id,
-          name: formName.trim(),
+          name: cleanName,
           categoryId: formCategoryId,
           priceRupees: dishPrice,
-          description: formDescription.trim(),
+          description: cleanDesc,
           dietary: formDietary,
-          bestPairing: formBestPairing.trim(),
+          bestPairing: cleanPairing,
           status: formStatus,
-          imageUrl: formImageUrl.trim() || null,
+          imageUrl: cleanImg,
         });
 
         if (res.success) {
-          const finalImg = res.imageUrl !== undefined ? res.imageUrl : (formImageUrl.trim() || null);
-          setItems((prev) =>
-            prev.map((i) => (i.id === editingItem.id ? { ...updatedItem, imageUrl: finalImg } : i))
-          );
-          broadcastSyncEvent({
-            type: "ITEM_AVAILABILITY_CHANGED",
-            itemId: editingItem.id,
-            priceRupees: dishPrice,
-            stockStatus: formStatus === "SOLD_OUT" ? "SOLD_OUT" : "IN_STOCK",
-            availability: formStatus === "SOLD_OUT" ? "SOLD_OUT" : "IN_STOCK",
-            timestamp: Date.now(),
-            metadata: {
-              id: editingItem.id,
-              name: formName.trim(),
-              categoryId: formCategoryId,
-              priceRupees: dishPrice,
-              description: formDescription.trim(),
-              dietary: formDietary,
-              best_pairing: formBestPairing.trim(),
-              status: formStatus,
-              imageUrl: finalImg,
-            },
-          });
-          setFeedback({ type: "success", text: `Dish "${formName.trim()}" updated successfully!` });
-          if (onItemChange) onItemChange();
+          if (res.imageUrl && res.imageUrl !== cleanImg) {
+            setItems((prev) =>
+              prev.map((i) => (i.id === editingItem.id ? { ...updatedItem, imageUrl: res.imageUrl! } : i))
+            );
+          }
         } else {
+          setItems(prevItems);
           setFeedback({ type: "error", text: res.message });
         }
       } catch {
+        setItems(prevItems);
         setFeedback({ type: "error", text: "Failed to update dish." });
-      } finally {
-        setIsSubmitting(false);
       }
       return;
     }
 
-    const newDishId = `item_custom_${Date.now()}`;
+    const prevItems = items;
+    const newDishId =
+      typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+        ? crypto.randomUUID()
+        : `item_custom_${Date.now()}`;
+
     const optimisticItem: AdminMenuItem = {
       id: newDishId,
-      name: formName.trim(),
+      name: cleanName,
       categoryId: formCategoryId || categories[0]?.id || "cat-1",
       categoryName: category?.name || "Menu Specials",
       priceRupees: dishPrice,
-      description: formDescription.trim(),
-      imageUrl: formImageUrl.trim() || null,
+      description: cleanDesc,
+      imageUrl: cleanImg,
       dietary: formDietary,
-      bestPairing: formBestPairing.trim(),
+      bestPairing: cleanPairing,
       status: formStatus,
     };
 
-    // 1. Instant 0ms Optimistic UI Update
+    // 1. Instant 0ms Optimistic UI Update & Modal Close
     setItems((prev) => [optimisticItem, ...prev]);
     setIsModalOpen(false);
-    setIsSubmitting(true);
-    setFeedback({ type: "success", text: `Adding "${formName.trim()}" to menu...` });
+    setFeedback({ type: "success", text: `Dish "${cleanName}" added to menu successfully!` });
 
-    try {
-      const res = await saveMenuItemAction({
-        name: formName.trim(),
+    broadcastSyncEvent({
+      type: "ITEM_AVAILABILITY_CHANGED",
+      itemId: newDishId,
+      priceRupees: dishPrice,
+      stockStatus: formStatus === "SOLD_OUT" ? "SOLD_OUT" : "IN_STOCK",
+      availability: formStatus === "SOLD_OUT" ? "SOLD_OUT" : "IN_STOCK",
+      timestamp: Date.now(),
+      metadata: {
+        id: newDishId,
+        name: cleanName,
         categoryId: formCategoryId,
         priceRupees: dishPrice,
-        description: formDescription.trim(),
+        description: cleanDesc,
         dietary: formDietary,
-        bestPairing: formBestPairing.trim(),
+        best_pairing: cleanPairing,
         status: formStatus,
-        imageUrl: formImageUrl.trim() || null,
+        imageUrl: cleanImg,
+      },
+    });
+    if (onItemChange) onItemChange();
+
+    // 2. Background database persistence
+    try {
+      const res = await saveMenuItemAction({
+        id: newDishId,
+        name: cleanName,
+        categoryId: formCategoryId,
+        priceRupees: dishPrice,
+        description: cleanDesc,
+        dietary: formDietary,
+        bestPairing: cleanPairing,
+        status: formStatus,
+        imageUrl: cleanImg,
       });
 
       if (res.success) {
-        const finalImg = res.imageUrl !== undefined ? res.imageUrl : (formImageUrl.trim() || null);
+        const finalImg = res.imageUrl !== undefined ? res.imageUrl : cleanImg;
         const resolvedId = res.itemId || newDishId;
-        setItems((prev) =>
-          prev.map((i) => (i.id === newDishId ? { ...optimisticItem, id: resolvedId, imageUrl: finalImg } : i))
-        );
-        broadcastSyncEvent({
-          type: "ITEM_AVAILABILITY_CHANGED",
-          itemId: resolvedId,
-          priceRupees: dishPrice,
-          stockStatus: formStatus === "SOLD_OUT" ? "SOLD_OUT" : "IN_STOCK",
-          availability: formStatus === "SOLD_OUT" ? "SOLD_OUT" : "IN_STOCK",
-          timestamp: Date.now(),
-          metadata: {
-            id: resolvedId,
-            name: formName.trim(),
-            categoryId: formCategoryId,
-            priceRupees: dishPrice,
-            description: formDescription.trim(),
-            dietary: formDietary,
-            best_pairing: formBestPairing.trim(),
-            status: formStatus,
-            imageUrl: finalImg,
-          },
-        });
-        setFeedback({ type: "success", text: `Dish "${formName.trim()}" added to menu successfully!` });
-        if (onItemChange) onItemChange();
+        if (resolvedId !== newDishId || finalImg !== cleanImg) {
+          setItems((prev) =>
+            prev.map((i) => (i.id === newDishId ? { ...optimisticItem, id: resolvedId, imageUrl: finalImg } : i))
+          );
+        }
       } else {
+        setItems(prevItems);
         setFeedback({ type: "error", text: res.message });
       }
     } catch {
+      setItems(prevItems);
       setFeedback({ type: "error", text: "Failed to save new dish." });
     } finally {
       setIsSubmitting(false);
@@ -467,12 +525,14 @@ export const AdminMenuManager: React.FC<AdminMenuManagerProps> = ({ onItemChange
 
   const togglingItemIdsRef = React.useRef<Set<string>>(new Set());
 
-  // Explicit status control (In Stock / Out Of Stock) with instant 0ms optimistic UI update & cross-station sync
+  // Explicit status control (In Stock / Out Of Stock) with instant 0ms optimistic UI update & single server action
   const handleSetStockStatus = async (item: AdminMenuItem, targetStatus: "AVAILABLE" | "SOLD_OUT") => {
     if (togglingItemIdsRef.current.has(item.id)) return;
     togglingItemIdsRef.current.add(item.id);
 
     const prevItems = items;
+    const stockStatusStr = targetStatus === "SOLD_OUT" ? "SOLD_OUT" : "IN_STOCK";
+
     // 1. Instant 0ms Optimistic UI update
     setItems((prev) =>
       prev.map((i) => (i.id === item.id ? { ...i, status: targetStatus } : i))
@@ -482,46 +542,32 @@ export const AdminMenuManager: React.FC<AdminMenuManagerProps> = ({ onItemChange
       text: targetStatus === "AVAILABLE" ? `"${item.name}" marked as In Stock` : `"${item.name}" marked as Out Of Stock`,
     });
 
+    broadcastSyncEvent({
+      type: "ITEM_AVAILABILITY_CHANGED",
+      itemId: item.id,
+      availability: stockStatusStr,
+      stockStatus: stockStatusStr,
+      priceRupees: item.priceRupees,
+      timestamp: Date.now(),
+      metadata: {
+        id: item.id,
+        status: targetStatus,
+        stockStatus: stockStatusStr,
+        priceRupees: item.priceRupees,
+      },
+    });
+    if (onItemChange) onItemChange();
+
     try {
-      const stockStatusStr = targetStatus === "SOLD_OUT" ? "SOLD_OUT" : "IN_STOCK";
+      // Single lightweight stock action instead of duplicate saveMenuItemAction + updateMenuItemStockAction
+      const res = await updateMenuItemStockAction(item.id, stockStatusStr);
 
-      // 2 & 3. Persist in parallel to save time
-      const [res] = await Promise.all([
-        saveMenuItemAction({
-          id: item.id,
-          name: item.name,
-          categoryId: item.categoryId,
-          priceRupees: item.priceRupees,
-          description: item.description,
-          dietary: item.dietary as "veg" | "non-veg" | "vegan" | "egg" | "beverage",
-          status: targetStatus,
-          imageUrl: item.imageUrl,
-        }),
-        updateMenuItemStockAction(item.id, stockStatusStr),
-      ]);
-
-      if (res.success) {
-        broadcastSyncEvent({
-          type: "ITEM_AVAILABILITY_CHANGED",
-          itemId: item.id,
-          availability: stockStatusStr,
-          stockStatus: stockStatusStr,
-          priceRupees: item.priceRupees,
-          timestamp: Date.now(),
-          metadata: {
-            id: item.id,
-            status: targetStatus,
-            stockStatus: stockStatusStr,
-            priceRupees: item.priceRupees,
-          },
-        });
-        if (onItemChange) onItemChange();
-      } else {
-        setItems(prevItems); // Rollback
+      if (!res.success) {
+        setItems(prevItems);
         setFeedback({ type: "error", text: res.message || "Failed to update stock status." });
       }
     } catch {
-      setItems(prevItems); // Rollback
+      setItems(prevItems);
       setFeedback({ type: "error", text: "Failed to update stock status." });
     } finally {
       togglingItemIdsRef.current.delete(item.id);
@@ -551,12 +597,10 @@ export const AdminMenuManager: React.FC<AdminMenuManagerProps> = ({ onItemChange
     try {
       const res = await deleteMenuItemAction(itemId);
       if (!res.success) {
-        // Rollback on failure
         setItems(prevItems);
         setFeedback({ type: "error", text: res.message || "Failed to delete item." });
       }
     } catch {
-      // Rollback on network error
       setItems(prevItems);
       setFeedback({ type: "error", text: "Failed to delete item." });
     }
@@ -607,7 +651,10 @@ export const AdminMenuManager: React.FC<AdminMenuManagerProps> = ({ onItemChange
 
         <div className="flex items-center flex-wrap gap-2.5">
           <button
-            onClick={() => loadMenu(false)}
+            onClick={() => {
+              lastLoadTimeRef.current = 0;
+              void loadMenu(false);
+            }}
             disabled={isLoading || isRefreshing}
             className="p-2.5 rounded-xl border border-stone-200 dark:border-stone-700 bg-stone-50 dark:bg-stone-800 hover:bg-stone-100 dark:hover:bg-stone-700 text-stone-700 dark:text-stone-300 transition"
             title="Refresh Catalog"
@@ -959,7 +1006,7 @@ export const AdminMenuManager: React.FC<AdminMenuManagerProps> = ({ onItemChange
                 <p className="text-xs text-stone-500 mt-0.5">
                   {editingItem
                     ? "Update pricing, description, category, or dietary status."
-                    : "Add a new dish to the live customer menu &amp; kitchen display."}
+                    : "Add a new dish to the live customer menu & kitchen display."}
                 </p>
               </div>
               <button
@@ -1120,11 +1167,9 @@ export const AdminMenuManager: React.FC<AdminMenuManagerProps> = ({ onItemChange
                           type="button"
                           onClick={() => {
                             if (isSelected) {
-                              // Remove chip if present
                               const regex = new RegExp(`\\s*\\/?\\s*${chip}`, "gi");
                               setFormBestPairing((prev) => prev.replace(regex, "").replace(/^[\s\/]+|[\s\/]+$/g, ""));
                             } else {
-                              // Append chip
                               setFormBestPairing((prev) =>
                                 prev.trim() ? `${prev.trim()} / ${chip}` : chip
                               );
