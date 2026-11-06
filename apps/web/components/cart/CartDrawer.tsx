@@ -375,6 +375,18 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ tableLabel, guestName = 
           },
         });
 
+        broadcastSyncEvent({
+          type: "TABLE_AVAILABILITY_CHANGED",
+          tableLabel: finalTableLabel,
+          status: "OCCUPIED",
+          timestamp: Date.now(),
+          metadata: {
+            label: finalTableLabel,
+            isOccupied: true,
+            sessionStatus: "OPEN",
+          },
+        });
+
         if (isCashier) {
           broadcastSyncEvent({
             type: "ORDER_PENDING_CASHIER",

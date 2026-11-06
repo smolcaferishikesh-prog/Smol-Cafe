@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef, useMemo } from "react";
+import { useStaffSessionKeepAlive } from "@/lib/auth/use-staff-session-keepalive";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import Image from "next/image";
@@ -116,6 +117,7 @@ interface AdminTowerProps {
 }
 
 export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverviewData }) => {
+  useStaffSessionKeepAlive("admin");
   const [activeTab, setActiveTab] = useState<
     | "overview"
     | "orders"
@@ -1791,16 +1793,13 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
     const unsub = subscribeToSyncEvents((ev) => {
       if (isMounted) {
         if (ev.type === "STAFF_CREDENTIALS_CHANGED") {
-          const target = (ev.metadata?.role as string) || ev.station?.toLowerCase();
-          if (target === "admin" || target === "all" || ev.station === "ALL") {
-            const isSelf = typeof window !== "undefined" && (window as any).__SMOL_SELF_CREDENTIAL_CHANGE__ && (Date.now() - (window as any).__SMOL_SELF_CREDENTIAL_CHANGE__ < 5000);
-            if (!isSelf) {
-              try {
-                alert("⚠️ Security Notice: Admin credentials (PIN/Password) were changed from another session. Redirecting to login...");
-              } catch {}
-              window.location.href = "/smol-backdoor";
+          // Keep active 12-hour staff session alive without premature auto-logout;
+          // simply refresh displayed role credentials if viewing Staff RBAC tab.
+          void getRoleCredentialsAction(true).then((res) => {
+            if (res.success && res.credentials) {
+              setRoleCredentials(res.credentials);
             }
-          }
+          }).catch(() => {});
         }
 
 
@@ -1835,6 +1834,35 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
           return;
         }
 
+        if (ev.type === "TABLE_AVAILABILITY_CHANGED") {
+          const meta = ev.metadata || {};
+          const id = ev.tableId || (meta.tableId as string) || (meta.id as string);
+          const label = (ev.tableLabel || (meta.label as string) || "").replace(/^(?:table|t)[-\s_]*/i, "").trim().toLowerCase();
+          const isOccupied = meta.isOccupied !== undefined ? Boolean(meta.isOccupied) : ev.status === "OCCUPIED";
+
+          setOverviewData((prev) => {
+            if (!prev) return prev;
+            const updatedTables = (prev.tables || []).map((t) => {
+              const cleanT = t.label.replace(/^(?:table|t)[-\s_]*/i, "").trim().toLowerCase();
+              const isMatch =
+                (id && t.id === id) ||
+                (label && (cleanT === label || cleanT.padStart(2, "0") === label.padStart(2, "0")));
+              return isMatch ? { ...t, isOccupied } : t;
+            });
+            const occupiedCount = updatedTables.filter((t) => t.isOccupied).length;
+            return {
+              ...prev,
+              tables: updatedTables,
+              kpis: {
+                ...prev.kpis,
+                activeTablesCount: occupiedCount,
+              },
+            };
+          });
+          void refreshData(true);
+          return;
+        }
+
         if (ev.type === "TABLE_RENAMED") {
           const meta = ev.metadata || {};
           const id = ev.tableId || (meta.id as string);
@@ -1849,11 +1877,21 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
                     seats: meta.seats !== undefined ? Number(meta.seats) : t.seats,
                     isActive: meta.active !== undefined ? Boolean(meta.active) : t.isActive,
                     section: (meta.section as string) || t.section,
+                    isOccupied: meta.isOccupied !== undefined ? Boolean(meta.isOccupied) : t.isOccupied,
                   }
                 : t
             );
-            return { ...prev, tables: updatedTables };
+            const occupiedCount = updatedTables.filter((t) => t.isOccupied).length;
+            return {
+              ...prev,
+              tables: updatedTables,
+              kpis: {
+                ...prev.kpis,
+                activeTablesCount: occupiedCount,
+              },
+            };
           });
+          void refreshData(true);
           return;
         }
 
@@ -3398,7 +3436,7 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
 
               <div className="flex items-center gap-2">
                 <Link
-                  href="/smol-backdoor"
+                  href="/smol-backdoor?switch=1"
                   target="_blank"
                   className="flex items-center gap-1.5 rounded-2xl bg-[#241F1C] dark:bg-stone-800 text-white px-3.5 py-2 text-xs font-mono font-bold hover:bg-stone-800 dark:hover:bg-stone-700 transition shadow-xs"
                 >
@@ -4880,17 +4918,7 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
                       ? overviewData.tables
                       : [{ id: "t-01", label: "01", seats: 2, isActive: true }];
 
-                  const activeTableCount = actualTables.filter((t) => {
-                    return orders.some(
-                      (o) =>
-                        (o.tableLabel === t.label ||
-                          o.tableLabel === t.label.padStart(2, "0") ||
-                          o.tableLabel.toLowerCase() === t.label.toLowerCase()) &&
-                        o.status !== "COMPLETED" &&
-                        o.status !== "CANCELLED" &&
-                        o.status !== "REJECTED"
-                    );
-                  }).length;
+                  const activeTableCount = actualTables.filter((t) => Boolean(t.isOccupied)).length;
 
                   return (
                     <div>
@@ -4902,15 +4930,7 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
                       </div>
                       <div className={`grid gap-2 pt-1 ${actualTables.length <= 4 ? "grid-cols-2 sm:grid-cols-4" : actualTables.length <= 8 ? "grid-cols-4" : "grid-cols-6"}`}>
                         {actualTables.map((t) => {
-                          const isOccupied = orders.some(
-                            (o) =>
-                              (o.tableLabel === t.label ||
-                                o.tableLabel === t.label.padStart(2, "0") ||
-                                o.tableLabel.toLowerCase() === t.label.toLowerCase()) &&
-                              o.status !== "COMPLETED" &&
-                              o.status !== "CANCELLED" &&
-                              o.status !== "REJECTED"
-                          );
+                          const isOccupied = Boolean(t.isOccupied);
                           const displayLabel = t.label.toUpperCase().startsWith("T")
                             ? t.label.toUpperCase()
                             : isNaN(Number(t.label))

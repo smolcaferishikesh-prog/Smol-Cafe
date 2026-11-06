@@ -16,6 +16,7 @@ export type SyncEventType =
   | "STATUS_CHANGED"
   | "TICKET_STATUS_CHANGED"
   | "ITEM_AVAILABILITY_CHANGED"
+  | "TABLE_AVAILABILITY_CHANGED"
   | "TABLE_RENAMED"
   | "TABLE_CREATED"
   | "TABLE_DELETED"
@@ -87,6 +88,7 @@ function shouldProcessEvent(event: SyncPayload): boolean {
     event.stockStatus ||
     event.availability ||
     (event.metadata?.status as string) ||
+    (event.metadata?.isOccupied !== undefined ? String(event.metadata.isOccupied) : "") ||
     (event.metadata?.active !== undefined ? String(event.metadata.active) : "");
 
   const timeBucket = event.timestamp
@@ -358,13 +360,16 @@ function getOrInitSupabaseChannel(): RealtimeChannel | null {
       (payload: { new?: Record<string, unknown>; old?: Record<string, unknown>; eventType: string }) => {
         const session = payload?.new || payload?.old;
         if (session && typeof session.table_id === "string") {
+          const isClosed = session.status === "CLOSED" || session.status === "EXPIRED";
           const syncEvent: SyncPayload = {
-            type: "TABLE_RENAMED",
+            type: "TABLE_AVAILABILITY_CHANGED",
             tableId: session.table_id as string,
+            status: isClosed ? "AVAILABLE" : String(session.status || "OPEN"),
             timestamp: Date.now(),
             metadata: {
               tableId: session.table_id,
               sessionStatus: session.status,
+              isOccupied: isClosed ? false : undefined,
               eventType: payload.eventType,
             },
           };

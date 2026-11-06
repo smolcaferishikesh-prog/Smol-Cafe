@@ -132,8 +132,8 @@ export async function fetchTablesAndSectionsAction(): Promise<{
         .order("label", { ascending: true }),
       supabase
         .from("table_sessions")
-        .select("table_id, status")
-        .eq("status", "OPEN"),
+        .select("id, table_id, status")
+        .in("status", ["OPEN", "PAYMENT_PENDING"]),
     ]);
 
     if (tablesRes.error) {
@@ -142,14 +142,36 @@ export async function fetchTablesAndSectionsAction(): Promise<{
     }
 
     const tablesData = tablesRes.data;
-    const sessionsData = sessionsRes.data;
+    const sessionsData = (sessionsRes.data || []) as Array<{ id: string; table_id: string; status: string }>;
 
     // Cache location_id from existing tables so createTableAction never needs an extra DB lookup
     if (tablesData && tablesData.length > 0 && tablesData[0].location_id) {
       globalThis.__SMOL_DEFAULT_LOCATION_ID__ = tablesData[0].location_id;
     }
 
-    const occupiedTableIds = new Set((sessionsData || []).map((s: { table_id: string }) => s.table_id));
+    // A table is occupied ONLY after a customer places an order on an open session
+    // and until the Cashier marks the table available (which closes the session)
+    const openSessionIds = sessionsData.map((s) => s.id).filter(Boolean);
+    const sessionsWithOrders = new Set<string>();
+
+    if (openSessionIds.length > 0) {
+      const { data: activeOrders } = await supabase
+        .from("orders")
+        .select("table_session_id, status")
+        .in("table_session_id", openSessionIds);
+
+      for (const ord of activeOrders || []) {
+        if (ord.status !== "CANCELLED" && ord.status !== "REJECTED" && ord.table_session_id) {
+          sessionsWithOrders.add(ord.table_session_id);
+        }
+      }
+    }
+
+    const occupiedTableIds = new Set(
+      sessionsData
+        .filter((s) => sessionsWithOrders.has(s.id))
+        .map((s) => s.table_id)
+    );
     const sectionMap = getActiveSectionsMap();
 
     const tables: DiningTableRecord[] = (tablesData || []).map((t: any) => {

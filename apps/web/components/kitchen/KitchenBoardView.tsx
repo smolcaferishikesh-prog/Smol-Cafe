@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { useStaffSessionKeepAlive } from "@/lib/auth/use-staff-session-keepalive";
 import Image from "next/image";
 import type { KitchenTicket, KitchenOrderItem } from "@/app/kitchen/actions";
 import {
@@ -40,6 +41,7 @@ interface KitchenBoardViewProps {
 }
 
 export const KitchenBoardView: React.FC<KitchenBoardViewProps> = ({ initialOrders }) => {
+  useStaffSessionKeepAlive("kitchen");
   const [orders, setOrders] = useState<KitchenTicket[]>(initialOrders);
   const [dismissedTicketIds, setDismissedTicketIds] = useState<Set<string>>(new Set());
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -323,16 +325,9 @@ export const KitchenBoardView: React.FC<KitchenBoardViewProps> = ({ initialOrder
 
     // 2. Cross-Interface Real-Time Sync Subscription
     const unsubscribe = subscribeToSyncEvents((event) => {
-      // Automatic real-time logout if PIN/password changed by Admin
+      // Preserve active 12-hour staff session (do not auto-logout before 12 hours)
       if (event.type === "STAFF_CREDENTIALS_CHANGED") {
-        const target = (event.metadata?.role as string) || event.station?.toLowerCase();
-        if (target === "kitchen" || target === "all" || event.station === "ALL") {
-          try {
-            alert("⚠️ Security Notice: Kitchen credentials (PIN) were updated by Admin. Redirecting to login...");
-          } catch {}
-          window.location.href = "/smol-backdoor";
-          return;
-        }
+        return;
       }
 
       // Ignore orders awaiting cashier approval in Kitchen KDS
@@ -718,8 +713,12 @@ export const KitchenBoardView: React.FC<KitchenBoardViewProps> = ({ initialOrder
             {/* Logout */}
             <button
               onClick={async () => {
+                try {
+                  localStorage.removeItem("smol_staff_session_12h");
+                  sessionStorage.removeItem("smol_admin_auth");
+                } catch {}
                 await staffLogoutAction();
-                window.location.reload();
+                window.location.href = "/smol-backdoor";
               }}
               className="flex h-7 w-7 sm:h-auto sm:w-auto items-center justify-center gap-1 rounded-full border border-[#B72E35]/40 hover:border-[#B72E35] dark:border-stone-700 bg-[#FAF4EB] dark:bg-[#241F1C] sm:px-2.5 sm:py-1 text-[11px] sm:text-xs font-mono font-bold text-[#B72E35] dark:text-[#FF6B6B] hover:bg-[#B72E35] hover:text-white dark:hover:bg-rose-950/60 transition cursor-pointer shrink-0 whitespace-nowrap shadow-xs"
               title="Staff Logout"

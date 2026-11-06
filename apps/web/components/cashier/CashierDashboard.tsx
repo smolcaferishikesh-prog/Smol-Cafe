@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useCallback, useRef } from "react";
+import { useStaffSessionKeepAlive } from "@/lib/auth/use-staff-session-keepalive";
 import Link from "next/link";
 import Image from "next/image";
 import type { ActiveCashierTable } from "@/app/bill/actions";
@@ -8,6 +9,7 @@ import {
   fetchActiveCashierTablesAction,
   recordCashPaymentAction,
   openTableSessionAction,
+  markTableAvailableAction,
 } from "@/app/bill/actions";
 import {
   fetchPendingCashierOrdersAction,
@@ -46,6 +48,7 @@ import {
   Truck,
   Phone,
   UserCheck,
+  Users,
   CheckCircle2,
 } from "lucide-react";
 import { staffBackdoorLogoutAction } from "@/app/smol-backdoor/actions";
@@ -72,11 +75,14 @@ export const CashierDashboard: React.FC<CashierDashboardProps> = ({
   initialDeliveryOrders = [],
   initialPaidHistory = [],
 }) => {
+  useStaffSessionKeepAlive("cashier");
   const [activeTab, setActiveTab] = useState<"queue" | "delivery" | "paid" | "tables">("queue");
   const [tables, setTables] = useState<ActiveCashierTable[]>(initialTables);
   const [pendingOrders, setPendingOrders] = useState<PendingOrderVerification[]>(initialPendingOrders);
   const [deliveryOrders, setDeliveryOrders] = useState<DeliveryOrder[]>(initialDeliveryOrders);
   const [deliveringOrderIds, setDeliveringOrderIds] = useState<Set<string>>(new Set());
+  const [markingAvailableIds, setMarkingAvailableIds] = useState<Set<string>>(new Set());
+  const recentlyFreedTableIdsRef = useRef<Set<string>>(new Set());
   const [paidHistory, setPaidHistory] = useState<PaidHistoryRecord[]>(initialPaidHistory);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isMounted, setIsMounted] = useState(false);
@@ -147,7 +153,13 @@ export const CashierDashboard: React.FC<CashierDashboardProps> = ({
         fetchReadyForDeliveryOrdersAction(),
         fetchPaidCashierHistoryAction(),
       ]);
-      setTables(tableData);
+      setTables(
+        tableData.filter(
+          (t) =>
+            !recentlyFreedTableIdsRef.current.has(t.sessionId) &&
+            !(t.tableId && recentlyFreedTableIdsRef.current.has(t.tableId))
+        )
+      );
       if (pendingData.success) {
         const filteredPending = pendingData.orders.filter(
           (o) =>
@@ -276,16 +288,9 @@ export const CashierDashboard: React.FC<CashierDashboardProps> = ({
     const unsubscribe = subscribeToSyncEvents((event) => {
       if (!isMounted) return;
 
-      // Automatic real-time logout if PIN/password changed by Admin
+      // Preserve active 12-hour staff session (do not auto-logout before 12 hours)
       if (event.type === "STAFF_CREDENTIALS_CHANGED") {
-        const target = (event.metadata?.role as string) || event.station?.toLowerCase();
-        if (target === "cashier" || target === "all" || event.station === "ALL") {
-          try {
-            alert("⚠️ Security Notice: Cashier desk credentials (PIN) were updated by Admin. Redirecting to login...");
-          } catch {}
-          window.location.href = "/smol-backdoor";
-          return;
-        }
+        return;
       }
 
       // Active Customer Service Bell Alert (Call Staff / Water & Napkins) with 5-Second Continuous Ringing
@@ -304,6 +309,12 @@ export const CashierDashboard: React.FC<CashierDashboardProps> = ({
 
         setStaffAlerts((prev) => [alertData, ...prev.filter((a) => a.id !== alertData.id)]);
         return;
+      }
+
+      if (event.type === "ORDER_PLACED" || event.type === "ORDER_PENDING_CASHIER") {
+        if (event.tableId) recentlyFreedTableIdsRef.current.delete(event.tableId);
+        const sessId = event.metadata?.tableSessionId as string | undefined;
+        if (sessId) recentlyFreedTableIdsRef.current.delete(sessId);
       }
 
       if (event.type === "ORDER_PENDING_CASHIER" || event.status === "PENDING_CONFIRMATION") {
@@ -329,6 +340,7 @@ export const CashierDashboard: React.FC<CashierDashboardProps> = ({
 
       if (event.orderId && event.status && ["ACCEPTED", "PREPARING", "SERVED", "COMPLETED", "CANCELLED"].includes(event.status)) {
         setPendingOrders((prev) => prev.filter((o) => o.id !== event.orderId));
+        void refreshData(true);
       } else {
         void refreshData(true);
       }
@@ -637,6 +649,119 @@ export const CashierDashboard: React.FC<CashierDashboardProps> = ({
     }
   };
 
+  const getSectionBadgeClass = (sec?: string) => {
+    switch (sec) {
+      case "smol-cafe":
+      case "Café":
+      case "Cafe":
+      case "Indoor Cozy":
+        return "bg-amber-100 text-amber-900 border-amber-300 dark:bg-amber-950/70 dark:text-amber-300 dark:border-amber-800";
+      case "smol-lounge":
+      case "Lounge":
+        return "bg-purple-100 text-purple-900 border-purple-300 dark:bg-purple-950/70 dark:text-purple-300 dark:border-purple-800";
+      case "smol-terrace":
+      case "Terrace":
+      case "Garden Terrace":
+        return "bg-teal-100 text-teal-900 border-teal-300 dark:bg-teal-950/70 dark:text-teal-300 dark:border-teal-800";
+      default:
+        return "bg-stone-100 text-stone-900 border-stone-300 dark:bg-stone-800 dark:text-stone-300 dark:border-stone-700";
+    }
+  };
+
+  const handleMarkTableAvailable = async (table: ActiveCashierTable) => {
+    const key = table.sessionId || table.tableId;
+    if (markingAvailableIds.has(key)) return;
+
+    const prevTables = tables;
+    recentlyFreedTableIdsRef.current.add(table.sessionId);
+    if (table.tableId) recentlyFreedTableIdsRef.current.add(table.tableId);
+    (table.sessionIds || []).forEach((id) => recentlyFreedTableIdsRef.current.add(id));
+
+    setMarkingAvailableIds((prev) => new Set(prev).add(key));
+    setTables((prev) =>
+      prev.filter(
+        (t) =>
+          t.sessionId !== table.sessionId &&
+          (table.tableId ? t.tableId !== table.tableId : t.tableLabel !== table.tableLabel)
+      )
+    );
+
+    const displayLabel = table.tableLabel.replace(/^(?:table|t)[-\s_]*/i, "").trim() || table.tableLabel;
+    setActionFeedback({
+      type: "success",
+      text: `Table T-${displayLabel} marked as Available! Synced with Admin.`,
+    });
+
+    broadcastSyncEvent({
+      type: "TABLE_AVAILABILITY_CHANGED",
+      tableId: table.tableId,
+      tableLabel: table.tableLabel,
+      status: "AVAILABLE",
+      timestamp: Date.now(),
+      metadata: {
+        id: table.tableId,
+        tableId: table.tableId,
+        label: table.tableLabel,
+        isOccupied: false,
+        sessionStatus: "CLOSED",
+        staffName,
+      },
+    });
+
+    broadcastSyncEvent({
+      type: "TABLE_RENAMED",
+      tableId: table.tableId,
+      tableLabel: table.tableLabel,
+      timestamp: Date.now(),
+      metadata: {
+        id: table.tableId,
+        label: table.tableLabel,
+        isOccupied: false,
+      },
+    });
+
+    try {
+      const res = await markTableAvailableAction(
+        table.sessionId,
+        table.tableId,
+        table.tableLabel,
+        staffName
+      );
+      if (!res.success) {
+        recentlyFreedTableIdsRef.current.delete(table.sessionId);
+        if (table.tableId) recentlyFreedTableIdsRef.current.delete(table.tableId);
+        (table.sessionIds || []).forEach((id) => recentlyFreedTableIdsRef.current.delete(id));
+        setTables(prevTables);
+        setActionFeedback({
+          type: "error",
+          text: res.message || "Failed to mark table as available.",
+        });
+      } else {
+        setTimeout(() => {
+          recentlyFreedTableIdsRef.current.delete(table.sessionId);
+          if (table.tableId) recentlyFreedTableIdsRef.current.delete(table.tableId);
+          (table.sessionIds || []).forEach((id) => recentlyFreedTableIdsRef.current.delete(id));
+          void refreshData(true);
+        }, 2500);
+      }
+    } catch {
+      recentlyFreedTableIdsRef.current.delete(table.sessionId);
+      if (table.tableId) recentlyFreedTableIdsRef.current.delete(table.tableId);
+      (table.sessionIds || []).forEach((id) => recentlyFreedTableIdsRef.current.delete(id));
+      setTables(prevTables);
+      setActionFeedback({
+        type: "error",
+        text: "Network error while marking table available.",
+      });
+    } finally {
+      setMarkingAvailableIds((prev) => {
+        const next = new Set(prev);
+        next.delete(key);
+        return next;
+      });
+    }
+  };
+
   const handleMarkDelivered = async (orderId: string) => {
     setDeliveringOrderIds((prev) => new Set(prev).add(orderId));
     try {
@@ -671,7 +796,7 @@ export const CashierDashboard: React.FC<CashierDashboardProps> = ({
           {/* Brand Left */}
           <div className="flex items-center gap-1.5 sm:gap-3 min-w-0">
             <Link
-              href="/smol-backdoor"
+              href="/smol-backdoor?switch=1"
               className="flex h-7 w-7 sm:h-9 sm:w-9 items-center justify-center rounded-xl border border-[#C9AE8B]/40 dark:border-stone-800 bg-[#F3E7D3] dark:bg-stone-800 text-[#725039] dark:text-stone-300 hover:bg-[#EBDDC8] dark:hover:bg-stone-700 transition cursor-pointer shrink-0"
               title="Back to staff portal"
             >
@@ -724,7 +849,7 @@ export const CashierDashboard: React.FC<CashierDashboardProps> = ({
               <span className="hidden sm:inline">Live 3s</span>
             </span>
             <Link
-              href="/smol-backdoor"
+              href="/smol-backdoor?switch=1"
               className="hidden sm:inline rounded-xl border border-[#C9AE8B]/40 dark:border-stone-800 bg-[#FAF4EB] dark:bg-stone-900 px-3 py-1 text-xs font-mono text-[#725039] dark:text-stone-400 hover:bg-[#F3E7D3] dark:hover:bg-stone-800 transition"
             >
               Role Portal
@@ -734,6 +859,10 @@ export const CashierDashboard: React.FC<CashierDashboardProps> = ({
             <button
               type="button"
               onClick={async () => {
+                try {
+                  localStorage.removeItem("smol_staff_session_12h");
+                  sessionStorage.removeItem("smol_admin_auth");
+                } catch {}
                 await staffBackdoorLogoutAction();
               }}
               className="flex items-center gap-1 rounded-xl border border-[#C9AE8B]/40 dark:border-stone-800 bg-[#FAF4EB] dark:bg-stone-900 px-2.5 sm:px-3 py-1 text-xs font-mono text-[#725039] dark:text-stone-400 hover:text-[#B72E35] dark:hover:text-red-400 hover:border-red-300 transition cursor-pointer"
@@ -1556,7 +1685,7 @@ export const CashierDashboard: React.FC<CashierDashboardProps> = ({
           </div>
         )}
 
-        {/* TAB 4: ACTIVE DINING TABLES & CASH SETTLEMENT */}
+        {/* TAB 4: ACTIVE DINING TABLES (OCCUPIED TABLES & AVAILABILITY CONTROL) */}
         {activeTab === "tables" && (
           <div className="space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -1565,61 +1694,98 @@ export const CashierDashboard: React.FC<CashierDashboardProps> = ({
                   Active Dining Tables ({tables.length})
                 </h2>
                 <p className="text-xs text-[#725039] dark:text-stone-400 font-serif">
-                  Monitor table status and record direct cash payments &amp; table bill settlements.
+                  Tables reflect here once a customer places an order. Mark a table available when you see it is empty.
                 </p>
+              </div>
+              <div className="self-start sm:self-auto">
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-100 dark:bg-emerald-950/80 border border-emerald-300 dark:border-emerald-800/60 px-3 py-1 font-mono text-xs font-bold text-emerald-800 dark:text-emerald-300 shadow-xs">
+                  <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+                  <span>{tables.length} Occupied</span>
+                </span>
               </div>
             </div>
 
             {tables.length === 0 ? (
-              <div className="rounded-3xl border border-dashed border-[#C9AE8B]/40 dark:border-stone-800 bg-[#FAF4EB]/60 dark:bg-stone-900/40 p-12 text-center">
-                <Armchair className="h-12 w-12 mx-auto text-[#C9AE8B] dark:text-stone-600 mb-3" />
-                <h3 className="font-mono text-base font-bold text-[#241F1C] dark:text-white">No Active Tables</h3>
-                <p className="text-xs text-stone-500 dark:text-stone-400 mt-1">All tables are currently settled and available.</p>
+              <div className="rounded-3xl border border-dashed border-[#C9AE8B]/40 dark:border-stone-800 bg-[#FAF4EB]/60 dark:bg-stone-900/40 p-12 text-center space-y-2">
+                <Armchair className="h-12 w-12 mx-auto text-[#C9AE8B] dark:text-stone-600 mb-2" />
+                <h3 className="font-mono text-base font-bold text-[#241F1C] dark:text-white">All Dining Tables Are Available</h3>
+                <p className="text-xs text-stone-500 dark:text-stone-400 max-w-md mx-auto">
+                  When a customer places an order, their table will automatically appear here as Occupied until you mark it available.
+                </p>
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 {tables.map((table) => {
                   const billRupees = Math.round(table.totalPaise / 100);
+                  const cleanTableNum = table.tableLabel.replace(/^(?:table|t)[-\s_]*/i, "").trim() || table.tableLabel;
+                  const key = table.sessionId || table.tableId;
+                  const isMarking = markingAvailableIds.has(key);
+
                   return (
                     <div
                       key={table.sessionId}
-                      className="rounded-3xl border border-[#C9AE8B]/40 dark:border-stone-800 bg-[#FAF4EB] dark:bg-stone-900 p-5 shadow-sm space-y-3"
+                      className="rounded-3xl border-2 border-[#B72E35] bg-[#FAF4EB] dark:bg-[#1A1715] p-5 shadow-md ring-1 ring-[#B72E35]/30 transition-all flex flex-col justify-between space-y-4"
                     >
-                      <div className="flex items-start justify-between">
-                        <div>
-                          <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-[#B72E35] dark:text-[#F6AD55]">
-                            {table.orderCount} {table.orderCount === 1 ? "Order" : "Orders"}
-                          </span>
-                          <h3 className="text-xl font-black font-mono text-[#241F1C] dark:text-white">
-                            Table {table.tableLabel}
-                          </h3>
+                      {/* Top Header: Table Name, Section Pill & Occupied Status Dot (referencing Image 3) */}
+                      <div>
+                        <div className="flex items-start justify-between gap-2">
+                          <div>
+                            <h3 className="font-mono text-2xl font-black text-[#241F1C] dark:text-white tracking-tight">
+                              T-{cleanTableNum}
+                            </h3>
+                            <div className="flex items-center gap-2 flex-wrap mt-1.5">
+                              <span
+                                className={`inline-block text-[11px] font-mono font-bold px-2.5 py-0.5 rounded-full border ${getSectionBadgeClass(
+                                  table.section || "smol-cafe"
+                                )}`}
+                              >
+                                {table.section || "smol-cafe"}
+                              </span>
+                              <span className="text-[10.5px] font-mono font-bold uppercase tracking-wider text-[#B72E35] dark:text-[#F6AD55] bg-[#B72E35]/10 dark:bg-[#B72E35]/20 px-2 py-0.5 rounded-full">
+                                {table.orderCount} {table.orderCount === 1 ? "Order" : "Orders"}
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-1.5 pt-1 shrink-0">
+                            <span className="h-2.5 w-2.5 rounded-full bg-emerald-500 animate-pulse" />
+                            <span className="text-xs font-mono font-semibold text-stone-600 dark:text-stone-300">
+                              Occupied
+                            </span>
+                          </div>
                         </div>
-                        <span
-                          className={`px-2.5 py-1 rounded-full text-[10px] font-bold ${
-                            table.sessionStatus === "OPEN"
-                              ? "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 border border-amber-300 dark:border-amber-800"
-                              : "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800"
-                          }`}
-                        >
-                          {table.sessionStatus}
-                        </span>
+
+                        {/* Guests Seating & Active Order Summary */}
+                        <div className="mt-4 flex items-center justify-between text-xs text-[#725039] dark:text-stone-400 font-mono">
+                          <div className="flex items-center gap-1.5">
+                            <Users className="h-4 w-4 shrink-0" />
+                            <span>{table.seats || 4} Guests Seating</span>
+                          </div>
+                          <span className="font-bold text-[#241F1C] dark:text-stone-200">
+                            ₹{billRupees}
+                          </span>
+                        </div>
                       </div>
 
-                      <div className="rounded-2xl border border-[#C9AE8B]/20 dark:border-stone-800 bg-[#F3E7D3]/40 dark:bg-stone-950/40 p-3 flex justify-between items-center text-xs">
-                        <span className="text-[#725039] dark:text-stone-400 font-medium">Total Bill Due</span>
-                        <span className="font-mono font-extrabold text-base text-[#241F1C] dark:text-white">
-                          ₹{billRupees}
-                        </span>
-                      </div>
-
-                      <div className="pt-1">
+                      {/* Bottom Action: Cashier Control to Mark Table Available when Empty */}
+                      <div className="pt-3.5 border-t border-[#C9AE8B]/30 dark:border-stone-800">
                         <button
                           type="button"
-                          onClick={() => handleOpenSettlement(table)}
-                          className="w-full flex items-center justify-center gap-1.5 rounded-xl bg-[#241F1C] dark:bg-stone-800 py-2.5 text-xs font-bold text-[#F3E7D3] dark:text-white transition hover:bg-[#362B24] dark:hover:bg-stone-700 shadow-xs cursor-pointer active:scale-98"
+                          disabled={isMarking}
+                          onClick={() => handleMarkTableAvailable(table)}
+                          className="w-full flex items-center justify-center gap-2 rounded-2xl bg-[#241F1C] hover:bg-emerald-700 dark:bg-stone-800 dark:hover:bg-emerald-600 py-3 px-4 text-xs sm:text-sm font-bold text-[#F3E7D3] dark:text-white transition-all shadow-xs cursor-pointer active:scale-[0.98] disabled:opacity-50"
                         >
-                          <Banknote className="h-4 w-4 text-emerald-400" />
-                          <span>Settle Cash Bill</span>
+                          {isMarking ? (
+                            <>
+                              <Loader2 className="h-4 w-4 animate-spin text-emerald-400" />
+                              <span>Marking Available...</span>
+                            </>
+                          ) : (
+                            <>
+                              <CheckCircle2 className="h-4 w-4 text-emerald-400" />
+                              <span>Mark Available</span>
+                            </>
+                          )}
                         </button>
                       </div>
                     </div>

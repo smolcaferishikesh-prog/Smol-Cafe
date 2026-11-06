@@ -267,26 +267,14 @@ export async function verifyRazorpayPaymentAction(
       })
       .eq("id", payload.billId);
 
-    // 5. Close Table Session
+    // 5. Keep Table Session OPEN until Cashier marks table available when empty
     await supabase
       .from("table_sessions")
       .update({
-        status: "CLOSED",
-        closed_at: nowIso,
+        status: "OPEN",
         last_activity_at: nowIso,
       })
       .eq("id", payload.tableSessionId);
-
-    // 6. Update open orders to SERVED
-    await supabase
-      .from("orders")
-      .update({
-        status: "SERVED",
-        served_at: nowIso,
-        updated_at: nowIso,
-      })
-      .eq("table_session_id", payload.tableSessionId)
-      .in("status", ["SUBMITTED", "ACCEPTED", "PREPARING", "READY"]);
 
     return {
       success: true,

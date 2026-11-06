@@ -6,6 +6,8 @@ import { useRouter } from "next/navigation";
 import {
   staffBackdoorLoginAction,
   getRoleCredentialsAction,
+  getActiveStaffSessionAction,
+  restoreStaffSessionAction,
 } from "@/app/smol-backdoor/actions";
 import {
   ChefHat,
@@ -24,6 +26,16 @@ import {
 import { ThemeToggle } from "@/components/common/ThemeToggle";
 
 type RoleId = "kitchen" | "barista" | "cashier" | "admin";
+
+export const STAFF_SESSION_STORAGE_KEY = "smol_staff_session_12h";
+export const STAFF_SESSION_DURATION_MS = 12 * 60 * 60 * 1000; // 12 hours
+
+interface StoredStaffSession12h {
+  role: RoleId;
+  redirectTo: string;
+  issuedAt: number;
+  expiresAt: number;
+}
 
 interface RoleMeta {
   id: RoleId;
@@ -49,6 +61,8 @@ export const StaffBackdoorPortal: React.FC = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [shake, setShake] = useState(false);
+  const [activeSession, setActiveSession] =
+    useState<StoredStaffSession12h | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const [livePins, setLivePins] = useState<{
@@ -78,6 +92,102 @@ export const StaffBackdoorPortal: React.FC = () => {
       .catch(console.error);
   }, []);
 
+  // Check for an active 12-hour session (either via server cookie or localStorage)
+  // so logged-in staff are not logged out before 12 hours.
+  useEffect(() => {
+    let cancelled = false;
+    const isSwitchingRole =
+      typeof window !== "undefined" &&
+      new URLSearchParams(window.location.search).get("switch") === "1";
+
+    async function verifyOrRestore12hSession() {
+      try {
+        // 1. Check server-side 12-hour cookie first
+        const serverSession = await getActiveStaffSessionAction();
+        if (
+          !cancelled &&
+          serverSession.active &&
+          serverSession.role &&
+          serverSession.redirectTo
+        ) {
+          const now = Date.now();
+          const issuedAt = serverSession.issuedAt || now;
+          const expiresAt =
+            serverSession.expiresAt || issuedAt + STAFF_SESSION_DURATION_MS;
+          const sessionObj: StoredStaffSession12h = {
+            role: serverSession.role,
+            redirectTo: serverSession.redirectTo,
+            issuedAt,
+            expiresAt,
+          };
+
+          try {
+            localStorage.setItem(
+              STAFF_SESSION_STORAGE_KEY,
+              JSON.stringify(sessionObj)
+            );
+          } catch {}
+
+          setActiveSession(sessionObj);
+          setSelectedRole(serverSession.role);
+
+          if (!isSwitchingRole) {
+            window.location.href = serverSession.redirectTo;
+          }
+          return;
+        }
+
+        // 2. Fallback: Check client 12-hour localStorage session (e.g. if browser restarted before 12h)
+        if (typeof window !== "undefined") {
+          const rawStored = localStorage.getItem(STAFF_SESSION_STORAGE_KEY);
+          if (rawStored) {
+            const parsed = JSON.parse(rawStored) as StoredStaffSession12h;
+            const now = Date.now();
+            if (
+              parsed &&
+              parsed.role &&
+              parsed.issuedAt &&
+              now - parsed.issuedAt < STAFF_SESSION_DURATION_MS &&
+              (!parsed.expiresAt || now < parsed.expiresAt)
+            ) {
+              const restored = await restoreStaffSessionAction(
+                parsed.role,
+                parsed.issuedAt
+              );
+              if (!cancelled && restored.success && restored.redirectTo) {
+                const updatedSession: StoredStaffSession12h = {
+                  role: parsed.role,
+                  redirectTo: restored.redirectTo,
+                  issuedAt: restored.issuedAt || parsed.issuedAt,
+                  expiresAt:
+                    restored.expiresAt ||
+                    parsed.issuedAt + STAFF_SESSION_DURATION_MS,
+                };
+                setActiveSession(updatedSession);
+                setSelectedRole(parsed.role);
+
+                if (!isSwitchingRole) {
+                  window.location.href = restored.redirectTo;
+                }
+                return;
+              }
+            } else {
+              // Expired (> 12 hours) -> clean up storage
+              localStorage.removeItem(STAFF_SESSION_STORAGE_KEY);
+            }
+          }
+        }
+      } catch (err) {
+        console.warn("Session persistence check failed:", err);
+      }
+    }
+
+    void verifyOrRestore12hSession();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const roles: RoleMeta[] = [
     {
       id: "kitchen",
@@ -89,9 +199,11 @@ export const StaffBackdoorPortal: React.FC = () => {
       icon: ChefHat,
       themeColor: "#D97706",
       themeBg: "bg-amber-500/10 text-amber-700 dark:text-amber-400",
-      activeBorder: "border-amber-600 dark:border-amber-400 ring-2 ring-amber-500/20",
+      activeBorder:
+        "border-amber-600 dark:border-amber-400 ring-2 ring-amber-500/20",
       glowColor: "shadow-[0_8px_30px_rgb(217,119,6,0.18)]",
-      badgeBg: "bg-amber-100 text-amber-900 border-amber-300 dark:bg-amber-950/70 dark:text-amber-300 dark:border-amber-800",
+      badgeBg:
+        "bg-amber-100 text-amber-900 border-amber-300 dark:bg-amber-950/70 dark:text-amber-300 dark:border-amber-800",
       destination: "/smol-backdoor/kitchen",
     },
     {
@@ -104,9 +216,11 @@ export const StaffBackdoorPortal: React.FC = () => {
       icon: Coffee,
       themeColor: "#B72E35",
       themeBg: "bg-[#B72E35]/10 text-[#B72E35] dark:text-[#F87171]",
-      activeBorder: "border-[#B72E35] dark:border-[#F87171] ring-2 ring-[#B72E35]/20",
+      activeBorder:
+        "border-[#B72E35] dark:border-[#F87171] ring-2 ring-[#B72E35]/20",
       glowColor: "shadow-[0_8px_30px_rgb(183,46,53,0.20)]",
-      badgeBg: "bg-rose-100 text-rose-900 border-rose-300 dark:bg-rose-950/70 dark:text-rose-300 dark:border-rose-800",
+      badgeBg:
+        "bg-rose-100 text-rose-900 border-rose-300 dark:bg-rose-950/70 dark:text-rose-300 dark:border-rose-800",
       destination: "/smol-backdoor/barista",
     },
     {
@@ -119,9 +233,11 @@ export const StaffBackdoorPortal: React.FC = () => {
       icon: Receipt,
       themeColor: "#059669",
       themeBg: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400",
-      activeBorder: "border-emerald-600 dark:border-emerald-400 ring-2 ring-emerald-500/20",
+      activeBorder:
+        "border-emerald-600 dark:border-emerald-400 ring-2 ring-emerald-500/20",
       glowColor: "shadow-[0_8px_30px_rgb(5,150,105,0.18)]",
-      badgeBg: "bg-emerald-100 text-emerald-900 border-emerald-300 dark:bg-emerald-950/70 dark:text-emerald-300 dark:border-emerald-800",
+      badgeBg:
+        "bg-emerald-100 text-emerald-900 border-emerald-300 dark:bg-emerald-950/70 dark:text-emerald-300 dark:border-emerald-800",
       destination: "/smol-backdoor/cashier",
     },
     {
@@ -134,9 +250,11 @@ export const StaffBackdoorPortal: React.FC = () => {
       icon: ShieldCheck,
       themeColor: "#7C3AED",
       themeBg: "bg-purple-500/10 text-purple-700 dark:text-purple-400",
-      activeBorder: "border-purple-600 dark:border-purple-400 ring-2 ring-purple-500/20",
+      activeBorder:
+        "border-purple-600 dark:border-purple-400 ring-2 ring-purple-500/20",
       glowColor: "shadow-[0_8px_30px_rgb(124,58,237,0.20)]",
-      badgeBg: "bg-purple-100 text-purple-900 border-purple-300 dark:bg-purple-950/70 dark:text-purple-300 dark:border-purple-800",
+      badgeBg:
+        "bg-purple-100 text-purple-900 border-purple-300 dark:bg-purple-950/70 dark:text-purple-300 dark:border-purple-800",
       destination: "/smol-backdoor/admin",
     },
   ];
@@ -167,10 +285,30 @@ export const StaffBackdoorPortal: React.FC = () => {
         });
 
         if (res.success && res.redirectTo) {
+          const now = Date.now();
+          const issuedAt = res.issuedAt || now;
+          const expiresAt = res.expiresAt || issuedAt + STAFF_SESSION_DURATION_MS;
+          try {
+            localStorage.setItem(
+              STAFF_SESSION_STORAGE_KEY,
+              JSON.stringify({
+                role,
+                redirectTo: res.redirectTo,
+                issuedAt,
+                expiresAt,
+              } satisfies StoredStaffSession12h)
+            );
+            if (role === "admin") {
+              sessionStorage.setItem("smol_admin_auth", "true");
+            }
+          } catch {}
+
           // Keep loader spinning until browser navigates to destination page
           window.location.href = res.redirectTo;
         } else {
-          setErrorMessage(res.message || "Invalid Station PIN. Please re-enter.");
+          setErrorMessage(
+            res.message || "Invalid Station PIN. Please re-enter."
+          );
           triggerShake();
           setPin("");
           setIsSubmitting(false);
@@ -271,6 +409,28 @@ export const StaffBackdoorPortal: React.FC = () => {
 
       {/* Main Terminal Container */}
       <main className="mx-auto my-auto w-full max-w-lg space-y-3 sm:space-y-4 py-2 sm:py-3">
+        {/* Active 12-Hour Session Quick Resume Banner */}
+        {activeSession && (
+          <div className="flex items-center justify-between gap-3 rounded-2xl border border-emerald-500/40 bg-emerald-50/90 dark:bg-emerald-950/50 px-3.5 py-2.5 text-xs shadow-sm">
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+              <span className="font-mono font-bold text-emerald-900 dark:text-emerald-200 truncate">
+                Active 12h Session ({activeSession.role.toUpperCase()})
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                window.location.href = activeSession.redirectTo;
+              }}
+              className="flex items-center gap-1 rounded-xl bg-emerald-600 hover:bg-emerald-700 px-3 py-1.5 font-mono text-[11px] font-bold text-white shadow-xs transition cursor-pointer shrink-0"
+            >
+              <span>Resume</span>
+              <ArrowRight className="h-3 w-3" />
+            </button>
+          </div>
+        )}
+
         {/* Station Selector Bar (Responsive 4-Station Grid) */}
         <section aria-label="Select Station">
           <div className="grid grid-cols-4 gap-1.5 sm:gap-2.5 rounded-2xl sm:rounded-3xl border border-[#C9AE8B]/40 dark:border-stone-800 bg-[#EFE6DA]/70 dark:bg-[#1A1613] p-1.5 sm:p-2 shadow-inner">
@@ -302,7 +462,9 @@ export const StaffBackdoorPortal: React.FC = () => {
                       width={64}
                       height={64}
                       className={`object-contain w-auto dark:hidden transition-transform duration-300 ${
-                        isSelected ? "h-8 sm:h-11 scale-105" : "h-5 sm:h-7 opacity-80"
+                        isSelected
+                          ? "h-8 sm:h-11 scale-105"
+                          : "h-5 sm:h-7 opacity-80"
                       }`}
                     />
                     <Image
@@ -311,7 +473,9 @@ export const StaffBackdoorPortal: React.FC = () => {
                       width={64}
                       height={64}
                       className={`object-contain w-auto hidden dark:block transition-transform duration-300 ${
-                        isSelected ? "h-8 sm:h-11 scale-105" : "h-5 sm:h-7 opacity-80"
+                        isSelected
+                          ? "h-8 sm:h-11 scale-105"
+                          : "h-5 sm:h-7 opacity-80"
                       }`}
                     />
                   </div>
@@ -359,7 +523,7 @@ export const StaffBackdoorPortal: React.FC = () => {
                   Station Locked
                 </span>
                 <span className="font-mono text-[10px] text-[#725039]/80 dark:text-purple-300/70 hidden sm:inline">
-                  PIN Auth Required
+                  12h Shift Session
                 </span>
               </div>
 
@@ -410,7 +574,11 @@ export const StaffBackdoorPortal: React.FC = () => {
                 onClick={() => setShowPin(!showPin)}
                 className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full border border-transparent dark:border-purple-800/50 bg-transparent dark:bg-purple-950/40 text-[#B72E35] dark:text-[#C4B5FD] hover:bg-black/5 dark:hover:bg-purple-900/50 hover:underline cursor-pointer font-bold transition"
               >
-                {showPin ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
+                {showPin ? (
+                  <EyeOff className="h-3 w-3" />
+                ) : (
+                  <Eye className="h-3 w-3" />
+                )}
                 <span>{showPin ? "Hide" : "Peek"}</span>
               </button>
             </div>
@@ -522,7 +690,9 @@ export const StaffBackdoorPortal: React.FC = () => {
                 disabled={isSubmitting}
                 className="flex flex-col items-center justify-center h-12 sm:h-13.5 rounded-2xl bg-[#FAF4EB] hover:bg-[#F3E7D3] dark:bg-gradient-to-b dark:from-[#261E1A] dark:to-[#1B1512] dark:hover:from-[#312722] dark:hover:to-[#241D19] border border-[#C9AE8B]/30 dark:border-stone-800/90 hover:dark:border-purple-500/40 text-[#241F1C] dark:text-stone-100 shadow-xs dark:shadow-[0_2px_8px_rgba(0,0,0,0.5)] active:scale-90 active:bg-[#B72E35] active:text-white dark:active:from-[#7C3AED] dark:active:to-[#8B5CF6] dark:active:text-white dark:active:border-purple-400 dark:active:shadow-[0_0_20px_rgba(139,92,246,0.8)] transition-all duration-150 cursor-pointer disabled:opacity-50"
               >
-                <span className="font-mono text-lg sm:text-xl font-black leading-none dark:text-white">0</span>
+                <span className="font-mono text-lg sm:text-xl font-black leading-none dark:text-white">
+                  0
+                </span>
               </button>
 
               {/* Backspace */}
@@ -553,7 +723,9 @@ export const StaffBackdoorPortal: React.FC = () => {
               {isSubmitting ? (
                 <>
                   <div className="h-4 w-4 border-2 border-white dark:border-white border-t-transparent rounded-full animate-spin shrink-0" />
-                  <span className="tracking-wide">Unlocking {currentRole.shortName}...</span>
+                  <span className="tracking-wide">
+                    Unlocking {currentRole.shortName}...
+                  </span>
                 </>
               ) : (
                 <>
