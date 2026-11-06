@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useCallback, useRef } from "react";
-import { useStaffSessionKeepAlive } from "@/lib/auth/use-staff-session-keepalive";
+import { useStaffSessionKeepAlive, clearRoleSessionFromLocalStorage } from "@/lib/auth/use-staff-session-keepalive";
 import Link from "next/link";
 import Image from "next/image";
 import type { ActiveCashierTable } from "@/app/bill/actions";
@@ -859,11 +859,8 @@ export const CashierDashboard: React.FC<CashierDashboardProps> = ({
             <button
               type="button"
               onClick={async () => {
-                try {
-                  localStorage.removeItem("smol_staff_session_12h");
-                  sessionStorage.removeItem("smol_admin_auth");
-                } catch {}
-                await staffBackdoorLogoutAction();
+                clearRoleSessionFromLocalStorage("cashier");
+                await staffBackdoorLogoutAction("cashier");
               }}
               className="flex items-center gap-1 rounded-xl border border-[#C9AE8B]/40 dark:border-stone-800 bg-[#FAF4EB] dark:bg-stone-900 px-2.5 sm:px-3 py-1 text-xs font-mono text-[#725039] dark:text-stone-400 hover:text-[#B72E35] dark:hover:text-red-400 hover:border-red-300 transition cursor-pointer"
               title="Logout staff session"

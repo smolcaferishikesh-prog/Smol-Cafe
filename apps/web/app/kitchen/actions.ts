@@ -3,7 +3,7 @@
 import { cookies } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { createAdminClient, isMockDatabase } from "@/lib/supabase/admin";
-import { requireStaffAuth, setStaffSessionCookie } from "@/lib/auth/rbac";
+import { requireStaffAuth, setStaffSessionCookie, clearStaffSessionCookie } from "@/lib/auth/rbac";
 import { broadcastSyncEvent } from "@/lib/sync-events";
 import { isBeverageItem, isComboWithFoodItem, deriveStationStatus, deriveAggregateOrderStatus } from "@/lib/station-utils";
 import { extractOrderInstructions } from "@/lib/order-instructions";
@@ -552,6 +552,5 @@ export async function checkStaffAuthAction(): Promise<boolean> {
  * Server Action: Staff logout
  */
 export async function staffLogoutAction(): Promise<void> {
-  const cookieStore = await cookies();
-  cookieStore.delete(STAFF_SESSION_COOKIE);
+  await clearStaffSessionCookie("kitchen");
 }

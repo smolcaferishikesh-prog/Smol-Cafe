@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
-import { useStaffSessionKeepAlive } from "@/lib/auth/use-staff-session-keepalive";
+import { useStaffSessionKeepAlive, clearRoleSessionFromLocalStorage } from "@/lib/auth/use-staff-session-keepalive";
 import Image from "next/image";
 import type { BaristaTicket, BaristaOrderItem } from "@/app/barista/actions";
 import {
@@ -644,12 +644,9 @@ export const BaristaBoardView: React.FC<BaristaBoardViewProps> = ({ initialOrder
             {/* Logout */}
             <button
               onClick={async () => {
-                try {
-                  localStorage.removeItem("smol_staff_session_12h");
-                  sessionStorage.removeItem("smol_admin_auth");
-                } catch {}
+                clearRoleSessionFromLocalStorage("barista");
                 await staffLogoutAction();
-                window.location.href = "/smol-backdoor";
+                window.location.href = "/smol-backdoor?switch=1";
               }}
               className="flex h-7 w-7 sm:h-auto sm:w-auto items-center justify-center gap-1 rounded-full border border-[#B72E35]/40 hover:border-[#B72E35] dark:border-white/10 bg-[#FAF4EB] dark:bg-[#1D1815] sm:px-2.5 sm:py-1 text-[11px] sm:text-xs font-mono font-bold text-[#B72E35] dark:text-[#FF6B6B] hover:bg-[#B72E35] hover:text-white transition cursor-pointer shrink-0"
               title="Staff logout"

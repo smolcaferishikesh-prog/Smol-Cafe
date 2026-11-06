@@ -8,9 +8,10 @@ import {
 } from "@/app/smol-backdoor/actions";
 
 export const STAFF_SESSION_STORAGE_KEY = "smol_staff_session_12h";
+export const STAFF_ROLE_STORAGE_PREFIX = "smol_staff_session_12h_";
 export const STAFF_SESSION_DURATION_MS = 12 * 60 * 60 * 1000; // 12 hours
 
-interface StoredStaffSession12h {
+export interface StoredStaffSession12h {
   role: "kitchen" | "barista" | "cashier" | "admin";
   redirectTo: string;
   issuedAt: number;
@@ -27,11 +28,81 @@ const ROLE_REDIRECT_MAP: Record<
   admin: "/smol-backdoor/admin",
 };
 
+export function getRoleStorageKey(
+  role: "kitchen" | "barista" | "cashier" | "admin"
+): string {
+  return `${STAFF_ROLE_STORAGE_PREFIX}${role}`;
+}
+
+export function saveRoleSessionToLocalStorage(
+  session: StoredStaffSession12h
+): void {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(
+      getRoleStorageKey(session.role),
+      JSON.stringify(session)
+    );
+    localStorage.setItem(STAFF_SESSION_STORAGE_KEY, JSON.stringify(session));
+  } catch {}
+}
+
+export function clearRoleSessionFromLocalStorage(
+  role?: "kitchen" | "barista" | "cashier" | "admin"
+): void {
+  if (typeof window === "undefined") return;
+  try {
+    if (role) {
+      localStorage.removeItem(getRoleStorageKey(role));
+      const raw = localStorage.getItem(STAFF_SESSION_STORAGE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw) as StoredStaffSession12h;
+        if (parsed?.role === role) {
+          localStorage.removeItem(STAFF_SESSION_STORAGE_KEY);
+        }
+      }
+      if (role === "admin") {
+        sessionStorage.removeItem("smol_admin_auth");
+      }
+    } else {
+      for (const r of ["admin", "cashier", "barista", "kitchen"] as const) {
+        localStorage.removeItem(getRoleStorageKey(r));
+      }
+      localStorage.removeItem(STAFF_SESSION_STORAGE_KEY);
+      sessionStorage.removeItem("smol_admin_auth");
+    }
+  } catch {}
+}
+
+export function getAllStoredRoleSessionsFromLocalStorage(): StoredStaffSession12h[] {
+  if (typeof window === "undefined") return [];
+  const now = Date.now();
+  const list: StoredStaffSession12h[] = [];
+  for (const r of ["admin", "cashier", "barista", "kitchen"] as const) {
+    try {
+      const raw = localStorage.getItem(getRoleStorageKey(r));
+      if (!raw) continue;
+      const parsed = JSON.parse(raw) as StoredStaffSession12h;
+      if (
+        parsed &&
+        parsed.role === r &&
+        parsed.issuedAt &&
+        now - parsed.issuedAt < STAFF_SESSION_DURATION_MS &&
+        (!parsed.expiresAt || now < parsed.expiresAt)
+      ) {
+        list.push(parsed);
+      } else {
+        localStorage.removeItem(getRoleStorageKey(r));
+      }
+    } catch {}
+  }
+  return list.sort((a, b) => b.issuedAt - a.issuedAt);
+}
+
 /**
- * Client-side hook that ensures any logged-in staff role (admin, cashier, barista, kitchen)
- * stays authenticated continuously for a full 12 hours without premature auto-logout
- * (even across tab sleep, backgrounding, or serverless cold starts), and only logs out
- * after 12 hours have elapsed or when the user explicitly clicks Logout.
+ * Client-side hook that keeps each open role tab (`admin`, `cashier`, `barista`, `kitchen`)
+ * independently authenticated for 12 hours without ever logging out or overwriting
+ * any other role open at the same time in other tabs/windows.
  */
 export function useStaffSessionKeepAlive(
   stationRole: "kitchen" | "barista" | "cashier" | "admin"
@@ -47,21 +118,15 @@ export function useStaffSessionKeepAlive(
       if (expiryTimer) clearTimeout(expiryTimer);
       const remainingMs = expiresAt - Date.now();
       if (remainingMs <= 0) {
-        try {
-          localStorage.removeItem(STAFF_SESSION_STORAGE_KEY);
-          sessionStorage.removeItem("smol_admin_auth");
-        } catch {}
-        void staffBackdoorLogoutAction();
+        clearRoleSessionFromLocalStorage(stationRole);
+        void staffBackdoorLogoutAction(stationRole);
         return;
       }
-      // Schedule auto-logout strictly after 12 hours have elapsed
+      // Schedule auto-logout strictly after 12 hours have elapsed for this role
       expiryTimer = setTimeout(() => {
         if (!isMounted) return;
-        try {
-          localStorage.removeItem(STAFF_SESSION_STORAGE_KEY);
-          sessionStorage.removeItem("smol_admin_auth");
-        } catch {}
-        void staffBackdoorLogoutAction();
+        clearRoleSessionFromLocalStorage(stationRole);
+        void staffBackdoorLogoutAction(stationRole);
       }, Math.min(remainingMs, 2147483647));
     };
 
@@ -72,87 +137,70 @@ export function useStaffSessionKeepAlive(
         let stored: StoredStaffSession12h | null = null;
 
         try {
-          const raw = localStorage.getItem(STAFF_SESSION_STORAGE_KEY);
-          if (raw) {
-            stored = JSON.parse(raw) as StoredStaffSession12h;
+          const rawRole = localStorage.getItem(getRoleStorageKey(stationRole));
+          if (rawRole) {
+            stored = JSON.parse(rawRole) as StoredStaffSession12h;
           }
         } catch {}
 
-        // If stored session exists and has exceeded 12 hours -> log out now
+        // If stored session for THIS role exists and has exceeded 12 hours -> log out only this role
         if (
           stored &&
           stored.issuedAt &&
           (now - stored.issuedAt >= STAFF_SESSION_DURATION_MS ||
             (stored.expiresAt && now >= stored.expiresAt))
         ) {
-          try {
-            localStorage.removeItem(STAFF_SESSION_STORAGE_KEY);
-            sessionStorage.removeItem("smol_admin_auth");
-          } catch {}
-          await staffBackdoorLogoutAction();
+          clearRoleSessionFromLocalStorage(stationRole);
+          await staffBackdoorLogoutAction(stationRole);
           return;
         }
 
-        // Check server cookie state
-        const serverSession = await getActiveStaffSessionAction();
+        // Check server multi-role cookie state for this stationRole
+        const serverSession = await getActiveStaffSessionAction(stationRole);
         if (!isMounted) return;
 
-        if (serverSession.active && serverSession.role) {
+        const matchingServerEntry =
+          serverSession.activeSessions?.find((s) => s.role === stationRole) ||
+          serverSession.activeSessions?.find((s) => s.role === "admin");
+
+        if (matchingServerEntry) {
           const issuedAt =
-            stored?.issuedAt || serverSession.issuedAt || now;
+            stored?.issuedAt || matchingServerEntry.issuedAt || now;
           const expiresAt = issuedAt + STAFF_SESSION_DURATION_MS;
 
           if (now >= expiresAt) {
-            try {
-              localStorage.removeItem(STAFF_SESSION_STORAGE_KEY);
-              sessionStorage.removeItem("smol_admin_auth");
-            } catch {}
-            await staffBackdoorLogoutAction();
+            clearRoleSessionFromLocalStorage(stationRole);
+            await staffBackdoorLogoutAction(stationRole);
             return;
           }
 
-          const updated: StoredStaffSession12h = {
-            role: serverSession.role,
-            redirectTo:
-              serverSession.redirectTo ||
-              ROLE_REDIRECT_MAP[serverSession.role],
+          saveRoleSessionToLocalStorage({
+            role: stationRole,
+            redirectTo: ROLE_REDIRECT_MAP[stationRole],
             issuedAt,
             expiresAt,
-          };
-          try {
-            localStorage.setItem(
-              STAFF_SESSION_STORAGE_KEY,
-              JSON.stringify(updated)
-            );
-          } catch {}
+          });
           scheduleExpiry(expiresAt);
           return;
         }
 
-        // If cookie was dropped by browser sleep before 12 hours, restore it seamlessly
-        const fallbackRole = stored?.role || stationRole;
+        // Ensure this stationRole is registered in the multi-role cookie without disturbing other roles
         const fallbackIssuedAt = stored?.issuedAt || now;
         if (now - fallbackIssuedAt < STAFF_SESSION_DURATION_MS) {
           const restored = await restoreStaffSessionAction(
-            fallbackRole,
+            stationRole,
             fallbackIssuedAt
           );
           if (isMounted && restored.success) {
             const expiresAt =
               restored.expiresAt ||
               fallbackIssuedAt + STAFF_SESSION_DURATION_MS;
-            try {
-              localStorage.setItem(
-                STAFF_SESSION_STORAGE_KEY,
-                JSON.stringify({
-                  role: fallbackRole,
-                  redirectTo:
-                    restored.redirectTo || ROLE_REDIRECT_MAP[fallbackRole],
-                  issuedAt: fallbackIssuedAt,
-                  expiresAt,
-                } satisfies StoredStaffSession12h)
-              );
-            } catch {}
+            saveRoleSessionToLocalStorage({
+              role: stationRole,
+              redirectTo: ROLE_REDIRECT_MAP[stationRole],
+              issuedAt: fallbackIssuedAt,
+              expiresAt,
+            });
             scheduleExpiry(expiresAt);
           }
         }

@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef, useMemo } from "react";
-import { useStaffSessionKeepAlive } from "@/lib/auth/use-staff-session-keepalive";
+import { useStaffSessionKeepAlive, clearRoleSessionFromLocalStorage } from "@/lib/auth/use-staff-session-keepalive";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import Image from "next/image";
@@ -55,6 +55,7 @@ import {
   AlertTriangle,
   Info,
   LayoutGrid,
+  LogOut,
 } from "lucide-react";
 import { AnalyticsBento, type AnalyticsBentoProps } from "@/components/ui/analytics-bento";
 import { downloadCsv } from "@/lib/export-utils";
@@ -103,6 +104,7 @@ import {
   getRoleCredentialsAction,
   updateRoleCredentialAction,
   resetRoleCredentialAction,
+  staffBackdoorLogoutAction,
 } from "@/app/smol-backdoor/actions";
 import type { RoleCredentialsMap, RoleCredential } from "@/lib/auth/credentials";
 import type { OrderStatus } from "@smol-cafe/db";
@@ -2195,14 +2197,19 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
                 <span className="font-mono text-[#725039] dark:text-stone-400">Owner Access</span>
                 <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
               </div>
-              <Link
-                href="/menu"
-                onClick={() => setMobileMenuOpen(false)}
-                className="flex items-center justify-between rounded-xl border border-[#C9AE8B]/40 dark:border-stone-800 bg-[#F3E7D3] dark:bg-stone-900 px-3 py-2 text-xs text-[#725039] dark:text-stone-300 hover:bg-[#EBDDC8] dark:hover:bg-stone-800 transition"
+              <button
+                type="button"
+                onClick={async () => {
+                  setMobileMenuOpen(false);
+                  clearRoleSessionFromLocalStorage("admin");
+                  await staffBackdoorLogoutAction("admin");
+                }}
+                className="flex w-full items-center justify-between rounded-xl border border-[#C9AE8B]/40 dark:border-stone-800 bg-[#F3E7D3] dark:bg-stone-900 px-3 py-2 text-xs font-medium text-[#725039] dark:text-stone-300 hover:bg-[#B72E35] hover:text-white hover:border-[#B72E35] dark:hover:bg-rose-950/70 dark:hover:text-rose-200 dark:hover:border-rose-800 transition cursor-pointer"
+                title="Logout Admin Session"
               >
-                <span>Switch to Customer QR</span>
-                <ExternalLink className="h-3 w-3 text-[#725039] dark:text-stone-500" />
-              </Link>
+                <span>Logout</span>
+                <LogOut className="h-3.5 w-3.5 shrink-0" />
+              </button>
             </div>
           </aside>
         </div>
@@ -2275,13 +2282,18 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
             <span className="font-mono text-[#725039] dark:text-stone-400 text-[11px]">Owner Access</span>
             <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
           </div>
-          <Link
-            href="/menu"
-            className="flex items-center justify-between rounded-xl border border-[#C9AE8B]/40 dark:border-stone-800 bg-[#F3E7D3] dark:bg-stone-900 px-2.5 lg:px-3 py-1.5 lg:py-2 text-[11px] lg:text-xs text-[#725039] dark:text-stone-300 hover:bg-[#EBDDC8] dark:hover:bg-stone-800 transition"
+          <button
+            type="button"
+            onClick={async () => {
+              clearRoleSessionFromLocalStorage("admin");
+              await staffBackdoorLogoutAction("admin");
+            }}
+            className="flex w-full items-center justify-between rounded-xl border border-[#C9AE8B]/40 dark:border-stone-800 bg-[#F3E7D3] dark:bg-stone-900 px-2.5 lg:px-3 py-1.5 lg:py-2 text-[11px] lg:text-xs font-medium text-[#725039] dark:text-stone-300 hover:bg-[#B72E35] hover:text-white hover:border-[#B72E35] dark:hover:bg-rose-950/70 dark:hover:text-rose-200 dark:hover:border-rose-800 transition cursor-pointer"
+            title="Logout Admin Session"
           >
-            <span className="truncate">Customer QR</span>
-            <ExternalLink className="h-3 w-3 text-[#725039] dark:text-stone-500 shrink-0" />
-          </Link>
+            <span className="truncate">Logout</span>
+            <LogOut className="h-3.5 w-3.5 shrink-0" />
+          </button>
         </div>
       </aside>
 
