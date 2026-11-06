@@ -7,8 +7,17 @@ import {
 } from "@/lib/auth/credentials";
 
 export const STAFF_SESSION_COOKIE = "smol_staff_session";
+export const STAFF_ROLE_COOKIE_PREFIX = "smol_staff_role_";
 export const STAFF_SESSION_MAX_AGE_SECONDS = 60 * 60 * 12; // 12 hours (43,200 seconds)
 export const STAFF_SESSION_DURATION_MS = STAFF_SESSION_MAX_AGE_SECONDS * 1000; // 12 hours in ms
+
+export type CanonicalStaffRole = "admin" | "cashier" | "barista" | "kitchen";
+export const ALL_CANONICAL_STAFF_ROLES: CanonicalStaffRole[] = [
+  "admin",
+  "cashier",
+  "barista",
+  "kitchen",
+];
 
 const VALID_STAFF_ROLES = new Set([
   "super_admin",
@@ -20,9 +29,17 @@ const VALID_STAFF_ROLES = new Set([
   "chef",
 ]);
 
+export interface ActiveRoleSessionEntry {
+  role: CanonicalStaffRole;
+  signature?: string;
+  issuedAt: number;
+  expiresAt: number;
+}
+
 export interface AuthCheckResult {
   authorized: boolean;
   role?: string;
+  activeRoles?: CanonicalStaffRole[];
   userId?: string;
   issuedAt?: number;
   expiresAt?: number;
@@ -30,20 +47,59 @@ export interface AuthCheckResult {
   message?: string;
 }
 
+export function normalizeToCanonicalRole(
+  rawRole?: string | null
+): CanonicalStaffRole | null {
+  if (!rawRole) return null;
+  const r = rawRole.trim().toLowerCase();
+  if (r === "admin" || r === "super_admin" || r === "authenticated") {
+    return "admin";
+  }
+  if (r === "kitchen" || r === "chef") {
+    return "kitchen";
+  }
+  if (r === "barista") {
+    return "barista";
+  }
+  if (r === "cashier") {
+    return "cashier";
+  }
+  return null;
+}
+
+export function getRoleSpecificCookieName(role: CanonicalStaffRole): string {
+  return `${STAFF_ROLE_COOKIE_PREFIX}${role}`;
+}
+
 /**
- * Parses a raw `smol_staff_session` cookie value (`role`, `role:sig`, or `role:sig:issuedAt`).
+ * Parses a single role entry (`role:sig:issuedAt` or `role:sig` or `role`).
  */
 export function parseStaffSessionCookieValue(rawCookie?: string | null): {
   role: string;
+  canonicalRole: CanonicalStaffRole;
   signature?: string;
   issuedAt?: number;
   expiresAt?: number;
   isExpired: boolean;
 } | null {
   if (!rawCookie || typeof rawCookie !== "string") return null;
+  // If multi-role format (`role1:sig1:ts1|role2:sig2:ts2`), parse the first valid non-expired entry
+  if (rawCookie.includes("|")) {
+    const segments = rawCookie.split("|");
+    for (const seg of segments) {
+      const parsedSeg = parseStaffSessionCookieValue(seg);
+      if (parsedSeg && !parsedSeg.isExpired) {
+        return parsedSeg;
+      }
+    }
+    return null;
+  }
+
   const parts = rawCookie.split(":");
   const role = parts[0]?.trim().toLowerCase();
   if (!role || !VALID_STAFF_ROLES.has(role)) return null;
+  const canonicalRole = normalizeToCanonicalRole(role);
+  if (!canonicalRole) return null;
 
   const signature = parts[1] || undefined;
   const rawIssuedAt = parts[2] ? Number(parts[2]) : undefined;
@@ -57,6 +113,7 @@ export function parseStaffSessionCookieValue(rawCookie?: string | null): {
 
   return {
     role,
+    canonicalRole,
     signature,
     issuedAt,
     expiresAt,
@@ -65,26 +122,82 @@ export function parseStaffSessionCookieValue(rawCookie?: string | null): {
 }
 
 /**
- * Sets the staff session cookie with explicit role permissions and a 12-hour expiration window.
- * Once logged in, the staff session remains valid for 12 hours unless the user explicitly logs out.
+ * Parses all active (< 12h) role sessions from both the combined `smol_staff_session` cookie
+ * and individual `smol_staff_role_<role>` cookies so multiple roles can stay logged in simultaneously.
+ */
+export function extractActiveRoleSessionsFromCookies(
+  cookieGetter: (name: string) => string | undefined
+): Map<CanonicalStaffRole, ActiveRoleSessionEntry> {
+  const now = Date.now();
+  const activeMap = new Map<CanonicalStaffRole, ActiveRoleSessionEntry>();
+
+  const recordSegment = (segment?: string) => {
+    if (!segment) return;
+    const parsed = parseStaffSessionCookieValue(segment);
+    if (!parsed || parsed.isExpired) return;
+    const issuedAt = parsed.issuedAt || now;
+    const expiresAt = parsed.expiresAt || issuedAt + STAFF_SESSION_DURATION_MS;
+    if (now > expiresAt) return;
+
+    const existing = activeMap.get(parsed.canonicalRole);
+    if (!existing || issuedAt >= existing.issuedAt) {
+      activeMap.set(parsed.canonicalRole, {
+        role: parsed.canonicalRole,
+        signature: parsed.signature,
+        issuedAt,
+        expiresAt,
+      });
+    }
+  };
+
+  // 1. Check combined cookie (`role1:sig1:ts1|role2:sig2:ts2`)
+  const combinedRaw = cookieGetter(STAFF_SESSION_COOKIE);
+  if (combinedRaw) {
+    for (const seg of combinedRaw.split("|")) {
+      recordSegment(seg);
+    }
+  }
+
+  // 2. Check individual per-role cookies (`smol_staff_role_admin`, `smol_staff_role_cashier`, etc.)
+  for (const r of ALL_CANONICAL_STAFF_ROLES) {
+    const roleRaw = cookieGetter(getRoleSpecificCookieName(r));
+    if (roleRaw) {
+      recordSegment(roleRaw);
+    }
+  }
+
+  return activeMap;
+}
+
+/**
+ * Sets the staff session cookie for a role while preserving all other concurrently logged-in roles.
+ * Allows a founder or staff user to have Admin, Cashier, Barista, and Kitchen open simultaneously
+ * in the same browser without any role logging out another role.
  */
 export async function setStaffSessionCookie(
   role: "kitchen" | "barista" | "cashier" | "admin" | "super_admin",
   signature?: string,
   customIssuedAt?: number
-): Promise<{ issuedAt: number; expiresAt: number }> {
+): Promise<{
+  issuedAt: number;
+  expiresAt: number;
+  activeRoles: CanonicalStaffRole[];
+}> {
   const cookieStore = await cookies();
+  const canonicalRole: CanonicalStaffRole =
+    role === "super_admin" ? "admin" : role;
+
   let sig = signature;
   if (!sig) {
     try {
       const creds = await getStoredCredentials();
-      const roleKey =
-        role === "super_admin"
-          ? "admin"
-          : (role as "admin" | "cashier" | "kitchen" | "barista");
-      const cred = creds[roleKey];
+      const cred = creds[canonicalRole];
       if (cred) {
-        sig = generateRoleCredentialToken(roleKey, cred.pin, cred.password);
+        sig = generateRoleCredentialToken(
+          canonicalRole,
+          cred.pin,
+          cred.password
+        );
       }
     } catch {}
   }
@@ -98,14 +211,23 @@ export async function setStaffSessionCookie(
       ? customIssuedAt
       : now;
   const expiresAt = issuedAt + STAFF_SESSION_DURATION_MS;
-  const remainingSeconds = Math.max(
-    1,
-    Math.floor((expiresAt - now) / 1000)
+  const remainingSeconds = Math.max(1, Math.floor((expiresAt - now) / 1000));
+
+  // Read existing active sessions across all roles so we never overwrite other open role tabs
+  const activeMap = extractActiveRoleSessionsFromCookies(
+    (name) => cookieStore.get(name)?.value
   );
 
-  const cookieVal = `${role}:${sig || "active"}:${issuedAt}`;
+  activeMap.set(canonicalRole, {
+    role: canonicalRole,
+    signature: sig || "active",
+    issuedAt,
+    expiresAt,
+  });
 
-  cookieStore.set(STAFF_SESSION_COOKIE, cookieVal, {
+  // 1. Set the dedicated per-role cookie (`smol_staff_role_<role>`)
+  const singleRoleVal = `${canonicalRole}:${sig || "active"}:${issuedAt}`;
+  cookieStore.set(getRoleSpecificCookieName(canonicalRole), singleRoleVal, {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
     sameSite: "lax",
@@ -114,20 +236,98 @@ export async function setStaffSessionCookie(
     expires: new Date(expiresAt),
   });
 
-  return { issuedAt, expiresAt };
+  // 2. Set the combined multi-role cookie (`smol_staff_session`) with most recently active role first
+  const orderedEntries = Array.from(activeMap.values()).sort(
+    (a, b) =>
+      (a.role === canonicalRole ? -1 : b.role === canonicalRole ? 1 : 0) ||
+      b.issuedAt - a.issuedAt
+  );
+  const combinedCookieVal = orderedEntries
+    .map((e) => `${e.role}:${e.signature || "active"}:${e.issuedAt}`)
+    .join("|");
+
+  const maxExpiresAt = Math.max(
+    expiresAt,
+    ...orderedEntries.map((e) => e.expiresAt)
+  );
+  const maxRemainingSeconds = Math.max(
+    1,
+    Math.floor((maxExpiresAt - now) / 1000)
+  );
+
+  cookieStore.set(STAFF_SESSION_COOKIE, combinedCookieVal, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    path: "/",
+    maxAge: maxRemainingSeconds,
+    expires: new Date(maxExpiresAt),
+  });
+
+  return {
+    issuedAt,
+    expiresAt,
+    activeRoles: orderedEntries.map((e) => e.role),
+  };
 }
 
 /**
- * Clears the staff session cookie upon explicit logout.
+ * Clears staff session cookie(s) upon explicit logout.
+ * If `roleToClear` is provided, only that specific role is logged out while keeping
+ * any other concurrently open role tabs active! If omitted, clears all roles.
  */
-export async function clearStaffSessionCookie(): Promise<void> {
+export async function clearStaffSessionCookie(
+  roleToClear?: "kitchen" | "barista" | "cashier" | "admin" | "super_admin"
+): Promise<void> {
   const cookieStore = await cookies();
+
+  if (roleToClear) {
+    const canonical =
+      roleToClear === "super_admin" ? "admin" : roleToClear;
+    const activeMap = extractActiveRoleSessionsFromCookies(
+      (name) => cookieStore.get(name)?.value
+    );
+    activeMap.delete(canonical);
+    cookieStore.delete(getRoleSpecificCookieName(canonical));
+
+    if (activeMap.size === 0) {
+      cookieStore.delete(STAFF_SESSION_COOKIE);
+    } else {
+      const now = Date.now();
+      const remainingEntries = Array.from(activeMap.values()).sort(
+        (a, b) => b.issuedAt - a.issuedAt
+      );
+      const combinedVal = remainingEntries
+        .map((e) => `${e.role}:${e.signature || "active"}:${e.issuedAt}`)
+        .join("|");
+      const maxExpiresAt = Math.max(
+        ...remainingEntries.map((e) => e.expiresAt)
+      );
+      const maxRemainingSeconds = Math.max(
+        1,
+        Math.floor((maxExpiresAt - now) / 1000)
+      );
+      cookieStore.set(STAFF_SESSION_COOKIE, combinedVal, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "lax",
+        path: "/",
+        maxAge: maxRemainingSeconds,
+        expires: new Date(maxExpiresAt),
+      });
+    }
+    return;
+  }
+
   cookieStore.delete(STAFF_SESSION_COOKIE);
+  for (const r of ALL_CANONICAL_STAFF_ROLES) {
+    cookieStore.delete(getRoleSpecificCookieName(r));
+  }
 }
 
 /**
- * Server-Side RBAC Guard: Validates that the request has an active authenticated staff session.
- * Keeps staff sessions active for a full 12 hours from login without premature auto-logout.
+ * Server-Side RBAC Guard: Validates that the request has an active authenticated staff session
+ * matching ANY of the allowedRoles across all simultaneously logged-in roles.
  */
 export async function requireStaffAuth(
   allowedRoles: string[] = [
@@ -140,68 +340,76 @@ export async function requireStaffAuth(
   ]
 ): Promise<AuthCheckResult> {
   const cookieStore = await cookies();
-  const staffCookie = cookieStore.get(STAFF_SESSION_COOKIE)?.value;
+  const activeMap = extractActiveRoleSessionsFromCookies(
+    (name) => cookieStore.get(name)?.value
+  );
 
   // In local mock database development, allow requests if no cookie is set
   if (
     isMockDatabase() &&
     process.env.NODE_ENV !== "production" &&
-    !staffCookie
+    activeMap.size === 0 &&
+    !cookieStore.get(STAFF_SESSION_COOKIE)?.value
   ) {
-    return { authorized: true, role: "admin" };
+    return {
+      authorized: true,
+      role: "admin",
+      activeRoles: ["admin"],
+    };
   }
 
-  // 1. Check HTTP-Only Staff Role Cookie (12-Hour Session Window)
-  if (staffCookie) {
-    const parsed = parseStaffSessionCookieValue(staffCookie);
-    if (!parsed) {
-      return {
-        authorized: false,
-        error: "AUTH_REQUIRED",
-        message:
-          "Invalid staff session. Please log in at /smol-backdoor.",
-      };
-    }
+  // 1. Check Multi-Role 12-Hour Staff Cookies
+  if (activeMap.size > 0) {
+    const activeRoles = Array.from(activeMap.keys());
+    const normalizedAllowed = new Set(
+      allowedRoles
+        .map((r) => normalizeToCanonicalRole(r))
+        .filter((r): r is CanonicalStaffRole => Boolean(r))
+    );
 
-    if (parsed.isExpired) {
-      return {
-        authorized: false,
-        error: "AUTH_REQUIRED",
-        message:
-          "Your 12-hour staff session has expired. Please log in again at /smol-backdoor.",
-      };
+    // First check if a directly matching role is active (e.g. cashier tab checks cashier, kitchen tab checks kitchen)
+    for (const r of activeRoles) {
+      if (normalizedAllowed.has(r)) {
+        const entry = activeMap.get(r)!;
+        return {
+          authorized: true,
+          role: r,
+          activeRoles,
+          issuedAt: entry.issuedAt,
+          expiresAt: entry.expiresAt,
+        };
+      }
     }
-
-    const { role, issuedAt, expiresAt } = parsed;
 
     // Super admin & admin have access to all dashboards
-    if (
-      role === "admin" ||
-      role === "super_admin" ||
-      role === "authenticated"
-    ) {
+    if (activeMap.has("admin")) {
+      const adminEntry = activeMap.get("admin")!;
       return {
         authorized: true,
         role: "admin",
-        issuedAt,
-        expiresAt,
+        activeRoles,
+        issuedAt: adminEntry.issuedAt,
+        expiresAt: adminEntry.expiresAt,
       };
     }
 
-    if (allowedRoles.includes(role)) {
-      return {
-        authorized: true,
-        role,
-        issuedAt,
-        expiresAt,
-      };
-    }
-
+    const firstActive = activeMap.values().next().value as ActiveRoleSessionEntry;
     return {
       authorized: false,
       error: "FORBIDDEN",
-      role,
-      message: `Access denied. Your current staff role (${role}) cannot access this section.`,
+      role: firstActive.role,
+      activeRoles,
+      message: `Access denied. Your active staff role (${activeRoles.join(", ")}) cannot access this section.`,
+    };
+  }
+
+  // If raw cookie existed but all entries were expired
+  if (cookieStore.get(STAFF_SESSION_COOKIE)?.value) {
+    return {
+      authorized: false,
+      error: "AUTH_REQUIRED",
+      message:
+        "Your 12-hour staff session has expired. Please log in again at /smol-backdoor.",
     };
   }
 

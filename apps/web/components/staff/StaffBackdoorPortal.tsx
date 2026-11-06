@@ -10,6 +10,12 @@ import {
   restoreStaffSessionAction,
 } from "@/app/smol-backdoor/actions";
 import {
+  type StoredStaffSession12h,
+  STAFF_SESSION_DURATION_MS,
+  saveRoleSessionToLocalStorage,
+  getAllStoredRoleSessionsFromLocalStorage,
+} from "@/lib/auth/use-staff-session-keepalive";
+import {
   ChefHat,
   Coffee,
   Receipt,
@@ -26,16 +32,6 @@ import {
 import { ThemeToggle } from "@/components/common/ThemeToggle";
 
 type RoleId = "kitchen" | "barista" | "cashier" | "admin";
-
-export const STAFF_SESSION_STORAGE_KEY = "smol_staff_session_12h";
-export const STAFF_SESSION_DURATION_MS = 12 * 60 * 60 * 1000; // 12 hours
-
-interface StoredStaffSession12h {
-  role: RoleId;
-  redirectTo: string;
-  issuedAt: number;
-  expiresAt: number;
-}
 
 interface RoleMeta {
   id: RoleId;
@@ -61,8 +57,9 @@ export const StaffBackdoorPortal: React.FC = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [shake, setShake] = useState(false);
-  const [activeSession, setActiveSession] =
-    useState<StoredStaffSession12h | null>(null);
+  const [activeSessions, setActiveSessions] = useState<StoredStaffSession12h[]>(
+    []
+  );
   const inputRef = useRef<HTMLInputElement>(null);
 
   const [livePins, setLivePins] = useState<{
@@ -92,97 +89,52 @@ export const StaffBackdoorPortal: React.FC = () => {
       .catch(console.error);
   }, []);
 
-  // Check for an active 12-hour session (either via server cookie or localStorage)
-  // so logged-in staff are not logged out before 12 hours.
+  // Synchronize all concurrently active 12-hour role sessions (Admin, Cashier, Barista, Kitchen)
+  // so opening multiple roles at the same time keeps every unlocked role active for 12 hours.
   useEffect(() => {
     let cancelled = false;
     const isSwitchingRole =
       typeof window !== "undefined" &&
       new URLSearchParams(window.location.search).get("switch") === "1";
 
-    async function verifyOrRestore12hSession() {
+    async function verifyOrRestoreMultiRoleSessions() {
       try {
-        // 1. Check server-side 12-hour cookie first
-        const serverSession = await getActiveStaffSessionAction();
-        if (
-          !cancelled &&
-          serverSession.active &&
-          serverSession.role &&
-          serverSession.redirectTo
-        ) {
-          const now = Date.now();
-          const issuedAt = serverSession.issuedAt || now;
-          const expiresAt =
-            serverSession.expiresAt || issuedAt + STAFF_SESSION_DURATION_MS;
-          const sessionObj: StoredStaffSession12h = {
-            role: serverSession.role,
-            redirectTo: serverSession.redirectTo,
-            issuedAt,
-            expiresAt,
-          };
+        const localSessions = getAllStoredRoleSessionsFromLocalStorage();
 
-          try {
-            localStorage.setItem(
-              STAFF_SESSION_STORAGE_KEY,
-              JSON.stringify(sessionObj)
-            );
-          } catch {}
+        // Restore any local (< 12h) role sessions into cookies so all of them stay active simultaneously
+        for (const loc of localSessions) {
+          await restoreStaffSessionAction(loc.role, loc.issuedAt);
+        }
 
-          setActiveSession(sessionObj);
-          setSelectedRole(serverSession.role);
+        const serverRes = await getActiveStaffSessionAction();
+        if (cancelled) return;
 
-          if (!isSwitchingRole) {
-            window.location.href = serverSession.redirectTo;
+        if (serverRes.active && serverRes.activeSessions && serverRes.activeSessions.length > 0) {
+          const synced: StoredStaffSession12h[] = serverRes.activeSessions.map(
+            (s) => ({
+              role: s.role,
+              redirectTo: s.redirectTo,
+              issuedAt: s.issuedAt,
+              expiresAt: s.expiresAt,
+            })
+          );
+          for (const s of synced) {
+            saveRoleSessionToLocalStorage(s);
+          }
+          setActiveSessions(synced);
+          setSelectedRole(synced[0].role);
+
+          if (!isSwitchingRole && synced.length === 1) {
+            window.location.href = synced[0].redirectTo;
           }
           return;
         }
-
-        // 2. Fallback: Check client 12-hour localStorage session (e.g. if browser restarted before 12h)
-        if (typeof window !== "undefined") {
-          const rawStored = localStorage.getItem(STAFF_SESSION_STORAGE_KEY);
-          if (rawStored) {
-            const parsed = JSON.parse(rawStored) as StoredStaffSession12h;
-            const now = Date.now();
-            if (
-              parsed &&
-              parsed.role &&
-              parsed.issuedAt &&
-              now - parsed.issuedAt < STAFF_SESSION_DURATION_MS &&
-              (!parsed.expiresAt || now < parsed.expiresAt)
-            ) {
-              const restored = await restoreStaffSessionAction(
-                parsed.role,
-                parsed.issuedAt
-              );
-              if (!cancelled && restored.success && restored.redirectTo) {
-                const updatedSession: StoredStaffSession12h = {
-                  role: parsed.role,
-                  redirectTo: restored.redirectTo,
-                  issuedAt: restored.issuedAt || parsed.issuedAt,
-                  expiresAt:
-                    restored.expiresAt ||
-                    parsed.issuedAt + STAFF_SESSION_DURATION_MS,
-                };
-                setActiveSession(updatedSession);
-                setSelectedRole(parsed.role);
-
-                if (!isSwitchingRole) {
-                  window.location.href = restored.redirectTo;
-                }
-                return;
-              }
-            } else {
-              // Expired (> 12 hours) -> clean up storage
-              localStorage.removeItem(STAFF_SESSION_STORAGE_KEY);
-            }
-          }
-        }
       } catch (err) {
-        console.warn("Session persistence check failed:", err);
+        console.warn("Multi-role session check failed:", err);
       }
     }
 
-    void verifyOrRestore12hSession();
+    void verifyOrRestoreMultiRoleSessions();
     return () => {
       cancelled = true;
     };
@@ -260,6 +212,9 @@ export const StaffBackdoorPortal: React.FC = () => {
   ];
 
   const currentRole = roles.find((r) => r.id === selectedRole)!;
+  const isCurrentRoleUnlocked = activeSessions.some(
+    (s) => s.role === selectedRole || s.role === "admin"
+  );
 
   const triggerShake = () => {
     setShake(true);
@@ -287,21 +242,19 @@ export const StaffBackdoorPortal: React.FC = () => {
         if (res.success && res.redirectTo) {
           const now = Date.now();
           const issuedAt = res.issuedAt || now;
-          const expiresAt = res.expiresAt || issuedAt + STAFF_SESSION_DURATION_MS;
-          try {
-            localStorage.setItem(
-              STAFF_SESSION_STORAGE_KEY,
-              JSON.stringify({
-                role,
-                redirectTo: res.redirectTo,
-                issuedAt,
-                expiresAt,
-              } satisfies StoredStaffSession12h)
-            );
-            if (role === "admin") {
+          const expiresAt =
+            res.expiresAt || issuedAt + STAFF_SESSION_DURATION_MS;
+          saveRoleSessionToLocalStorage({
+            role,
+            redirectTo: res.redirectTo,
+            issuedAt,
+            expiresAt,
+          });
+          if (role === "admin") {
+            try {
               sessionStorage.setItem("smol_admin_auth", "true");
-            }
-          } catch {}
+            } catch {}
+          }
 
           // Keep loader spinning until browser navigates to destination page
           window.location.href = res.redirectTo;
@@ -409,25 +362,35 @@ export const StaffBackdoorPortal: React.FC = () => {
 
       {/* Main Terminal Container */}
       <main className="mx-auto my-auto w-full max-w-lg space-y-3 sm:space-y-4 py-2 sm:py-3">
-        {/* Active 12-Hour Session Quick Resume Banner */}
-        {activeSession && (
-          <div className="flex items-center justify-between gap-3 rounded-2xl border border-emerald-500/40 bg-emerald-50/90 dark:bg-emerald-950/50 px-3.5 py-2.5 text-xs shadow-sm">
-            <div className="flex items-center gap-2 min-w-0">
-              <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse shrink-0" />
-              <span className="font-mono font-bold text-emerald-900 dark:text-emerald-200 truncate">
-                Active 12h Session ({activeSession.role.toUpperCase()})
+        {/* Active 12-Hour Multi-Role Sessions Bar */}
+        {activeSessions.length > 0 && (
+          <div className="flex flex-col gap-2 rounded-2xl border border-emerald-500/40 bg-emerald-50/90 dark:bg-emerald-950/50 px-3.5 py-2.5 text-xs shadow-sm">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+                <span className="font-mono font-bold text-emerald-900 dark:text-emerald-200 truncate">
+                  Active 12h Sessions ({activeSessions.length} unlocked)
+                </span>
+              </div>
+              <span className="font-mono text-[10px] text-emerald-700 dark:text-emerald-300">
+                Multi-Role Ready
               </span>
             </div>
-            <button
-              type="button"
-              onClick={() => {
-                window.location.href = activeSession.redirectTo;
-              }}
-              className="flex items-center gap-1 rounded-xl bg-emerald-600 hover:bg-emerald-700 px-3 py-1.5 font-mono text-[11px] font-bold text-white shadow-xs transition cursor-pointer shrink-0"
-            >
-              <span>Resume</span>
-              <ArrowRight className="h-3 w-3" />
-            </button>
+            <div className="flex flex-wrap items-center gap-1.5">
+              {activeSessions.map((sess) => (
+                <button
+                  key={sess.role}
+                  type="button"
+                  onClick={() => {
+                    window.location.href = sess.redirectTo;
+                  }}
+                  className="flex items-center gap-1 rounded-xl bg-emerald-600 hover:bg-emerald-700 px-2.5 py-1 font-mono text-[11px] font-bold text-white shadow-xs transition cursor-pointer"
+                >
+                  <span>Open {sess.role.toUpperCase()}</span>
+                  <ArrowRight className="h-3 w-3" />
+                </button>
+              ))}
+            </div>
           </div>
         )}
 
@@ -519,11 +482,20 @@ export const StaffBackdoorPortal: React.FC = () => {
                 <span
                   className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 font-mono text-[9px] sm:text-[10px] uppercase font-bold tracking-wider border ${currentRole.badgeBg}`}
                 >
-                  <Lock className="h-2.5 w-2.5 shrink-0" />
-                  Station Locked
+                  {isCurrentRoleUnlocked ? (
+                    <>
+                      <Unlock className="h-2.5 w-2.5 shrink-0" />
+                      Station Unlocked (12h)
+                    </>
+                  ) : (
+                    <>
+                      <Lock className="h-2.5 w-2.5 shrink-0" />
+                      Station Locked
+                    </>
+                  )}
                 </span>
                 <span className="font-mono text-[10px] text-[#725039]/80 dark:text-purple-300/70 hidden sm:inline">
-                  12h Shift Session
+                  12h Multi-Role Session
                 </span>
               </div>
 
@@ -709,32 +681,46 @@ export const StaffBackdoorPortal: React.FC = () => {
 
           {/* Master Unlock Button */}
           <div className="pt-1.5">
-            <button
-              type="submit"
-              disabled={isSubmitting || pin.length === 0}
-              className={`w-full flex items-center justify-center gap-2.5 rounded-2xl bg-[#B72E35] hover:bg-[#9E242B] dark:bg-gradient-to-r dark:from-[#7C3AED] dark:to-[#9333EA] dark:hover:from-[#6D28D9] dark:hover:to-[#7E22CE] dark:text-white dark:shadow-[0_4px_24px_rgba(147,51,234,0.4)] px-4 py-3.5 sm:py-4 font-mono text-xs sm:text-sm font-bold text-white shadow-lg active:scale-98 transition-all duration-200 ${
-                isSubmitting
-                  ? "opacity-90 cursor-wait ring-2 ring-white/20 dark:ring-purple-400/40"
-                  : pin.length === 0
-                  ? "opacity-40 cursor-not-allowed"
-                  : "cursor-pointer"
-              }`}
-            >
-              {isSubmitting ? (
-                <>
-                  <div className="h-4 w-4 border-2 border-white dark:border-white border-t-transparent rounded-full animate-spin shrink-0" />
-                  <span className="tracking-wide">
-                    Unlocking {currentRole.shortName}...
-                  </span>
-                </>
-              ) : (
-                <>
-                  <Unlock className="h-3.5 w-3.5 sm:h-4 sm:w-4 shrink-0" />
-                  <span>Unlock {currentRole.shortName}</span>
-                  <ArrowRight className="h-3.5 w-3.5 sm:h-4 sm:w-4 shrink-0 ml-0.5" />
-                </>
-              )}
-            </button>
+            {isCurrentRoleUnlocked && pin.length === 0 ? (
+              <button
+                type="button"
+                onClick={() => {
+                  window.location.href = currentRole.destination;
+                }}
+                className="w-full flex items-center justify-center gap-2.5 rounded-2xl bg-emerald-600 hover:bg-emerald-700 px-4 py-3.5 sm:py-4 font-mono text-xs sm:text-sm font-bold text-white shadow-lg active:scale-98 transition-all duration-200 cursor-pointer"
+              >
+                <Unlock className="h-3.5 w-3.5 sm:h-4 sm:w-4 shrink-0" />
+                <span>Open {currentRole.shortName} (Already Unlocked)</span>
+                <ArrowRight className="h-3.5 w-3.5 sm:h-4 sm:w-4 shrink-0 ml-0.5" />
+              </button>
+            ) : (
+              <button
+                type="submit"
+                disabled={isSubmitting || pin.length === 0}
+                className={`w-full flex items-center justify-center gap-2.5 rounded-2xl bg-[#B72E35] hover:bg-[#9E242B] dark:bg-gradient-to-r dark:from-[#7C3AED] dark:to-[#9333EA] dark:hover:from-[#6D28D9] dark:hover:to-[#7E22CE] dark:text-white dark:shadow-[0_4px_24px_rgba(147,51,234,0.4)] px-4 py-3.5 sm:py-4 font-mono text-xs sm:text-sm font-bold text-white shadow-lg active:scale-98 transition-all duration-200 ${
+                  isSubmitting
+                    ? "opacity-90 cursor-wait ring-2 ring-white/20 dark:ring-purple-400/40"
+                    : pin.length === 0
+                    ? "opacity-40 cursor-not-allowed"
+                    : "cursor-pointer"
+                }`}
+              >
+                {isSubmitting ? (
+                  <>
+                    <div className="h-4 w-4 border-2 border-white dark:border-white border-t-transparent rounded-full animate-spin shrink-0" />
+                    <span className="tracking-wide">
+                      Unlocking {currentRole.shortName}...
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <Unlock className="h-3.5 w-3.5 sm:h-4 sm:w-4 shrink-0" />
+                    <span>Unlock {currentRole.shortName}</span>
+                    <ArrowRight className="h-3.5 w-3.5 sm:h-4 sm:w-4 shrink-0 ml-0.5" />
+                  </>
+                )}
+              </button>
+            )}
           </div>
         </form>
       </main>

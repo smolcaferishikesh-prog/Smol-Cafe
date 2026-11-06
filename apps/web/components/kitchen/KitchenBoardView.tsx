@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
-import { useStaffSessionKeepAlive } from "@/lib/auth/use-staff-session-keepalive";
+import { useStaffSessionKeepAlive, clearRoleSessionFromLocalStorage } from "@/lib/auth/use-staff-session-keepalive";
 import Image from "next/image";
 import type { KitchenTicket, KitchenOrderItem } from "@/app/kitchen/actions";
 import {
@@ -713,12 +713,9 @@ export const KitchenBoardView: React.FC<KitchenBoardViewProps> = ({ initialOrder
             {/* Logout */}
             <button
               onClick={async () => {
-                try {
-                  localStorage.removeItem("smol_staff_session_12h");
-                  sessionStorage.removeItem("smol_admin_auth");
-                } catch {}
+                clearRoleSessionFromLocalStorage("kitchen");
                 await staffLogoutAction();
-                window.location.href = "/smol-backdoor";
+                window.location.href = "/smol-backdoor?switch=1";
               }}
               className="flex h-7 w-7 sm:h-auto sm:w-auto items-center justify-center gap-1 rounded-full border border-[#B72E35]/40 hover:border-[#B72E35] dark:border-stone-700 bg-[#FAF4EB] dark:bg-[#241F1C] sm:px-2.5 sm:py-1 text-[11px] sm:text-xs font-mono font-bold text-[#B72E35] dark:text-[#FF6B6B] hover:bg-[#B72E35] hover:text-white dark:hover:bg-rose-950/60 transition cursor-pointer shrink-0 whitespace-nowrap shadow-xs"
               title="Staff Logout"

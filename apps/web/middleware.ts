@@ -1,8 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 
 const STAFF_SESSION_COOKIE = "smol_staff_session";
+const STAFF_ROLE_COOKIE_PREFIX = "smol_staff_role_";
 const TABLE_SESSION_COOKIE = "smol_table_session";
 const STAFF_SESSION_DURATION_MS = 12 * 60 * 60 * 1000; // 12 hours
+
+const ALL_ROLES = ["admin", "cashier", "barista", "kitchen"] as const;
 
 // Customer routes that require an active table QR session
 const TABLE_PROTECTED_ROUTES = [
@@ -98,33 +101,56 @@ const DIRECT_STAFF_ROUTES = [
   "/cashier",
 ];
 
-function getActiveStaffSession(request: NextRequest): {
-  role: string;
-  rawCookie: string;
-  remainingSeconds: number;
-} | null {
-  const rawCookie = request.cookies.get(STAFF_SESSION_COOKIE)?.value;
-  if (!rawCookie) return null;
+/**
+ * Extracts all active (< 12h) staff roles from the request cookies (`smol_staff_session`
+ * and `smol_staff_role_<role>`) so multiple roles open simultaneously in the same browser
+ * all stay authorized without logging each other out.
+ */
+function getActiveStaffRoles(request: NextRequest): string[] {
+  const activeRoles: string[] = [];
+  const seen = new Set<string>();
 
-  const parts = rawCookie.split(":");
-  const role = parts[0]?.trim().toLowerCase();
-  if (!role || !ROLE_ROUTES[role]) return null;
+  const checkSegment = (seg?: string) => {
+    if (!seg) return;
+    const parts = seg.split(":");
+    const rawRole = parts[0]?.trim().toLowerCase();
+    if (!rawRole || !ROLE_ROUTES[rawRole]) return;
 
-  const rawIssuedAt = parts[2] ? Number(parts[2]) : NaN;
-  if (Number.isFinite(rawIssuedAt) && rawIssuedAt > 0) {
-    const elapsedMs = Date.now() - rawIssuedAt;
-    if (elapsedMs > STAFF_SESSION_DURATION_MS) {
-      return null; // Expired after 12 hours
+    const rawIssuedAt = parts[2] ? Number(parts[2]) : NaN;
+    if (Number.isFinite(rawIssuedAt) && rawIssuedAt > 0) {
+      if (Date.now() - rawIssuedAt > STAFF_SESSION_DURATION_MS) {
+        return; // Expired after 12 hours
+      }
     }
-    const remainingSeconds = Math.max(
-      1,
-      Math.floor((STAFF_SESSION_DURATION_MS - elapsedMs) / 1000)
-    );
-    return { role, rawCookie, remainingSeconds };
+
+    if (!seen.has(rawRole)) {
+      seen.add(rawRole);
+      activeRoles.push(rawRole);
+    }
+  };
+
+  const combinedRaw = request.cookies.get(STAFF_SESSION_COOKIE)?.value;
+  if (combinedRaw) {
+    for (const seg of combinedRaw.split("|")) {
+      checkSegment(seg);
+    }
   }
 
-  // Legacy cookie without timestamp: valid for 12 hours
-  return { role, rawCookie, remainingSeconds: 60 * 60 * 12 };
+  for (const r of ALL_ROLES) {
+    const roleCookie = request.cookies.get(`${STAFF_ROLE_COOKIE_PREFIX}${r}`)?.value;
+    if (roleCookie) {
+      checkSegment(roleCookie);
+    }
+  }
+
+  return activeRoles;
+}
+
+function hasRoutePermission(activeRoles: string[], targetPrefix: string): boolean {
+  return activeRoles.some((role) => {
+    const allowed = ROLE_ROUTES[role] ?? [];
+    return allowed.some((route) => targetPrefix.startsWith(route));
+  });
 }
 
 export function middleware(request: NextRequest) {
@@ -138,7 +164,8 @@ export function middleware(request: NextRequest) {
   }
 
   const { pathname } = request.nextUrl;
-  const activeStaff = getActiveStaffSession(request);
+  const activeRoles = getActiveStaffRoles(request);
+  const hasAnyActiveStaff = activeRoles.length > 0;
 
   // 2. Direct hit on /admin, /barista, /kitchen, /cashier
   const isDirectStaffRoute = DIRECT_STAFF_ROUTES.some(
@@ -146,47 +173,40 @@ export function middleware(request: NextRequest) {
   );
 
   if (isDirectStaffRoute) {
-    if (activeStaff) {
-      // Allow admin sub-pages (/admin/tables, /admin/rewards, etc.) when logged in as admin
-      if (
-        pathname.startsWith("/admin/") &&
-        (activeStaff.role === "admin" ||
-          activeStaff.role === "super_admin" ||
-          activeStaff.role === "authenticated")
-      ) {
+    if (hasAnyActiveStaff) {
+      const hasAdminRole = activeRoles.some(
+        (r) => r === "admin" || r === "super_admin" || r === "authenticated"
+      );
+
+      // Allow admin sub-pages (/admin/tables, /admin/rewards, etc.) when admin session is active
+      if (pathname.startsWith("/admin/") && hasAdminRole) {
         return NextResponse.next();
       }
 
-      // Redirect exact naked routes (/admin, /cashier, /barista, /kitchen) to their active backdoor dashboard
-      if (
-        pathname === "/admin" &&
-        (activeStaff.role === "admin" ||
-          activeStaff.role === "super_admin" ||
-          activeStaff.role === "authenticated")
-      ) {
+      if (pathname === "/admin" && hasAdminRole) {
         return NextResponse.redirect(new URL("/smol-backdoor/admin", request.url));
       }
-      if (pathname === "/cashier" || pathname.startsWith("/cashier/")) {
-        const allowed = ROLE_ROUTES[activeStaff.role] ?? [];
-        if (allowed.includes("/cashier")) {
-          return NextResponse.redirect(new URL("/smol-backdoor/cashier", request.url));
-        }
+      if (
+        (pathname === "/cashier" || pathname.startsWith("/cashier/")) &&
+        hasRoutePermission(activeRoles, "/cashier")
+      ) {
+        return NextResponse.redirect(new URL("/smol-backdoor/cashier", request.url));
       }
-      if (pathname === "/barista" || pathname.startsWith("/barista/")) {
-        const allowed = ROLE_ROUTES[activeStaff.role] ?? [];
-        if (allowed.includes("/barista")) {
-          return NextResponse.redirect(new URL("/smol-backdoor/barista", request.url));
-        }
+      if (
+        (pathname === "/barista" || pathname.startsWith("/barista/")) &&
+        hasRoutePermission(activeRoles, "/barista")
+      ) {
+        return NextResponse.redirect(new URL("/smol-backdoor/barista", request.url));
       }
-      if (pathname === "/kitchen" || pathname.startsWith("/kitchen/")) {
-        const allowed = ROLE_ROUTES[activeStaff.role] ?? [];
-        if (allowed.includes("/kitchen")) {
-          return NextResponse.redirect(new URL("/smol-backdoor/kitchen", request.url));
-        }
+      if (
+        (pathname === "/kitchen" || pathname.startsWith("/kitchen/")) &&
+        hasRoutePermission(activeRoles, "/kitchen")
+      ) {
+        return NextResponse.redirect(new URL("/smol-backdoor/kitchen", request.url));
       }
 
-      // Otherwise redirect to the logged-in staff member's own station portal
-      const homePortal = ROLE_HOME_PORTAL[activeStaff.role] || "/smol-backdoor";
+      const primaryRole = activeRoles[0];
+      const homePortal = ROLE_HOME_PORTAL[primaryRole] || "/smol-backdoor";
       return NextResponse.redirect(new URL(homePortal, request.url));
     }
 
@@ -235,19 +255,19 @@ export function middleware(request: NextRequest) {
     return response;
   }
 
-  // 5. Verify active 12-hour staff session cookie
-  if (!activeStaff) {
+  // 5. Verify at least one active 12-hour staff session cookie
+  if (!hasAnyActiveStaff) {
     const backdoorUrl = new URL("/smol-backdoor", request.url);
     return NextResponse.redirect(backdoorUrl);
   }
 
-  // 6. Check role has permission for this route
-  const allowedRoutes = ROLE_ROUTES[activeStaff.role] ?? [];
-  const hasAccess = allowedRoutes.some((route) => pathname.startsWith(route));
+  // 6. Check if ANY of the concurrently active roles has permission for this route
+  const hasAccess = hasRoutePermission(activeRoles, pathname);
 
   if (!hasAccess) {
-    const homePortal = ROLE_HOME_PORTAL[activeStaff.role] || "/smol-backdoor";
-    return NextResponse.redirect(new URL(homePortal, request.url));
+    // Redirect to /smol-backdoor?switch=1 so the user can unlock this additional role without losing existing roles
+    const backdoorUrl = new URL("/smol-backdoor?switch=1", request.url);
+    return NextResponse.redirect(backdoorUrl);
   }
 
   return NextResponse.next();
