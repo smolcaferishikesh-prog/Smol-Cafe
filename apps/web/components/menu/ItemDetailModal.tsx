@@ -481,14 +481,13 @@ export const ItemDetailModal: React.FC<ItemDetailModalProps> = ({
             </div>
           )}
 
-          {/* Decorative Floral / Star Divider: Biscuit (#C9AE8B) */}
+          {/* Decorative Floral / Star Divider & Customization Options (Milk Preference / Bread & Style) — commented out
           <div className="my-4 flex items-center justify-center opacity-70">
             <div className="h-[0.5px] flex-1 bg-[#C9AE8B]" />
             <span className="px-3 text-[11px] text-[#C9AE8B] font-serif">❖</span>
             <div className="h-[0.5px] flex-1 bg-[#C9AE8B]" />
           </div>
 
-          {/* Customization Options (e.g. Milk Preference / Bread & Style) */}
           <div className="mb-6">
             <h3 className="font-serif text-sm sm:text-base font-semibold text-[#241F1C] dark:text-[#F3E7D3] mb-2.5">
               {customizationTitle}
@@ -513,6 +512,7 @@ export const ItemDetailModal: React.FC<ItemDetailModalProps> = ({
               })}
             </div>
           </div>
+          */}
         </div>
 
         {/* Floating / Sticky Bottom Action Button: Liquid Ruby Glass (Light) / Amethyst Purple Glass (Dark) */}
