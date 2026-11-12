@@ -15,6 +15,7 @@ import {
   X,
   Check,
   Ban,
+  SlidersHorizontal,
 } from "lucide-react";
 import {
   fetchAdminMenuCatalogAction,
@@ -25,11 +26,83 @@ import {
   type AdminMenuItem,
   type AdminCategoryOption,
 } from "@/app/admin/menu-actions";
+import type { MenuCustomizationOption } from "@/lib/queries/menu";
 import { updateMenuItemStockAction } from "@/app/kitchen/menu-actions";
 import { broadcastSyncEvent, subscribeToSyncEvents } from "@/lib/sync-events";
 import { getFoodImage } from "@/lib/food-images";
 import { DishImagePicker } from "@/components/common/DishImagePicker";
 import { useSupabaseRealtime } from "@/hooks/useSupabaseRealtime";
+
+// Preset Customization Templates for Admin 1-Click Setup
+export const PRESET_BREAD_AND_STYLE: MenuCustomizationOption[] = [
+  { id: "classic", name: "Classic", priceDelta: 0 },
+  { id: "sourdough", name: "Sourdough", priceDelta: 40 },
+  { id: "extra_cheese", name: "Extra Cheese", priceDelta: 35 },
+  { id: "spicy_dip", name: "Spicy Dip", priceDelta: 25 },
+];
+
+export const PRESET_MILK_PREFERENCE: MenuCustomizationOption[] = [
+  { id: "none", name: "None", priceDelta: 0 },
+  { id: "dairy", name: "Dairy", priceDelta: 0 },
+  { id: "oat", name: "Oat", priceDelta: 30 },
+  { id: "almond", name: "Almond", priceDelta: 30 },
+];
+
+export const PRESET_PASTA_SHAPE: MenuCustomizationOption[] = [
+  { id: "penne", name: "Penne", priceDelta: 0 },
+  { id: "farfalle", name: "Farfalle", priceDelta: 0 },
+  { id: "spaghetti", name: "Spaghetti", priceDelta: 0 },
+];
+
+function inferDefaultCustomizationForDish(
+  dishName: string,
+  categoryName: string,
+  dietary: string
+): { title: string; options: MenuCustomizationOption[] } {
+  const n = dishName.toLowerCase();
+  const c = categoryName.toLowerCase();
+  const isBev =
+    dietary === "beverage" ||
+    n.includes("coffee") ||
+    n.includes("pour over") ||
+    n.includes("latte") ||
+    n.includes("cappuccino") ||
+    n.includes("espresso") ||
+    n.includes("chai") ||
+    n.includes("brew") ||
+    n.includes("tea") ||
+    c.includes("coffee") ||
+    c.includes("tea") ||
+    c.includes("drink");
+
+  if (isBev) {
+    return {
+      title: "Milk Preference",
+      options: PRESET_MILK_PREFERENCE.map((o) => ({ ...o })),
+    };
+  }
+
+  const isPasta =
+    c.includes("pasta") ||
+    n.includes("pasta") ||
+    n.includes("spaghetti") ||
+    n.includes("penne") ||
+    n.includes("farfalle") ||
+    n.includes("fusilli") ||
+    n.includes("rigatoni");
+
+  if (isPasta) {
+    return {
+      title: "Pasta Shape",
+      options: PRESET_PASTA_SHAPE.map((o) => ({ ...o })),
+    };
+  }
+
+  return {
+    title: "Bread & Style",
+    options: PRESET_BREAD_AND_STYLE.map((o) => ({ ...o })),
+  };
+}
 
 // Module-level memory cache for instant 0ms tab switching
 let __cachedAdminMenuItems: AdminMenuItem[] | null = null;
@@ -107,6 +180,11 @@ export const AdminMenuManager: React.FC<AdminMenuManagerProps> = ({
   const [formBestPairing, setFormBestPairing] = useState<string>("");
   const [formStatus, setFormStatus] = useState<"AVAILABLE" | "SOLD_OUT">("AVAILABLE");
   const [formImageUrl, setFormImageUrl] = useState<string>("");
+  const [formCustomizationEnabled, setFormCustomizationEnabled] = useState<boolean>(true);
+  const [formCustomizationTitle, setFormCustomizationTitle] = useState<string>("Bread & Style");
+  const [formCustomizationOptions, setFormCustomizationOptions] = useState<MenuCustomizationOption[]>(
+    PRESET_BREAD_AND_STYLE.map((o) => ({ ...o }))
+  );
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [mounted, setMounted] = useState(false);
 
@@ -289,6 +367,17 @@ export const AdminMenuManager: React.FC<AdminMenuManagerProps> = ({
                       dietary: typeof meta.dietary === "string" ? meta.dietary : i.dietary,
                       bestPairing: typeof meta.best_pairing === "string" ? meta.best_pairing : (typeof meta.bestPairing === "string" ? meta.bestPairing : i.bestPairing),
                       categoryId: typeof meta.categoryId === "string" ? meta.categoryId : i.categoryId,
+                      customizationEnabled:
+                        typeof meta.customization_enabled === "boolean"
+                          ? meta.customization_enabled
+                          : i.customizationEnabled,
+                      customizationTitle:
+                        typeof meta.customization_title === "string"
+                          ? meta.customization_title
+                          : i.customizationTitle,
+                      customizationOptions: Array.isArray(meta.customization_options)
+                        ? (meta.customization_options as MenuCustomizationOption[])
+                        : i.customizationOptions,
                     }
                   : i
               );
@@ -314,6 +403,13 @@ export const AdminMenuManager: React.FC<AdminMenuManagerProps> = ({
                 dietary: (meta.dietary as string) || "veg",
                 bestPairing: (meta.best_pairing as string) || (meta.bestPairing as string) || "",
                 status: newStatus,
+                customizationEnabled:
+                  typeof meta.customization_enabled === "boolean" ? meta.customization_enabled : true,
+                customizationTitle:
+                  typeof meta.customization_title === "string" ? meta.customization_title : undefined,
+                customizationOptions: Array.isArray(meta.customization_options)
+                  ? (meta.customization_options as MenuCustomizationOption[])
+                  : undefined,
               };
               return [newItem, ...prev];
             }
@@ -329,13 +425,18 @@ export const AdminMenuManager: React.FC<AdminMenuManagerProps> = ({
   const handleOpenAdd = () => {
     setEditingItem(null);
     setFormName("");
-    setFormCategoryId(categories[0]?.id || "");
+    const firstCat = categories[0];
+    setFormCategoryId(firstCat?.id || "");
     setFormPriceRupees("");
     setFormDescription("");
     setFormDietary("veg");
     setFormBestPairing("");
     setFormStatus("AVAILABLE");
     setFormImageUrl("");
+    const inferred = inferDefaultCustomizationForDish("", firstCat?.name || "", "veg");
+    setFormCustomizationEnabled(true);
+    setFormCustomizationTitle(inferred.title);
+    setFormCustomizationOptions(inferred.options);
     setIsModalOpen(true);
   };
 
@@ -350,7 +451,59 @@ export const AdminMenuManager: React.FC<AdminMenuManagerProps> = ({
     setFormBestPairing(item.bestPairing || "");
     setFormStatus(item.status === "SOLD_OUT" ? "SOLD_OUT" : "AVAILABLE");
     setFormImageUrl(item.imageUrl || "");
+
+    const inferred = inferDefaultCustomizationForDish(item.name, item.categoryName, item.dietary);
+    const isEnabled = item.customizationEnabled !== undefined ? item.customizationEnabled : true;
+    const title = item.customizationTitle || inferred.title;
+    const options =
+      item.customizationOptions && item.customizationOptions.length > 0
+        ? item.customizationOptions.map((o) => ({ ...o }))
+        : inferred.options;
+
+    setFormCustomizationEnabled(isEnabled);
+    setFormCustomizationTitle(title);
+    setFormCustomizationOptions(options);
     setIsModalOpen(true);
+  };
+
+  // Customization option list helpers
+  const handleAddCustomOption = () => {
+    setFormCustomizationOptions((prev) => [
+      ...prev,
+      {
+        id: `opt_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        name: "",
+        priceDelta: 0,
+      },
+    ]);
+  };
+
+  const handleUpdateCustomOption = (
+    idx: number,
+    field: "name" | "priceDelta",
+    value: string | number
+  ) => {
+    setFormCustomizationOptions((prev) =>
+      prev.map((opt, i) => {
+        if (i !== idx) return opt;
+        if (field === "name") {
+          const strVal = String(value);
+          return {
+            ...opt,
+            name: strVal,
+            id: strVal.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_") || opt.id,
+          };
+        }
+        return {
+          ...opt,
+          priceDelta: Math.max(0, Number(value) || 0),
+        };
+      })
+    );
+  };
+
+  const handleRemoveCustomOption = (idx: number) => {
+    setFormCustomizationOptions((prev) => prev.filter((_, i) => i !== idx));
   };
 
   // Add or Edit Dish (Instant 0ms Optimistic UI & Non-Blocking Persistence)
@@ -371,6 +524,14 @@ export const AdminMenuManager: React.FC<AdminMenuManagerProps> = ({
     const cleanDesc = formDescription.trim();
     const cleanPairing = formBestPairing.trim();
     const cleanImg = formImageUrl.trim() || null;
+    const cleanCustomTitle = formCustomizationTitle.trim() || "Customizations";
+    const cleanCustomOptions = formCustomizationOptions
+      .filter((o) => o.name.trim().length > 0)
+      .map((o) => ({
+        id: o.id || o.name.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_"),
+        name: o.name.trim(),
+        priceDelta: Math.max(0, Number(o.priceDelta) || 0),
+      }));
 
     if (editingItem) {
       const prevItems = items;
@@ -386,6 +547,9 @@ export const AdminMenuManager: React.FC<AdminMenuManagerProps> = ({
         dietary: formDietary,
         bestPairing: cleanPairing,
         status: formStatus,
+        customizationEnabled: formCustomizationEnabled,
+        customizationTitle: cleanCustomTitle,
+        customizationOptions: cleanCustomOptions,
       };
 
       setItems((prev) => prev.map((i) => (i.id === editingItem.id ? updatedItem : i)));
@@ -409,6 +573,9 @@ export const AdminMenuManager: React.FC<AdminMenuManagerProps> = ({
           best_pairing: cleanPairing,
           status: formStatus,
           imageUrl: cleanImg,
+          customization_enabled: formCustomizationEnabled,
+          customization_title: cleanCustomTitle,
+          customization_options: cleanCustomOptions,
         },
       });
       if (onItemChange) onItemChange();
@@ -425,6 +592,9 @@ export const AdminMenuManager: React.FC<AdminMenuManagerProps> = ({
           bestPairing: cleanPairing,
           status: formStatus,
           imageUrl: cleanImg,
+          customizationEnabled: formCustomizationEnabled,
+          customizationTitle: cleanCustomTitle,
+          customizationOptions: cleanCustomOptions,
         });
 
         if (res.success) {
@@ -461,6 +631,9 @@ export const AdminMenuManager: React.FC<AdminMenuManagerProps> = ({
       dietary: formDietary,
       bestPairing: cleanPairing,
       status: formStatus,
+      customizationEnabled: formCustomizationEnabled,
+      customizationTitle: cleanCustomTitle,
+      customizationOptions: cleanCustomOptions,
     };
 
     // 1. Instant 0ms Optimistic UI Update & Modal Close
@@ -485,6 +658,9 @@ export const AdminMenuManager: React.FC<AdminMenuManagerProps> = ({
         best_pairing: cleanPairing,
         status: formStatus,
         imageUrl: cleanImg,
+        customization_enabled: formCustomizationEnabled,
+        customization_title: cleanCustomTitle,
+        customization_options: cleanCustomOptions,
       },
     });
     if (onItemChange) onItemChange();
@@ -501,6 +677,9 @@ export const AdminMenuManager: React.FC<AdminMenuManagerProps> = ({
         bestPairing: cleanPairing,
         status: formStatus,
         imageUrl: cleanImg,
+        customizationEnabled: formCustomizationEnabled,
+        customizationTitle: cleanCustomTitle,
+        customizationOptions: cleanCustomOptions,
       });
 
       if (res.success) {
@@ -645,7 +824,7 @@ export const AdminMenuManager: React.FC<AdminMenuManagerProps> = ({
             <span>Menu Catalog &amp; Dish Editor</span>
           </h2>
           <p className="text-xs text-stone-500 dark:text-stone-400 mt-1">
-            Add new dishes, update prices, edit descriptions, or toggle stock. Changes reflect instantly on customer menu &amp; KDS.
+            Add new dishes, update prices, customize Bread &amp; Style / Milk Preference per dish, or toggle stock.
           </p>
         </div>
 
@@ -849,6 +1028,14 @@ export const AdminMenuManager: React.FC<AdminMenuManagerProps> = ({
           {filteredItems.map((item) => {
             const isSoldOut = item.status === "SOLD_OUT";
             const imgUrl = item.imageUrl ? getFoodImage(item.name, item.imageUrl) : "";
+            const inferredCustom = inferDefaultCustomizationForDish(item.name, item.categoryName, item.dietary);
+            const customEnabled = item.customizationEnabled !== false;
+            const customTitle = item.customizationTitle || inferredCustom.title;
+            const customOptions =
+              item.customizationOptions && item.customizationOptions.length > 0
+                ? item.customizationOptions
+                : inferredCustom.options;
+
             return (
               <div
                 key={item.id}
@@ -912,12 +1099,28 @@ export const AdminMenuManager: React.FC<AdminMenuManagerProps> = ({
                     </p>
                   )}
 
-                  {item.bestPairing && (
-                    <div className="mt-2 flex items-center gap-1.5 text-[11px] font-medium text-amber-800 dark:text-amber-200 bg-amber-50 dark:bg-amber-950/40 border border-amber-200/70 dark:border-amber-800/40 px-2 py-0.5 rounded-lg w-fit">
-                      <Sparkles className="w-3 h-3 text-amber-600 dark:text-amber-400 shrink-0" />
-                      <span>Pairs with: <strong className="font-semibold">{item.bestPairing}</strong></span>
-                    </div>
-                  )}
+                  <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                    {item.bestPairing && (
+                      <div className="flex items-center gap-1.5 text-[11px] font-medium text-amber-800 dark:text-amber-200 bg-amber-50 dark:bg-amber-950/40 border border-amber-200/70 dark:border-amber-800/40 px-2 py-0.5 rounded-lg w-fit">
+                        <Sparkles className="w-3 h-3 text-amber-600 dark:text-amber-400 shrink-0" />
+                        <span>Pairs with: <strong className="font-semibold">{item.bestPairing}</strong></span>
+                      </div>
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={() => handleOpenEdit(item)}
+                      className="flex items-center gap-1 text-[10.5px] font-mono text-stone-700 dark:text-stone-300 bg-stone-100 dark:bg-stone-800/90 hover:bg-stone-200 dark:hover:bg-stone-700 border border-stone-200/80 dark:border-stone-700 px-2 py-0.5 rounded-lg transition cursor-pointer"
+                      title="Click to customize Bread & Style / Milk Preference options"
+                    >
+                      <SlidersHorizontal className="w-2.5 h-2.5 text-[#B72E35]" />
+                      <span>
+                        {customEnabled
+                          ? `${customTitle}: ${customOptions.map((o) => (o.priceDelta > 0 ? `${o.name} +₹${o.priceDelta}` : o.name)).join(", ")}`
+                          : "No Customizations"}
+                      </span>
+                    </button>
+                  </div>
                 </div>
 
                 {/* 2-BUTTON STOCK CONTROL FOR ADMIN: 1. IN STOCK  2. OUT OF STOCK */}
@@ -956,7 +1159,7 @@ export const AdminMenuManager: React.FC<AdminMenuManagerProps> = ({
                     <button
                       onClick={() => handleOpenEdit(item)}
                       className="p-1.5 rounded-lg border border-stone-200 dark:border-stone-700 hover:bg-stone-100 dark:hover:bg-stone-800 text-stone-500 hover:text-stone-900 dark:hover:text-stone-100 transition cursor-pointer"
-                      title="Edit Dish"
+                      title="Edit Dish & Customizations"
                     >
                       <Edit2 className="w-3.5 h-3.5" />
                     </button>
@@ -1005,8 +1208,8 @@ export const AdminMenuManager: React.FC<AdminMenuManagerProps> = ({
                 </h3>
                 <p className="text-xs text-stone-500 mt-0.5">
                   {editingItem
-                    ? "Update pricing, description, category, or dietary status."
-                    : "Add a new dish to the live customer menu & kitchen display."}
+                    ? "Update pricing, Bread & Style / Milk Preference options, or dietary status."
+                    : "Add a new dish with custom Bread & Style or Milk Preference options."}
                 </p>
               </div>
               <button
@@ -1122,6 +1325,167 @@ export const AdminMenuManager: React.FC<AdminMenuManagerProps> = ({
                   onChange={(e) => setFormDescription(e.target.value)}
                   className="w-full px-3.5 py-2 rounded-xl border border-stone-200 dark:border-stone-800 bg-white dark:bg-stone-900 text-xs text-stone-900 dark:text-stone-100 focus:outline-none focus:ring-2 focus:ring-[#B72E35]/40"
                 />
+              </div>
+
+              {/* Per-Dish Customizations Editor (Bread & Style / Milk Preference / Pasta Shape) */}
+              <div className="p-3.5 rounded-xl bg-stone-50 dark:bg-stone-800/50 border border-stone-200 dark:border-stone-700 space-y-3">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <SlidersHorizontal className="w-4 h-4 text-[#B72E35]" />
+                    <div>
+                      <span className="text-xs font-bold text-stone-900 dark:text-stone-100 block">
+                        Dish Customizations (Bread &amp; Style / Milk Preference)
+                      </span>
+                      <span className="text-[10px] text-stone-500 dark:text-stone-400">
+                        Configure options &amp; add-on prices shown when a guest taps this dish
+                      </span>
+                    </div>
+                  </div>
+
+                  <label className="inline-flex items-center gap-1.5 cursor-pointer shrink-0">
+                    <input
+                      type="checkbox"
+                      checked={formCustomizationEnabled}
+                      onChange={(e) => setFormCustomizationEnabled(e.target.checked)}
+                      className="rounded border-stone-300 text-[#B72E35] focus:ring-[#B72E35]"
+                    />
+                    <span className="text-xs font-semibold text-stone-700 dark:text-stone-300">
+                      {formCustomizationEnabled ? "Enabled" : "Hidden"}
+                    </span>
+                  </label>
+                </div>
+
+                {/* Quick Preset Templates */}
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="text-[10px] uppercase tracking-wider font-semibold text-stone-500 mr-1">
+                    Presets:
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setFormCustomizationEnabled(true);
+                      setFormCustomizationTitle("Bread & Style");
+                      setFormCustomizationOptions(PRESET_BREAD_AND_STYLE.map((o) => ({ ...o })));
+                    }}
+                    className={`text-[11px] px-2.5 py-1 rounded-lg font-medium border transition cursor-pointer ${
+                      formCustomizationEnabled && formCustomizationTitle === "Bread & Style"
+                        ? "bg-[#B72E35] text-white border-[#B72E35]"
+                        : "bg-white dark:bg-stone-900 text-stone-700 dark:text-stone-300 border-stone-200 dark:border-stone-700 hover:bg-stone-100"
+                    }`}
+                  >
+                    Bread &amp; Style
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setFormCustomizationEnabled(true);
+                      setFormCustomizationTitle("Milk Preference");
+                      setFormCustomizationOptions(PRESET_MILK_PREFERENCE.map((o) => ({ ...o })));
+                    }}
+                    className={`text-[11px] px-2.5 py-1 rounded-lg font-medium border transition cursor-pointer ${
+                      formCustomizationEnabled && formCustomizationTitle === "Milk Preference"
+                        ? "bg-[#B72E35] text-white border-[#B72E35]"
+                        : "bg-white dark:bg-stone-900 text-stone-700 dark:text-stone-300 border-stone-200 dark:border-stone-700 hover:bg-stone-100"
+                    }`}
+                  >
+                    Milk Preference
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setFormCustomizationEnabled(true);
+                      setFormCustomizationTitle("Pasta Shape");
+                      setFormCustomizationOptions(PRESET_PASTA_SHAPE.map((o) => ({ ...o })));
+                    }}
+                    className={`text-[11px] px-2.5 py-1 rounded-lg font-medium border transition cursor-pointer ${
+                      formCustomizationEnabled && formCustomizationTitle === "Pasta Shape"
+                        ? "bg-[#B72E35] text-white border-[#B72E35]"
+                        : "bg-white dark:bg-stone-900 text-stone-700 dark:text-stone-300 border-stone-200 dark:border-stone-700 hover:bg-stone-100"
+                    }`}
+                  >
+                    Pasta Shape
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFormCustomizationEnabled(false)}
+                    className={`text-[11px] px-2.5 py-1 rounded-lg font-medium border transition cursor-pointer ${
+                      !formCustomizationEnabled
+                        ? "bg-stone-800 text-white border-stone-800 dark:bg-stone-200 dark:text-stone-900"
+                        : "bg-white dark:bg-stone-900 text-stone-600 dark:text-stone-400 border-stone-200 dark:border-stone-700 hover:bg-stone-100"
+                    }`}
+                  >
+                    None (Disable)
+                  </button>
+                </div>
+
+                {formCustomizationEnabled && (
+                  <div className="space-y-2.5 pt-1 border-t border-stone-200/80 dark:border-stone-700/70">
+                    {/* Group Title Input */}
+                    <div>
+                      <label className="block text-[11px] font-semibold text-stone-700 dark:text-stone-300 mb-1">
+                        Section Heading (e.g. Bread &amp; Style, Milk Preference)
+                      </label>
+                      <input
+                        type="text"
+                        value={formCustomizationTitle}
+                        onChange={(e) => setFormCustomizationTitle(e.target.value)}
+                        placeholder="Bread & Style"
+                        className="w-full px-3 py-1.5 rounded-lg border border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-900 text-xs font-semibold text-stone-900 dark:text-stone-100 focus:outline-none focus:ring-2 focus:ring-[#B72E35]/40"
+                      />
+                    </div>
+
+                    {/* Options List */}
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between text-[10.5px] font-mono uppercase text-stone-500 px-1">
+                        <span>Option Label (e.g. Sourdough, Oat)</span>
+                        <span>Extra Price (+₹)</span>
+                      </div>
+                      {formCustomizationOptions.map((opt, idx) => (
+                        <div key={opt.id || idx} className="flex items-center gap-2">
+                          <input
+                            type="text"
+                            value={opt.name}
+                            onChange={(e) => handleUpdateCustomOption(idx, "name", e.target.value)}
+                            placeholder={idx === 0 ? "Default (e.g. Classic / None)" : "Option name"}
+                            className="flex-1 px-2.5 py-1.5 rounded-lg border border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-900 text-xs text-stone-900 dark:text-stone-100 focus:outline-none focus:ring-2 focus:ring-[#B72E35]/40"
+                          />
+                          <div className="relative w-24 shrink-0">
+                            <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[11px] font-bold text-stone-400">
+                              +₹
+                            </span>
+                            <input
+                              type="number"
+                              min={0}
+                              step={1}
+                              value={opt.priceDelta}
+                              onChange={(e) =>
+                                handleUpdateCustomOption(idx, "priceDelta", e.target.value)
+                              }
+                              className="w-full pl-7 pr-2 py-1.5 rounded-lg border border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-900 text-xs font-bold text-stone-900 dark:text-stone-100 focus:outline-none focus:ring-2 focus:ring-[#B72E35]/40"
+                            />
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveCustomOption(idx)}
+                            className="p-1.5 rounded-lg text-stone-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40 transition cursor-pointer"
+                            title="Remove option"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      ))}
+
+                      <button
+                        type="button"
+                        onClick={handleAddCustomOption}
+                        className="mt-1 inline-flex items-center gap-1.5 text-xs font-semibold text-[#B72E35] dark:text-[#FF5B52] hover:underline cursor-pointer pt-1"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        <span>Add Option</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Suggestions / Pairings (Pairs with) */}

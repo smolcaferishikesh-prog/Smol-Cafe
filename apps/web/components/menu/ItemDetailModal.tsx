@@ -4,7 +4,7 @@ import React, { useState, useMemo } from "react";
 import type { MenuItemWithDetails, CategoryWithItems } from "@/lib/queries/menu";
 import { useCart } from "@/context/CartContext";
 import { getFoodImage, SHOW_MENU_IMAGES } from "@/lib/food-images";
-import { ChevronLeft, Heart, Plus, Check, Coffee } from "lucide-react";
+import { ChevronLeft, Heart, Plus, Check } from "lucide-react";
 
 interface ItemDetailModalProps {
   item: MenuItemWithDetails | null;
@@ -14,6 +14,7 @@ interface ItemDetailModalProps {
 
 interface CustomOption {
   id: string;
+  name: string;
   label: string;
   priceDelta: number;
 }
@@ -41,12 +42,14 @@ export const ItemDetailModal: React.FC<ItemDetailModalProps> = ({
   const foodImageUrl = item ? getFoodImage(item.name, item.imageUrl) : "";
   const hasHeroImage = Boolean(SHOW_MENU_IMAGES && foodImageUrl && !imageError);
 
-  // Determine beverage vs food for customization options
+  // Determine beverage vs food for default customization options
   const isBeverage = useMemo(() => {
     if (!item) return false;
     const name = item.name.toLowerCase();
     const sub = (item.metadata?.subcategory || "").toLowerCase();
+    const dietary = (item.metadata?.dietary || "").toLowerCase();
     return (
+      dietary === "beverage" ||
       name.includes("coffee") ||
       name.includes("pour over") ||
       name.includes("latte") ||
@@ -76,51 +79,79 @@ export const ItemDetailModal: React.FC<ItemDetailModalProps> = ({
       name.includes("rigatoni") ||
       sub.includes("pasta")
     );
+  }, [item, categories]);
+
+  // Check if Admin explicitly enabled/disabled or customized options for this dish
+  const isCustomizationEnabled = useMemo(() => {
+    if (!item) return false;
+    if (item.metadata?.customization_enabled === false) return false;
+    if (
+      Array.isArray(item.metadata?.customization_options) &&
+      item.metadata.customization_options.length === 0 &&
+      item.metadata?.customization_enabled !== undefined
+    ) {
+      return false;
+    }
+    return true;
   }, [item]);
 
-  // Dynamic customization groups
-  const customizationTitle = isBeverage
-    ? "Milk Preference"
-    : isPasta
-    ? "Pasta Shape"
-    : "Bread & Style";
+  // Dynamic customization title (uses Admin override if configured)
+  const customizationTitle = useMemo(() => {
+    if (item?.metadata?.customization_title && item.metadata.customization_title.trim()) {
+      return item.metadata.customization_title.trim();
+    }
+    return isBeverage ? "Milk Preference" : isPasta ? "Pasta Shape" : "Bread & Style";
+  }, [item?.metadata?.customization_title, isBeverage, isPasta]);
 
+  // Dynamic customization options (uses Admin per-dish options if configured, otherwise fallback defaults)
   const customOptions: CustomOption[] = useMemo(() => {
+    const adminOpts = item?.metadata?.customization_options;
+    if (Array.isArray(adminOpts) && adminOpts.length > 0) {
+      return adminOpts.map((o, idx) => {
+        const cleanName = (o.name || `Option ${idx + 1}`).trim();
+        const delta = Math.max(0, Number(o.priceDelta) || 0);
+        return {
+          id: o.id || `opt_${idx}_${cleanName.toLowerCase().replace(/[^a-z0-9]+/g, "_")}`,
+          name: cleanName,
+          label: delta > 0 ? `${cleanName} +₹${delta}` : cleanName,
+          priceDelta: delta,
+        };
+      });
+    }
+
     if (isBeverage) {
       return [
-        { id: "none", label: "None", priceDelta: 0 },
-        { id: "dairy", label: "Dairy", priceDelta: 0 },
-        { id: "oat", label: "Oat +₹30", priceDelta: 30 },
-        { id: "almond", label: "Almond +₹30", priceDelta: 30 },
+        { id: "none", name: "None", label: "None", priceDelta: 0 },
+        { id: "dairy", name: "Dairy", label: "Dairy", priceDelta: 0 },
+        { id: "oat", name: "Oat", label: "Oat +₹30", priceDelta: 30 },
+        { id: "almond", name: "Almond", label: "Almond +₹30", priceDelta: 30 },
       ];
     }
     if (isPasta) {
       return [
-        { id: "penne", label: "Penne", priceDelta: 0 },
-        { id: "farfalle", label: "Farfalle", priceDelta: 0 },
-        { id: "spaghetti", label: "Spaghetti", priceDelta: 0 },
+        { id: "penne", name: "Penne", label: "Penne", priceDelta: 0 },
+        { id: "farfalle", name: "Farfalle", label: "Farfalle", priceDelta: 0 },
+        { id: "spaghetti", name: "Spaghetti", label: "Spaghetti", priceDelta: 0 },
       ];
     }
     return [
-      { id: "classic", label: "Classic", priceDelta: 0 },
-      { id: "sourdough", label: "Sourdough +₹40", priceDelta: 40 },
-      { id: "extra_cheese", label: "Extra Cheese +₹35", priceDelta: 35 },
-      { id: "spicy_dip", label: "Spicy Dip +₹25", priceDelta: 25 },
+      { id: "classic", name: "Classic", label: "Classic", priceDelta: 0 },
+      { id: "sourdough", name: "Sourdough", label: "Sourdough +₹40", priceDelta: 40 },
+      { id: "extra_cheese", name: "Extra Cheese", label: "Extra Cheese +₹35", priceDelta: 35 },
+      { id: "spicy_dip", name: "Spicy Dip", label: "Spicy Dip +₹25", priceDelta: 25 },
     ];
-  }, [isBeverage, isPasta]);
+  }, [item?.metadata?.customization_options, isBeverage, isPasta]);
 
-  const [selectedOptionId, setSelectedOptionId] = useState<string>("none");
+  const [selectedOptionId, setSelectedOptionId] = useState<string>("");
 
-  // Reset selected option when item changes
+  // Reset selected option to the first option when item or options change
   React.useEffect(() => {
-    if (isBeverage) {
-      setSelectedOptionId("none");
-    } else if (isPasta) {
-      setSelectedOptionId("penne");
+    if (customOptions.length > 0) {
+      setSelectedOptionId(customOptions[0].id);
     } else {
-      setSelectedOptionId("classic");
+      setSelectedOptionId("");
     }
-  }, [item?.id, isBeverage, isPasta]);
+  }, [item?.id, customOptions]);
 
   // Lookup / resolve paired recommendation
   const pairedItemInfo = useMemo(() => {
@@ -220,7 +251,9 @@ export const ItemDetailModal: React.FC<ItemDetailModalProps> = ({
     (item.metadata as any)?.availability === "86";
 
   const basePriceRupees = Math.round(item.pricePaise / 100);
-  const selectedOption = customOptions.find((o) => o.id === selectedOptionId);
+  const selectedOption = isCustomizationEnabled
+    ? customOptions.find((o) => o.id === selectedOptionId)
+    : undefined;
   const optionDelta = selectedOption ? selectedOption.priceDelta : 0;
   const totalPriceRupees = basePriceRupees + optionDelta;
 
@@ -237,7 +270,6 @@ export const ItemDetailModal: React.FC<ItemDetailModalProps> = ({
       item.name.toLowerCase().includes("omelette") ||
       (item.metadata?.core_ingredients || "").toLowerCase().includes("egg"));
   const isVegan = !isNonVeg && !isEgg && dietary.includes("vegan");
-  const isVeg = !isNonVeg && !isEgg && !isVegan;
 
   // Determine tag badge
   let tagBadge = "SINGLE ORIGIN";
@@ -253,19 +285,19 @@ export const ItemDetailModal: React.FC<ItemDetailModalProps> = ({
   }
 
   const handleAddToCart = () => {
-    // If an add-on or customization was selected, bundle it with option details
-    const isCustomized =
-      selectedOption &&
-      (optionDelta > 0 ||
-        (isPasta && selectedOption.id !== "penne") ||
-        (isBeverage && selectedOption.id !== "none") ||
-        (!isBeverage && !isPasta && selectedOption.id !== "classic"));
+    const defaultOptionId = customOptions[0]?.id;
+    const isDefaultBase =
+      !isCustomizationEnabled ||
+      !selectedOption ||
+      (selectedOption.id === defaultOptionId &&
+        selectedOption.priceDelta === 0 &&
+        ["none", "classic", "regular", "standard"].includes(selectedOption.name.toLowerCase()));
 
-    if (isCustomized && selectedOption) {
-      const modifierLabel = selectedOption.label.replace(/\s*\+₹\d+.*$/, "").trim();
+    if (isCustomizationEnabled && selectedOption && !isDefaultBase) {
+      const modifierLabel = selectedOption.name.trim();
       const modifiedItem: MenuItemWithDetails = {
         ...item,
-        // Crucial fix: Keep valid item.id for PostgreSQL UUID constraints
+        // Keep valid item.id for PostgreSQL UUID constraints
         id: item.id,
         name: `${item.name} (${modifierLabel})`,
         pricePaise: item.pricePaise + optionDelta * 100,
@@ -481,38 +513,41 @@ export const ItemDetailModal: React.FC<ItemDetailModalProps> = ({
             </div>
           )}
 
-          {/* Decorative Floral / Star Divider: Biscuit (#C9AE8B) */}
-          <div className="my-4 flex items-center justify-center opacity-70">
-            <div className="h-[0.5px] flex-1 bg-[#C9AE8B]" />
-            <span className="px-3 text-[11px] text-[#C9AE8B] font-serif">❖</span>
-            <div className="h-[0.5px] flex-1 bg-[#C9AE8B]" />
-          </div>
+          {/* Customization Options (e.g. Milk Preference / Bread & Style — configurable per dish in Admin) */}
+          {isCustomizationEnabled && customOptions.length > 0 && (
+            <>
+              <div className="my-4 flex items-center justify-center opacity-70">
+                <div className="h-[0.5px] flex-1 bg-[#C9AE8B]" />
+                <span className="px-3 text-[11px] text-[#C9AE8B] font-serif">❖</span>
+                <div className="h-[0.5px] flex-1 bg-[#C9AE8B]" />
+              </div>
 
-          {/* Customization Options (e.g. Milk Preference / Bread & Style) */}
-          <div className="mb-6">
-            <h3 className="font-serif text-sm sm:text-base font-semibold text-[#241F1C] dark:text-[#F3E7D3] mb-2.5">
-              {customizationTitle}
-            </h3>
-            <div className="grid grid-cols-4 gap-2">
-              {customOptions.map((opt) => {
-                const isSelected = selectedOptionId === opt.id;
-                return (
-                  <button
-                    key={opt.id}
-                    type="button"
-                    onClick={() => setSelectedOptionId(opt.id)}
-                    className={`py-2 px-1 rounded-2xl text-xs sm:text-[13px] font-serif transition text-center active:scale-95 ${
-                      isSelected
-                        ? "bg-[#B72E35] text-[#F3E7D3] border border-[#B72E35] shadow-xs font-semibold"
-                        : "bg-[#FAF4EB] dark:bg-[#2A231E] text-[#241F1C] dark:text-[#F3E7D3] border border-[#C9AE8B]/70 hover:border-[#725039]"
-                    }`}
-                  >
-                    {opt.label}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
+              <div className="mb-6">
+                <h3 className="font-serif text-sm sm:text-base font-semibold text-[#241F1C] dark:text-[#F3E7D3] mb-2.5">
+                  {customizationTitle}
+                </h3>
+                <div className="grid grid-cols-4 gap-2">
+                  {customOptions.map((opt) => {
+                    const isSelected = selectedOptionId === opt.id;
+                    return (
+                      <button
+                        key={opt.id}
+                        type="button"
+                        onClick={() => setSelectedOptionId(opt.id)}
+                        className={`py-2 px-1 rounded-2xl text-xs sm:text-[13px] font-serif transition text-center active:scale-95 ${
+                          isSelected
+                            ? "bg-[#B72E35] text-[#F3E7D3] border border-[#B72E35] shadow-xs font-semibold"
+                            : "bg-[#FAF4EB] dark:bg-[#2A231E] text-[#241F1C] dark:text-[#F3E7D3] border border-[#C9AE8B]/70 hover:border-[#725039]"
+                        }`}
+                      >
+                        {opt.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </>
+          )}
         </div>
 
         {/* Floating / Sticky Bottom Action Button: Liquid Ruby Glass (Light) / Amethyst Purple Glass (Dark) */}

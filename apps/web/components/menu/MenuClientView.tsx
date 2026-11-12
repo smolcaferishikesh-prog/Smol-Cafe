@@ -3,8 +3,8 @@
 import React, { useState, useEffect, useCallback, Suspense } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import type { CategoryWithItems, MenuItemWithDetails } from "@/lib/queries/menu";
-import { CartProvider, useCart } from "@/context/CartContext";
+import type { CategoryWithItems, MenuItemWithDetails, MenuCustomizationOption } from "@/lib/queries/menu";
+import { useCart } from "@/context/CartContext";
 import type { EditableCustomerOrder } from "@/app/menu/actions";
 import { MenuItemCard } from "./MenuItemCard";
 import { ItemDetailModal } from "./ItemDetailModal";
@@ -14,7 +14,6 @@ import { ThemeToggle } from "@/components/common/ThemeToggle";
 import { Search, X } from "lucide-react";
 import { subscribeToSyncEvents } from "@/lib/sync-events";
 import { cacheMenuCatalog, getCachedMenuCatalog } from "@/lib/offline-cache";
-import { fetchLiveMenuCatalogAction } from "@/app/admin/menu-actions";
 import MenuLoading from "@/app/menu/loading";
 
 import { useSupabaseRealtime } from "@/hooks/useSupabaseRealtime";
@@ -114,6 +113,9 @@ const MenuContentInner: React.FC<MenuClientViewProps> = ({
     imageUrl?: string | null;
     dietary?: string;
     bestPairing?: string;
+    customizationEnabled?: boolean;
+    customizationTitle?: string;
+    customizationOptions?: MenuCustomizationOption[];
   }) => {
     setCategories((prevCategories) => {
       if (payload.status === "ARCHIVED" || payload.stockStatus === "ARCHIVED") {
@@ -156,6 +158,18 @@ const MenuContentInner: React.FC<MenuClientViewProps> = ({
                 payload.bestPairing !== undefined
                   ? payload.bestPairing
                   : targetItem.metadata?.best_pairing || "",
+              customization_enabled:
+                payload.customizationEnabled !== undefined
+                  ? payload.customizationEnabled
+                  : targetItem.metadata?.customization_enabled,
+              customization_title:
+                payload.customizationTitle !== undefined
+                  ? payload.customizationTitle
+                  : targetItem.metadata?.customization_title,
+              customization_options:
+                payload.customizationOptions !== undefined
+                  ? payload.customizationOptions
+                  : targetItem.metadata?.customization_options,
             },
           };
           return { ...cat, items: updatedItems };
@@ -187,6 +201,9 @@ const MenuContentInner: React.FC<MenuClientViewProps> = ({
               dietary: payload.dietary || "veg",
               best_pairing: payload.bestPairing || "",
               availability: isSoldOut ? "SOLD_OUT" : "IN_STOCK",
+              customization_enabled: payload.customizationEnabled,
+              customization_title: payload.customizationTitle,
+              customization_options: payload.customizationOptions,
             },
           };
 
@@ -225,6 +242,18 @@ const MenuContentInner: React.FC<MenuClientViewProps> = ({
                 payload.bestPairing !== undefined
                   ? payload.bestPairing
                   : prev.metadata?.best_pairing || "",
+              customization_enabled:
+                payload.customizationEnabled !== undefined
+                  ? payload.customizationEnabled
+                  : prev.metadata?.customization_enabled,
+              customization_title:
+                payload.customizationTitle !== undefined
+                  ? payload.customizationTitle
+                  : prev.metadata?.customization_title,
+              customization_options:
+                payload.customizationOptions !== undefined
+                  ? payload.customizationOptions
+                  : prev.metadata?.customization_options,
             },
           };
         }
@@ -236,7 +265,7 @@ const MenuContentInner: React.FC<MenuClientViewProps> = ({
     });
   }, []);
 
-  // Realtime WebSocket for instantaneous menu_items changes (stock, price, status)
+  // Realtime WebSocket for instantaneous menu_items changes (stock, price, status, customizations)
   useSupabaseRealtime({
     table: "menu_items",
     onData: (payload: any) => {
@@ -252,6 +281,9 @@ const MenuContentInner: React.FC<MenuClientViewProps> = ({
           description: item.description,
           imageUrl: item.image_url,
           bestPairing: item.metadata?.best_pairing || item.metadata?.bestPairing,
+          customizationEnabled: item.metadata?.customization_enabled,
+          customizationTitle: item.metadata?.customization_title,
+          customizationOptions: item.metadata?.customization_options,
         });
       }
     },
@@ -274,6 +306,9 @@ const MenuContentInner: React.FC<MenuClientViewProps> = ({
             imageUrl: meta.imageUrl,
             dietary: meta.dietary,
             bestPairing: meta.best_pairing || meta.bestPairing,
+            customizationEnabled: meta.customization_enabled,
+            customizationTitle: meta.customization_title,
+            customizationOptions: meta.customization_options,
           });
         }
       }

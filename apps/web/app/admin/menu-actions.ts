@@ -14,6 +14,7 @@ import {
   savePersistedMenuStore,
   invalidateMenuCatalogCache,
   type MenuItemWithDetails,
+  type MenuCustomizationOption,
 } from "@/lib/queries/menu";
 import {
   MOCK_CATEGORIES,
@@ -34,6 +35,9 @@ export interface SaveMenuItemPayload {
   dietary?: "veg" | "non-veg" | "vegan" | "egg" | "beverage";
   bestPairing?: string;
   status?: "AVAILABLE" | "SOLD_OUT" | "ARCHIVED";
+  customizationEnabled?: boolean;
+  customizationTitle?: string;
+  customizationOptions?: MenuCustomizationOption[];
 }
 
 export interface AdminCategoryOption {
@@ -52,6 +56,9 @@ export interface AdminMenuItem {
   dietary: string;
   bestPairing?: string;
   status: string;
+  customizationEnabled?: boolean;
+  customizationTitle?: string;
+  customizationOptions?: MenuCustomizationOption[];
 }
 
 /**
@@ -84,6 +91,9 @@ export async function fetchAdminMenuCatalogAction(): Promise<{
           dietary: it.metadata?.dietary || "veg",
           bestPairing: it.metadata?.best_pairing || "",
           status: it.status || "AVAILABLE",
+          customizationEnabled: it.metadata?.customization_enabled,
+          customizationTitle: it.metadata?.customization_title,
+          customizationOptions: it.metadata?.customization_options,
         });
       });
     });
@@ -166,7 +176,20 @@ export async function saveMenuItemAction(
   }
 
   try {
-    const { id, name, categoryId, priceRupees, description, imageUrl, dietary, bestPairing, status } = payload;
+    const {
+      id,
+      name,
+      categoryId,
+      priceRupees,
+      description,
+      imageUrl,
+      dietary,
+      bestPairing,
+      status,
+      customizationEnabled,
+      customizationTitle,
+      customizationOptions,
+    } = payload;
     const isEdit = !!id;
     const amountPaise = Math.round(priceRupees * 100);
     const itemStatus = status || "AVAILABLE";
@@ -226,6 +249,17 @@ export async function saveMenuItemAction(
     deletedStore.delete(finalItemId);
     if (id) deletedStore.delete(id);
 
+    const customizationMeta: Partial<MenuItemWithDetails["metadata"]> = {};
+    if (customizationEnabled !== undefined) {
+      customizationMeta.customization_enabled = customizationEnabled;
+    }
+    if (customizationTitle !== undefined) {
+      customizationMeta.customization_title = customizationTitle.trim();
+    }
+    if (customizationOptions !== undefined) {
+      customizationMeta.customization_options = customizationOptions;
+    }
+
     if (isEdit) {
       overridesStore[finalItemId] = {
         name: name.trim(),
@@ -239,6 +273,7 @@ export async function saveMenuItemAction(
           dietary: dietary || "veg",
           best_pairing: bestPairing !== undefined ? bestPairing.trim() : (overridesStore[finalItemId]?.metadata?.best_pairing || ""),
           availability: itemStatus === "SOLD_OUT" ? "SOLD_OUT" : "IN_STOCK",
+          ...customizationMeta,
         },
       };
 
@@ -262,6 +297,7 @@ export async function saveMenuItemAction(
             dietary: dietary || "veg",
             best_pairing: bestPairing !== undefined ? bestPairing.trim() : (customStore[existingCustomIdx].metadata?.best_pairing || ""),
             availability: itemStatus === "SOLD_OUT" ? "SOLD_OUT" : "IN_STOCK",
+            ...customizationMeta,
           },
         };
       }
@@ -278,6 +314,7 @@ export async function saveMenuItemAction(
           dietary: dietary || "veg",
           best_pairing: bestPairing?.trim() || "",
           availability: itemStatus === "SOLD_OUT" ? "SOLD_OUT" : "IN_STOCK",
+          ...customizationMeta,
         },
       };
       customStore.push(newItem);
@@ -318,6 +355,12 @@ export async function saveMenuItemAction(
         const dbItemId = isUuid(finalItemId) ? finalItemId : undefined;
         if (!dbItemId) return;
 
+        const dbMetadata = {
+          dietary: dietary || "veg",
+          best_pairing: bestPairing?.trim() || "",
+          ...customizationMeta,
+        };
+
         await Promise.all([
           supabase.from("menu_items").upsert({
             id: dbItemId,
@@ -325,10 +368,7 @@ export async function saveMenuItemAction(
             name: name.trim(),
             status: itemStatus,
             updated_at: new Date().toISOString(),
-            metadata: {
-              dietary: dietary || "veg",
-              best_pairing: bestPairing?.trim() || "",
-            },
+            metadata: dbMetadata,
           }),
           supabase.from("menu_prices").upsert({
             menu_item_id: dbItemId,
@@ -340,10 +380,7 @@ export async function saveMenuItemAction(
             menu_item_id: dbItemId,
             description: description || "",
             image_url: finalImageUrl || null,
-            metadata: {
-              dietary: dietary || "veg",
-              best_pairing: bestPairing?.trim() || "",
-            },
+            metadata: dbMetadata,
           }),
         ]);
         invalidateMenuCatalogCache();
@@ -370,6 +407,7 @@ export async function saveMenuItemAction(
         status: itemStatus,
         stockStatus: itemStatus === "SOLD_OUT" ? "SOLD_OUT" : "IN_STOCK",
         imageUrl: initialImageUrl,
+        ...customizationMeta,
       },
     });
 

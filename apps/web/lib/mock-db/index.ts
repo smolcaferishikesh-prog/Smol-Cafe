@@ -748,18 +748,9 @@ export class MockSupabaseClient {
       for (const itemInput of items) {
         const menuItem = mockStore.menu_items.find((i) => i.id === itemInput.menu_item_id);
         const menuPrice = mockStore.menu_prices.find((p) => p.menu_item_id === itemInput.menu_item_id);
-        const currentPrice = menuPrice?.amount_paise || itemInput.expected_unit_price_paise;
-
-        if (currentPrice !== itemInput.expected_unit_price_paise) {
-          changedItems.push({
-            menu_item_id: itemInput.menu_item_id,
-            name: menuItem?.name || "Item",
-            expected_price_paise: itemInput.expected_unit_price_paise,
-            current_price_paise: currentPrice,
-          });
-        }
-
-        const lineSubtotal = currentPrice * itemInput.qty;
+        const basePrice = menuPrice?.amount_paise || itemInput.expected_unit_price_paise;
+        const effectivePrice = Math.max(basePrice, itemInput.expected_unit_price_paise || 0);
+        const lineSubtotal = effectivePrice * itemInput.qty;
         subtotalPaise += lineSubtotal;
 
         orderItemRecords.push({
@@ -767,8 +758,8 @@ export class MockSupabaseClient {
           order_id: orderId,
           menu_item_id: itemInput.menu_item_id,
           menu_item_version_id: `ver_${itemInput.menu_item_id}`,
-          name_snapshot: menuItem?.name || "Café Item",
-          unit_price_snapshot: currentPrice,
+          name_snapshot: (itemInput as any).name || menuItem?.name || "Café Item",
+          unit_price_snapshot: effectivePrice,
           qty: itemInput.qty,
           line_subtotal: lineSubtotal,
           item_status: "PENDING_CONFIRMATION",

@@ -17,6 +17,7 @@ import { invalidateAdminOverviewCache } from "@/app/admin/actions";
 import {
   safeUpdateOrderWithInstructions,
   extractOrderInstructions,
+  encodeInstructionsInIdempotencyKey,
 } from "@/lib/order-instructions";
 
 export interface PlaceOrderItemInput {
@@ -81,8 +82,19 @@ function cleanExpiredInFlight() {
 }
 
 /**
+ * Checks whether an item has a customer-selected customization/add-on modifier
+ * such as "(Extra Cheese)", "(Sourdough)", "(Spicy Dip)", "(Oat)", "(Almond)", "(Dairy)", etc.
+ */
+function isCustomizedMenuItem(itemName?: string): boolean {
+  if (!itemName) return false;
+  // Exclude base catalog item "Black Coffee (Instant)" unless it has a second modifier at the end
+  const strippedInstant = itemName.replace(/\(Instant\)/i, "").trim();
+  return /\([^)]+\)\s*$/.test(strippedInstant);
+}
+
+/**
  * Server Action: Places an order within a single atomic PostgreSQL transaction
- * enforcing server-side price re-validation, inventory reservation, and reward redemption.
+ * or resilient direct fallback, supporting all Bread & Style, Milk Preference, and custom add-ons.
  */
 export async function placeOrderAction(
   items: PlaceOrderItemInput[],
@@ -104,7 +116,7 @@ export async function placeOrderAction(
     const requestId = generateRequestId();
     const startTime = Date.now();
 
-    // 1. Verify Active Table Session from Signed Cookie
+    // 1. Verify Active Table Session from Signed Cookie or Override
     let session = sessionOverride || (await getTableSessionCookie());
 
     if (!session || !session.sessionId || !session.locationId || !isValidUuid(session.sessionId)) {
@@ -175,6 +187,7 @@ export async function placeOrderAction(
     }
 
     // If no Supabase Auth user is logged in, use the verified customer Phone UUID as profile identifier
+    // Only assign profileId if the record actually exists in `profiles` to avoid foreign key errors on orders.customer_id
     if (!profileId && cleanPhone) {
       const phoneUuid = getPhoneUuid(cleanPhone);
       const { data: existingProf } = await supabase
@@ -186,28 +199,41 @@ export async function placeOrderAction(
       if (existingProf?.id) {
         profileId = existingProf.id;
       } else {
-        profileId = phoneUuid;
         try {
-          await supabase.from("profiles").upsert(
-            {
-              id: profileId,
-              display_name: session.guestName || `Guest (${cleanPhone.slice(-4)})`,
-              phone: cleanPhone,
-              updated_at: new Date().toISOString(),
-            },
-            { onConflict: "phone" }
-          );
+          const { data: upsertedProf, error: profUpsertErr } = await supabase
+            .from("profiles")
+            .upsert(
+              {
+                id: phoneUuid,
+                display_name: session.guestName || `Guest (${cleanPhone.slice(-4)})`,
+                phone: cleanPhone,
+                updated_at: new Date().toISOString(),
+              },
+              { onConflict: "phone" }
+            )
+            .select("id")
+            .maybeSingle();
+
+          if (!profUpsertErr && upsertedProf?.id) {
+            profileId = upsertedProf.id;
+          } else {
+            profileId = null;
+          }
         } catch (profErr) {
           console.warn("Could not upsert profile during order creation:", profErr);
+          profileId = null;
         }
       }
     }
 
     try {
-      const effectiveIdempotencyKey =
+      const rawIdempotencyKey =
         cleanPhone && !idempotencyKey.includes(cleanPhone)
           ? `smol_ord_${cleanPhone}_${idempotencyKey}`
           : idempotencyKey;
+      const effectiveIdempotencyKey = instructions
+        ? encodeInstructionsInIdempotencyKey(rawIdempotencyKey, instructions)
+        : rawIdempotencyKey;
 
       logger.info(`Placing order for table session ${session.sessionId} with ${items.length} items (Guest: ${session.guestName || "Guest"}, Phone: ${cleanPhone || "None"})`, {
         requestId,
@@ -216,20 +242,17 @@ export async function placeOrderAction(
         data: { itemCount: items.length, rewardId, guestPhone: cleanPhone },
       });
 
-      // 3. Call submit_order PostgreSQL function (with 6 parameters to resolve ambiguity)
-      let { data: rpcResult, error: rpcError } = await supabase.rpc("submit_order", {
-        p_location_id: session.locationId,
-        p_table_session_id: session.sessionId,
-        p_idempotency_key: effectiveIdempotencyKey,
-        p_items: items,
-        p_reward_id: rewardId || null,
-        p_profile_id: profileId || null,
-      });
+      const hasCustomizedItems = items.some((it) => isCustomizedMenuItem(it.name));
 
-      if (rpcError) {
-        // Retry once after brief 150ms backoff for transient lock under high concurrency
-        await new Promise((resolve) => setTimeout(resolve, 150));
-        const retryCall = await supabase.rpc("submit_order", {
+      // 3. Call submit_order PostgreSQL function when no customized items are present.
+      // When customized items (e.g. Milk Preference or Bread & Style) are present, we use the direct insert path
+      // so the exact customized item name ("... (Oat)", "... (Extra Cheese)") and add-on price are always saved
+      // even if the live database still has an older submit_order RPC definition.
+      let rpcResult: any = null;
+      let rpcError: any = null;
+
+      if (!hasCustomizedItems) {
+        const rpcCall = await supabase.rpc("submit_order", {
           p_location_id: session.locationId,
           p_table_session_id: session.sessionId,
           p_idempotency_key: effectiveIdempotencyKey,
@@ -237,9 +260,23 @@ export async function placeOrderAction(
           p_reward_id: rewardId || null,
           p_profile_id: profileId || null,
         });
-        if (!retryCall.error && retryCall.data) {
-          rpcResult = retryCall.data;
-          rpcError = null;
+        rpcResult = rpcCall.data;
+        rpcError = rpcCall.error;
+
+        if (rpcError) {
+          await new Promise((resolve) => setTimeout(resolve, 150));
+          const retryCall = await supabase.rpc("submit_order", {
+            p_location_id: session.locationId,
+            p_table_session_id: session.sessionId,
+            p_idempotency_key: effectiveIdempotencyKey,
+            p_items: items,
+            p_reward_id: rewardId || null,
+            p_profile_id: profileId || null,
+          });
+          if (!retryCall.error && retryCall.data) {
+            rpcResult = retryCall.data;
+            rpcError = null;
+          }
         }
       }
 
@@ -255,7 +292,7 @@ export async function placeOrderAction(
         total_paise?: number;
         is_duplicate?: boolean;
         changed_items?: ChangedItemDiff[];
-      };
+      } | null;
 
       // If session was closed, automatically start a fresh open round for this table
       if (result && !result.success && result.error === "SESSION_NOT_OPEN") {
@@ -267,23 +304,29 @@ export async function placeOrderAction(
         const freshRes = await resolveQrToken(targetToken, true, session.guestName, cleanPhone);
         if (freshRes.success && freshRes.session) {
           session = freshRes.session;
-          const retry = await supabase.rpc("submit_order", {
-            p_location_id: session.locationId,
-            p_table_session_id: session.sessionId,
-            p_idempotency_key: effectiveIdempotencyKey,
-            p_items: items,
-            p_reward_id: rewardId || null,
-            p_profile_id: profileId || null,
-          });
-          rpcResult = retry.data;
-          rpcError = retry.error;
-          result = rpcResult as typeof result;
+          if (!hasCustomizedItems) {
+            const retry = await supabase.rpc("submit_order", {
+              p_location_id: session.locationId,
+              p_table_session_id: session.sessionId,
+              p_idempotency_key: effectiveIdempotencyKey,
+              p_items: items,
+              p_reward_id: rewardId || null,
+              p_profile_id: profileId || null,
+            });
+            rpcResult = retry.data;
+            rpcError = retry.error;
+            result = rpcResult as typeof result;
+          }
         }
       }
 
       if (result && result.success && result.order_id) {
         if (cleanPhone) {
           recordOrderForPhone(result.order_id, cleanPhone, session.guestName);
+        }
+
+        if (instructions) {
+          void safeUpdateOrderWithInstructions(supabase, result.order_id, {}, instructions).catch(() => {});
         }
 
         // Ensure table session is marked OPEN and active now that an order is placed
@@ -332,25 +375,17 @@ export async function placeOrderAction(
         });
       }
 
+      // Direct Resilient Order Provisioning Path (used for all customized items AND whenever RPC returns an error/conflict)
       if (rpcError || !result || !result.success) {
-        if (result && result.error === "PRICE_CHANGED") {
-          return {
-            success: false,
-            error: "PRICE_CHANGED",
-            message: result.message || "Some item prices have changed. Please review your order.",
-            changedItems: result.changed_items || [],
-          };
-        }
-
-        // High-concurrency Direct Resilient Order Provisioning Fallback with Server Price Verification
         const now = new Date().toISOString();
         const fallbackOrderId = crypto.randomUUID();
-        const fallbackOrderNo = Math.floor(100 + (Date.now() % 900));
+        let fallbackOrderNo = Math.floor(100 + (Date.now() % 900));
         const fallbackVerification = String(Math.floor(1000 + Math.random() * 9000));
         const isUuid = (str?: string) => Boolean(str && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str));
 
-        // 1. Secure Server-Side Price Lookup from DB to prevent client price tampering
+        // 1. Check which item UUIDs exist in PostgreSQL `menu_items` and fetch their base prices
         const itemIds = items.map((it) => it.menu_item_id).filter(isUuid);
+        const existingDbItemIds = new Set<string>();
         const verifiedPrices: Record<string, number> = {};
         const verifiedNames: Record<string, string> = {};
 
@@ -363,6 +398,9 @@ export async function placeOrderAction(
 
             if (dbItems) {
               dbItems.forEach((d: any) => {
+                if (d.id) {
+                  existingDbItemIds.add(d.id);
+                }
                 const p = Array.isArray(d.menu_prices) ? d.menu_prices[0]?.amount_paise : d.menu_prices?.amount_paise;
                 if (p !== undefined && p !== null) {
                   verifiedPrices[d.id] = Number(p);
@@ -377,16 +415,37 @@ export async function placeOrderAction(
           }
         }
 
-        // 2. Compute authoritative subtotal using verified server prices
+        // Compute sequential order_no from DB if available to avoid uq_orders_location_order_no collisions
+        try {
+          const { data: maxOrd } = await supabase
+            .from("orders")
+            .select("order_no")
+            .eq("location_id", session.locationId)
+            .order("order_no", { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          if (maxOrd?.order_no && typeof maxOrd.order_no === "number") {
+            fallbackOrderNo = maxOrd.order_no + 1;
+          }
+        } catch {
+          // keep generated fallbackOrderNo
+        }
+
+        // 2. Compute authoritative subtotal using client customization prices / verified server prices
         const subtotalPaise = items.reduce((acc, it) => {
-          const unitPrice = verifiedPrices[it.menu_item_id] ?? it.expected_unit_price_paise ?? 0;
+          const dbBasePrice = verifiedPrices[it.menu_item_id];
+          const clientPrice = it.expected_unit_price_paise ?? 0;
+          const isCustom = isCustomizedMenuItem(it.name);
+          const unitPrice = isCustom
+            ? Math.max(clientPrice, dbBasePrice ?? 0)
+            : (clientPrice > 0 ? clientPrice : (dbBasePrice ?? 0));
           return acc + unitPrice * (it.qty || 1);
         }, 0);
         const taxPaise = Math.round(subtotalPaise * 0.05); // Standard 5% restaurant GST
         const totalPaise = subtotalPaise + taxPaise;
 
         try {
-          await supabase.from("orders").insert({
+          let { error: orderInsertErr } = await supabase.from("orders").insert({
             id: fallbackOrderId,
             location_id: session.locationId,
             table_session_id: session.sessionId,
@@ -404,17 +463,56 @@ export async function placeOrderAction(
             updated_at: now,
           });
 
+          // Retry if order_no collided or customer_id FK failed
+          if (orderInsertErr) {
+            fallbackOrderNo = Math.floor(1000 + Math.random() * 9000);
+            const retryInsert = await supabase.from("orders").insert({
+              id: fallbackOrderId,
+              location_id: session.locationId,
+              table_session_id: session.sessionId,
+              order_no: fallbackOrderNo,
+              customer_id: null,
+              status: "SUBMITTED",
+              service_mode: "DINE_IN",
+              idempotency_key: effectiveIdempotencyKey,
+              submitted_at: now,
+              subtotal_snapshot: subtotalPaise,
+              tax_snapshot: taxPaise,
+              total_snapshot: totalPaise,
+              version: 1,
+              created_at: now,
+              updated_at: now,
+            });
+            orderInsertErr = retryInsert.error;
+          }
+
+          if (orderInsertErr) {
+            throw orderInsertErr;
+          }
+
+          if (instructions) {
+            void safeUpdateOrderWithInstructions(supabase, fallbackOrderId, {}, instructions).catch(() => {});
+          }
+
           if (cleanPhone) {
             recordOrderForPhone(fallbackOrderId, cleanPhone, session.guestName);
           }
 
           const orderItemsPayload = items.map((it) => {
-            const verifiedPrice = verifiedPrices[it.menu_item_id] ?? it.expected_unit_price_paise ?? 0;
-            const verifiedName = verifiedNames[it.menu_item_id] ?? it.name ?? "Artisanal Item";
+            const dbBasePrice = verifiedPrices[it.menu_item_id];
+            const clientPrice = it.expected_unit_price_paise ?? 0;
+            const isCustom = isCustomizedMenuItem(it.name);
+            const verifiedPrice = isCustom
+              ? Math.max(clientPrice, dbBasePrice ?? 0)
+              : (clientPrice > 0 ? clientPrice : (dbBasePrice ?? 0));
+            const verifiedName = isCustom
+              ? (it.name || verifiedNames[it.menu_item_id] || "Artisanal Item")
+              : (it.name || verifiedNames[it.menu_item_id] || "Artisanal Item");
             return {
               id: crypto.randomUUID(),
               order_id: fallbackOrderId,
-              menu_item_id: isUuid(it.menu_item_id) ? it.menu_item_id : null,
+              // Only pass menu_item_id if verified to exist in PostgreSQL `menu_items` table to prevent FK violation
+              menu_item_id: existingDbItemIds.has(it.menu_item_id) ? it.menu_item_id : null,
               name_snapshot: verifiedName,
               unit_price_snapshot: verifiedPrice,
               qty: it.qty,
@@ -424,7 +522,16 @@ export async function placeOrderAction(
             };
           });
 
-          await supabase.from("order_items").insert(orderItemsPayload);
+          const { error: itemsInsertErr } = await supabase.from("order_items").insert(orderItemsPayload);
+          if (itemsInsertErr) {
+            // Fallback: retry with menu_item_id: null if any FK constraint triggered
+            const safeOrderItemsPayload = orderItemsPayload.map((row) => ({
+              ...row,
+              id: crypto.randomUUID(),
+              menu_item_id: null,
+            }));
+            await supabase.from("order_items").insert(safeOrderItemsPayload);
+          }
 
           // Ensure table session is OPEN and active
           await supabase
@@ -487,7 +594,6 @@ export async function placeOrderAction(
           };
         } catch (insertErr) {
           console.error("Direct order insert fallback failed:", insertErr);
-          // Do NOT falsely report success if database insertion fails!
           return {
             success: false,
             error: "DB_ERROR",
@@ -570,8 +676,8 @@ export async function placeOrderAction(
 }
 
 /**
- * Server Action: Places an order ONLY AFTER payment is confirmed.
- * Associates the permanent table number, creates confirmed order in DB, and assigns paymentStatus = "PAID".
+ * Server Action: Places an order ONLY AFTER payment is confirmed (or when dispatched to Cashier).
+ * Associates the permanent table number, creates order in DB, and assigns status/paymentStatus.
  */
 export async function placePaidOrderAction(
   items: PlaceOrderItemInput[],
@@ -585,16 +691,43 @@ export async function placePaidOrderAction(
   const finalGuestPhone = guestPhone || currentCookieSession?.guestPhone;
 
   let sessionOverride: TableSessionData | undefined;
-  if (tableLabel) {
-    const cleanTbl = tableLabel
-      .toString()
-      .replace(/^(?:table|t)[-\s_]*/i, "")
-      .trim();
-    const targetToken = `table-${/^\d+$/.test(cleanTbl) ? cleanTbl.padStart(2, "0") : cleanTbl}`;
+  const cleanRequestedTbl = (tableLabel || "")
+    .toString()
+    .replace(/^(?:table|t)[-\s_]*/i, "")
+    .trim();
+  const cleanCookieTbl = (currentCookieSession?.tableLabel || "")
+    .toString()
+    .replace(/^(?:table|t)[-\s_]*/i, "")
+    .trim();
+
+  // If existing cookie session already matches this table, reuse it directly
+  if (
+    currentCookieSession?.sessionId &&
+    currentCookieSession?.locationId &&
+    isValidUuid(currentCookieSession.sessionId) &&
+    (!cleanRequestedTbl || cleanRequestedTbl === cleanCookieTbl)
+  ) {
+    sessionOverride = {
+      ...currentCookieSession,
+      guestName: finalGuestName,
+      guestPhone: finalGuestPhone,
+    };
+  } else if (cleanRequestedTbl) {
+    const targetToken = `table-${/^\d+$/.test(cleanRequestedTbl) ? cleanRequestedTbl.padStart(2, "0") : cleanRequestedTbl}`;
     const res = await resolveQrToken(targetToken, true, finalGuestName, finalGuestPhone);
     if (res.success && res.session) {
       sessionOverride = res.session;
     }
+  }
+
+  // Fallback to existing cookie session if resolveQrToken did not match
+  if (!sessionOverride && currentCookieSession?.sessionId) {
+    sessionOverride = {
+      ...currentCookieSession,
+      tableLabel: tableLabel || currentCookieSession.tableLabel || "01",
+      guestName: finalGuestName,
+      guestPhone: finalGuestPhone,
+    };
   }
 
   const result = await placeOrderAction(items, idempotencyKey, rewardId, instructions, sessionOverride);
@@ -607,18 +740,19 @@ export async function placePaidOrderAction(
     try {
       const supabase = createAdminClient();
       const now = new Date().toISOString();
-      const cleanPhone = normalizePhoneNumber(finalGuestPhone);
-      const phoneProfileId = cleanPhone ? getPhoneUuid(cleanPhone) : null;
 
       await supabase
         .from("orders")
         .update({
           status: targetStatus,
-          customer_id: phoneProfileId || undefined,
           submitted_at: now,
           updated_at: now,
         })
         .eq("id", result.orderId);
+
+      if (instructions) {
+        await safeUpdateOrderWithInstructions(supabase, result.orderId, {}, instructions);
+      }
 
       if (targetStatus === "ACCEPTED") {
         await supabase
@@ -805,6 +939,7 @@ export async function editPendingOrderAction(
       supabase.from("menu_prices").select("menu_item_id, amount_paise").in("menu_item_id", itemIds),
     ]);
 
+    const existingDbItemIds = new Set<string>();
     const priceLookup = new Map<string, number>();
     for (const p of (dbMenuPrices as Array<{ menu_item_id: string; amount_paise: number }>) || []) {
       if (!priceLookup.has(p.menu_item_id)) {
@@ -814,21 +949,27 @@ export async function editPendingOrderAction(
 
     const priceMap = new Map<string, { name: string; pricePaise?: number }>();
     for (const m of dbMenuItems || []) {
+      existingDbItemIds.add(m.id);
       priceMap.set(m.id, { name: m.name, pricePaise: priceLookup.get(m.id) });
     }
 
     let subtotalPaise = 0;
     const orderItemsPayload = items.map((it) => {
       const verified = priceMap.get(it.menu_item_id);
-      const unitPrice = verified?.pricePaise ?? it.expected_unit_price_paise;
-      const name = verified ? verified.name : (it.name || "Item");
+      const isCustom = isCustomizedMenuItem(it.name);
+      const unitPrice = isCustom
+        ? Math.max(it.expected_unit_price_paise || 0, verified?.pricePaise ?? 0)
+        : (it.expected_unit_price_paise > 0 ? it.expected_unit_price_paise : (verified?.pricePaise ?? 0));
+      const name = isCustom
+        ? (it.name || verified?.name || "Item")
+        : (it.name || verified?.name || "Item");
       const lineSubtotal = unitPrice * it.qty;
       subtotalPaise += lineSubtotal;
 
       return {
         id: crypto.randomUUID(),
         order_id: orderId,
-        menu_item_id: isValidUuid(it.menu_item_id) ? it.menu_item_id : null,
+        menu_item_id: existingDbItemIds.has(it.menu_item_id) ? it.menu_item_id : null,
         name_snapshot: name,
         unit_price_snapshot: unitPrice,
         qty: it.qty,
@@ -870,11 +1011,19 @@ export async function editPendingOrderAction(
     const { error: insertErr } = await supabase.from("order_items").insert(orderItemsPayload);
 
     if (insertErr) {
-      return {
-        success: false,
-        error: "DB_ERROR",
-        message: "Failed to save updated line items.",
-      };
+      const fallbackPayload = orderItemsPayload.map((row) => ({
+        ...row,
+        id: crypto.randomUUID(),
+        menu_item_id: null,
+      }));
+      const { error: retryErr } = await supabase.from("order_items").insert(fallbackPayload);
+      if (retryErr) {
+        return {
+          success: false,
+          error: "DB_ERROR",
+          message: "Failed to save updated line items.",
+        };
+      }
     }
 
     // 5. Sync running bill

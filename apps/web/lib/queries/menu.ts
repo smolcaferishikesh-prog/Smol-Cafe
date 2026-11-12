@@ -7,6 +7,12 @@ import {
   MOCK_MENU_PRICES,
 } from "@/lib/mock-db/seedData";
 
+export interface MenuCustomizationOption {
+  id: string;
+  name: string;
+  priceDelta: number;
+}
+
 export interface MenuItemWithDetails {
   id: string;
   categoryId: string;
@@ -31,6 +37,9 @@ export interface MenuItemWithDetails {
     notes?: string;
     internal_notes?: string;
     customer_note?: string;
+    customization_enabled?: boolean;
+    customization_title?: string;
+    customization_options?: MenuCustomizationOption[];
   };
 }
 
@@ -418,7 +427,10 @@ export async function fetchMenuCatalogDirectly(includeEmptyCategories = false): 
 
       const ver = versionMap.get(item.id);
       const rawPricePaise = priceMap.get(item.id) || 0;
-      const baseMeta = (ver?.metadata || item.metadata || {}) as MenuItemWithDetails["metadata"];
+      const baseMeta = {
+        ...((item.metadata as object) || {}),
+        ...((ver?.metadata as object) || {}),
+      } as MenuItemWithDetails["metadata"];
 
       cat.items.push({
         id: item.id,

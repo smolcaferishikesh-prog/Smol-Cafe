@@ -248,6 +248,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ tableLabel, guestName = 
 
   // Extract customization note from item name or metadata
   const getCustomizationNote = (cartItem: typeof items[0]) => {
+    if (cartItem.item.metadata?.customer_note) return cartItem.item.metadata.customer_note;
     const name = cartItem.item.name;
     if (name.includes("(Oat)")) return "Oat milk";
     if (name.includes("(Almond)")) return "Almond milk";
@@ -258,7 +259,9 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ tableLabel, guestName = 
     if (name.includes("(Penne)")) return "Penne";
     if (name.includes("(Farfalle)")) return "Farfalle";
     if (name.includes("(Spaghetti)")) return "Spaghetti";
-    if (cartItem.item.metadata?.customer_note) return cartItem.item.metadata.customer_note;
+    const strippedInstant = name.replace(/\(Instant\)/i, "").trim();
+    const parenMatch = strippedInstant.match(/\(([^)]+)\)$/);
+    if (parenMatch && parenMatch[1]) return parenMatch[1].trim();
 
     return null;
   };
@@ -493,15 +496,9 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ tableLabel, guestName = 
     if (isBypassing) return;
     setIsBypassing(true);
     setErrorMessage(null);
+    setPriceConflicts(null);
 
     try {
-      const currentItemsSnapshot = items.map((i) => ({
-        name: i.item.name,
-        qty: i.qty,
-        priceRupees: Math.round(i.item.pricePaise / 100),
-        subtotalRupees: Math.round((i.item.pricePaise / 100) * i.qty),
-      }));
-
       // 1. Create order in DB for cashier desk (DRAFT / PENDING)
       const orderRes = await handleProcessPaidOrder("CASHIER");
       if (!orderRes) {
@@ -831,6 +828,12 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ tableLabel, guestName = 
                 </div>
               )}
 
+              {errorMessage && (
+                <div className="rounded-2xl border border-[#B72E35]/40 bg-[#B72E35]/10 px-3.5 py-2.5 text-center font-sans text-xs font-medium text-[#B72E35] dark:text-[#FF5B52]">
+                  {errorMessage}
+                </div>
+              )}
+
               {/* Direct Cashier & Kitchen Order Dispatch Card */}
               <div className="pt-1">
                 <div className="rounded-3xl border border-[#B72E35]/30 dark:border-purple-500/30 bg-gradient-to-br from-[#FAF4EB] via-[#F6ECE0] to-[#EFE2D2] dark:from-[#20152B] dark:via-[#180F22] dark:to-[#120A1B] p-4 shadow-[0_4px_20px_rgba(183,46,53,0.08)] dark:shadow-[0_4px_24px_rgba(147,51,234,0.18)] transition-all">
@@ -959,7 +962,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ tableLabel, guestName = 
                           const isActionOpen = activeActionItemId === item.id;
 
                           return (
-                            <div key={item.id} className="transition-colors hover:bg-[#EAE0D2]/50 dark:hover:bg-white/5">
+                            <div key={`${item.id}_${item.name}`} className="transition-colors hover:bg-[#EAE0D2]/50 dark:hover:bg-white/5">
                               <div className="px-4 py-2 flex items-start justify-between gap-2">
                                 {/* Left: Quantity + Details */}
                                 <div className="flex items-start gap-2.5 min-w-0 pr-2">
@@ -968,7 +971,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ tableLabel, guestName = 
                                   </span>
                                   <div className="min-w-0">
                                     <h4 className="font-serif font-bold text-[15.5px] text-[#241F1C] dark:text-[#FAF4EB] leading-tight whitespace-pre-line">
-                                      {item.name.replace(/\s*\([^)]*\)/, "")}
+                                      {note ? item.name.replace(/\s*\([^)]*\)\s*$/, "") : item.name}
                                     </h4>
                                     {note && (
                                       <p className="font-mono text-[11.5px] text-[#725039] dark:text-[#C9AE8B] mt-0.5 tracking-tight">
@@ -1109,6 +1112,11 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ tableLabel, guestName = 
         {/* Sticky Bottom Summary & "Order Now" CTA Button in Smol Cherry */}
         {!orderSuccess && activeView === "table_order" && items.length > 0 && (
           <div className="sticky bottom-0 left-0 right-0 z-30 px-5 pt-2 pb-5 bg-gradient-to-t from-[#F3E7D3] via-[#F3E7D3]/95 to-transparent dark:from-[#1A1513] dark:via-[#1A1513]/95 dark:to-transparent">
+            {errorMessage && (
+              <div className="mb-2 rounded-xl border border-[#B72E35]/40 bg-[#B72E35]/10 px-3 py-2 text-center font-sans text-xs font-medium text-[#B72E35] dark:text-[#FF5B52]">
+                {errorMessage}
+              </div>
+            )}
             <p className="font-serif text-[15px] font-medium text-[#241F1C] dark:text-[#FAF4EB] text-center mb-2 tracking-wide">
               {totalCount} {totalCount === 1 ? "item" : "items"} &nbsp;•&nbsp; Total ₹{totalRupees}
             </p>

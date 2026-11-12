@@ -1,13 +1,14 @@
 -- ==============================================================================
 -- Smol Café — Migration 20260823000024: Calculate 5% Restaurant GST in submit_order
 -- Ensures database transaction calculates 5% GST (2.5% CGST + 2.5% SGST)
+-- and preserves customer customization add-ons (e.g. Extra Cheese, Sourdough, Oat)
 -- ==============================================================================
 
 CREATE OR REPLACE FUNCTION submit_order(
   p_location_id UUID,
   p_table_session_id UUID,
   p_idempotency_key TEXT,
-  p_items JSONB, -- Array of { menu_item_id, expected_unit_price_paise, qty }
+  p_items JSONB, -- Array of { menu_item_id, expected_unit_price_paise, qty, name }
   p_reward_id UUID DEFAULT NULL,
   p_profile_id UUID DEFAULT NULL
 ) RETURNS JSONB AS $$
@@ -20,7 +21,9 @@ DECLARE
   v_menu_item_id UUID;
   v_expected_price INTEGER;
   v_current_price INTEGER;
+  v_effective_unit_price INTEGER;
   v_item_name TEXT;
+  v_client_item_name TEXT;
   v_version_id UUID;
   v_qty INTEGER;
   v_servable INTEGER;
@@ -92,7 +95,7 @@ BEGIN
       );
     END IF;
 
-    -- Fetch current effective price
+    -- Fetch current effective base price
     SELECT amount_paise INTO v_current_price
     FROM menu_prices
     WHERE menu_item_id = v_menu_item_id
@@ -101,8 +104,8 @@ BEGIN
     ORDER BY effective_from DESC
     LIMIT 1;
 
-    -- Price Mismatch Check
-    IF v_current_price IS NOT NULL AND v_current_price != v_expected_price THEN
+    -- Price Mismatch Check: allow valid customization add-ons where expected_price >= current_price
+    IF v_current_price IS NOT NULL AND v_expected_price < v_current_price THEN
       v_price_conflicts := v_price_conflicts || jsonb_build_object(
         'menu_item_id', v_menu_item_id,
         'name', COALESCE(v_item_name, 'Item'),
@@ -111,7 +114,8 @@ BEGIN
       );
     END IF;
 
-    v_line_subtotal := COALESCE(v_current_price, v_expected_price) * v_qty;
+    v_effective_unit_price := GREATEST(COALESCE(v_current_price, 0), COALESCE(v_expected_price, 0));
+    v_line_subtotal := v_effective_unit_price * v_qty;
     v_subtotal_paise := v_subtotal_paise + v_line_subtotal;
   END LOOP;
 
@@ -244,6 +248,8 @@ BEGIN
   LOOP
     v_menu_item_id := (v_item->>'menu_item_id')::UUID;
     v_qty := (v_item->>'qty')::INTEGER;
+    v_expected_price := (v_item->>'expected_unit_price_paise')::INTEGER;
+    v_client_item_name := NULLIF(TRIM(COALESCE(v_item->>'name', '')), '');
 
     -- Fetch current price and latest version ID
     SELECT amount_paise INTO v_current_price
@@ -261,7 +267,8 @@ BEGIN
     ORDER BY mv.created_at DESC
     LIMIT 1;
 
-    v_line_subtotal := COALESCE(v_current_price, (v_item->>'expected_unit_price_paise')::INTEGER) * v_qty;
+    v_effective_unit_price := GREATEST(COALESCE(v_current_price, 0), COALESCE(v_expected_price, 0));
+    v_line_subtotal := v_effective_unit_price * v_qty;
 
     INSERT INTO order_items (
       order_id,
@@ -276,8 +283,8 @@ BEGIN
       v_order_id,
       v_menu_item_id,
       v_version_id,
-      COALESCE(v_item_name, 'Café Item'),
-      COALESCE(v_current_price, (v_item->>'expected_unit_price_paise')::INTEGER),
+      COALESCE(v_client_item_name, v_item_name, 'Café Item'),
+      v_effective_unit_price,
       v_qty,
       v_line_subtotal,
       'SUBMITTED'
