@@ -2060,7 +2060,7 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
   };
 
   return (
-    <div className="min-h-screen bg-[#F3E7D3] dark:bg-[#141211] text-[#241F1C] dark:text-[#FDFBF7] flex transition-colors duration-200">
+    <div className="min-h-screen md:h-screen md:overflow-hidden bg-[#F3E7D3] dark:bg-[#141211] text-[#241F1C] dark:text-[#FDFBF7] flex transition-colors duration-200">
       {/* Mobile Drawer Backdrop & Menu */}
       {mobileMenuOpen && (
         <div className="fixed inset-0 z-50 md:hidden flex">
@@ -2170,8 +2170,8 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
         </div>
       )}
 
-      {/* Desktop / Tablet Sidebar Navigation */}
-      <aside className="w-52 md:w-56 lg:w-60 xl:w-64 shrink-0 border-r border-[#C9AE8B]/40 dark:border-stone-800 bg-[#FAF4EB] dark:bg-[#1A1715] flex flex-col justify-between hidden md:flex transition-all duration-200">
+      {/* Desktop / Tablet Sidebar Navigation (Static & Fixed on Scroll) */}
+      <aside className="sticky top-0 h-screen overflow-y-auto w-52 md:w-56 lg:w-60 xl:w-64 shrink-0 border-r border-[#C9AE8B]/40 dark:border-stone-800 bg-[#FAF4EB] dark:bg-[#1A1715] flex flex-col justify-between hidden md:flex transition-all duration-200 z-30 select-none">
         <div className="p-3.5 lg:p-5 space-y-4 lg:space-y-6">
           {/* Admin Logo Showcase */}
           <div className="flex justify-center items-center py-1 lg:py-2 border-b border-[#C9AE8B]/30 dark:border-stone-800/60 pb-3.5 lg:pb-5">
@@ -2248,7 +2248,7 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
       </aside>
 
       {/* Main Content Area */}
-      <main className="flex-1 flex flex-col min-w-0 overflow-y-auto pb-28 md:pb-6">
+      <main className="flex-1 flex flex-col min-w-0 md:h-screen overflow-y-auto pb-28 md:pb-6">
         {/* Top App Header */}
         <header className="sticky top-0 z-30 border-b border-[#C9AE8B]/40 dark:border-stone-800 bg-[#FAF4EB]/95 dark:bg-[#1C1917]/95 px-3.5 sm:px-5 lg:px-6 pt-[calc(0.625rem+env(safe-area-inset-top,0px))] pb-2.5 sm:pb-3.5 backdrop-blur-md flex items-center justify-between transition-colors duration-200 gap-2">
           <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
