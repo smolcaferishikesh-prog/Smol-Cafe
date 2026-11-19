@@ -437,26 +437,39 @@ export const PublicMenuPageView: React.FC = () => {
           {/* Logo & Subtitle */}
           <Link
             href="/"
-            className="flex items-center gap-2.5 text-center group cursor-pointer"
+            className="flex items-center gap-2.5 sm:gap-3 group cursor-pointer select-none"
+            title="smol café"
           >
-            <div className="relative w-8 h-8 rounded-full overflow-hidden bg-[#B72E35] flex items-center justify-center text-white font-serif font-bold text-sm shadow-xs transition-transform group-hover:scale-105">
+            <div className="relative h-10 sm:h-11 w-auto flex items-center justify-center shrink-0 transition-transform group-hover:scale-105">
+              {/* Light Mode Logo: Arched Red Door */}
               <Image
-                src="/images/logo/smol-cafe-logo.png"
-                alt="Smol Café"
-                fill
-                sizes="32px"
-                className="object-cover"
-                onError={(e) => {
-                  (e.target as HTMLElement).style.display = "none";
-                }}
+                src="/logo-transparent.png"
+                alt="smol café logo"
+                width={659}
+                height={975}
+                className="h-9 sm:h-10 w-auto object-contain dark:hidden drop-shadow-xs"
+                priority
               />
-              <span>S</span>
+              {/* Dark Mode Logo: Glowing Neon Arched Door */}
+              <Image
+                src="/logo-dark-transparent.png"
+                alt="smol café dark logo"
+                width={584}
+                height={858}
+                className="h-9 sm:h-10 w-auto object-contain hidden dark:block drop-shadow-[0_0_12px_rgba(168,85,247,0.45)]"
+                priority
+              />
             </div>
-            <div className="text-left">
-              <span className="block font-serif font-bold text-sm sm:text-base leading-none text-[#241F1C] dark:text-[#F3E7D3]">
-                smol café
-              </span>
-              <span className="block font-mono text-[9px] sm:text-[10px] text-[#725039] dark:text-[#C9AE8B] uppercase tracking-wider">
+            <div className="flex flex-col text-left">
+              <div className="flex items-center gap-1.5 sm:gap-2">
+                <span className="font-serif text-lg sm:text-xl font-bold tracking-tight text-[#241F1C] dark:text-[#F3E7D3] leading-none">
+                  smol café
+                </span>
+                <span className="text-[9px] uppercase font-mono px-1.5 py-0.5 rounded bg-[#B72E35]/10 text-[#B72E35] dark:bg-purple-500/20 dark:text-purple-300 font-semibold border border-[#B72E35]/20 dark:border-purple-500/30 leading-none">
+                  Rishikesh
+                </span>
+              </div>
+              <span className="font-mono text-[9px] sm:text-[10px] text-[#725039] dark:text-[#C9AE8B] uppercase tracking-wider mt-0.5">
                 Upper Tapovan · Rishikesh
               </span>
             </div>
