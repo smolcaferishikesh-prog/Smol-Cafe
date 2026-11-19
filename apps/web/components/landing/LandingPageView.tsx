@@ -805,14 +805,22 @@ export const LandingPageView: React.FC = () => {
           </nav>
 
           {/* Action CTAs & Controls */}
-          <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+          <div className="flex items-center gap-2 sm:gap-2.5 shrink-0">
             <ThemeToggle variant="icon" />
 
             <Link
-              href="#location"
-              className="hidden sm:inline-flex items-center gap-1.5 bg-[#B72E35] hover:bg-[#9E242B] dark:bg-purple-600 dark:hover:bg-purple-500 text-white px-3.5 lg:px-4 py-2 rounded-full font-medium text-xs lg:text-xs xl:text-sm shadow-sm hover:shadow-md transition-all active:scale-95 cursor-pointer whitespace-nowrap"
+              href="/menu"
+              className="inline-flex items-center gap-1.5 bg-[#B72E35] hover:bg-[#9E242B] dark:bg-purple-600 dark:hover:bg-purple-500 text-white px-3.5 sm:px-4 py-2 rounded-full font-serif font-bold text-xs sm:text-sm shadow-sm hover:shadow-md transition-all active:scale-95 cursor-pointer whitespace-nowrap"
             >
-              <MapPin className="w-3.5 h-3.5" />
+              <BookOpen className="w-3.5 h-3.5" />
+              <span>Menu</span>
+            </Link>
+
+            <Link
+              href="#location"
+              className="hidden xl:inline-flex items-center gap-1.5 bg-[#FAF4EB] dark:bg-[#241F1C] hover:bg-[#F3E7D3] dark:hover:bg-stone-800 text-[#241F1C] dark:text-[#F3E7D3] border border-[#C9AE8B]/70 dark:border-stone-700 px-3.5 py-2 rounded-full font-medium text-xs xl:text-sm shadow-xs transition-all active:scale-95 cursor-pointer whitespace-nowrap"
+            >
+              <MapPin className="w-3.5 h-3.5 text-[#B72E35] dark:text-purple-400" />
               <span>Find Our Spot</span>
             </Link>
 
@@ -863,6 +871,13 @@ export const LandingPageView: React.FC = () => {
 
             <nav className="flex flex-col space-y-3 font-medium text-sm sm:text-base">
               <Link
+                href="/menu"
+                onClick={() => setMobileMenuOpen(false)}
+                className="py-1 text-[#B72E35] dark:text-purple-400 font-bold flex items-center gap-2"
+              >
+                📜 The Café Menu
+              </Link>
+              <Link
                 href="#vibe"
                 onClick={() => setMobileMenuOpen(false)}
                 className="py-1 text-[#241F1C] dark:text-[#F3E7D3] hover:text-[#B72E35] dark:hover:text-purple-400 flex items-center gap-2"
@@ -909,13 +924,21 @@ export const LandingPageView: React.FC = () => {
               </button>
             </nav>
 
-            <div className="pt-2">
+            <div className="pt-2 flex flex-col gap-2">
+              <Link
+                href="/menu"
+                onClick={() => setMobileMenuOpen(false)}
+                className="w-full bg-[#B72E35] hover:bg-[#9E242B] dark:bg-purple-600 dark:hover:bg-purple-500 text-white text-center py-2.5 rounded-full font-serif font-bold text-xs sm:text-sm shadow-md flex items-center justify-center gap-1.5"
+              >
+                <BookOpen className="w-4 h-4" />
+                <span>View Café Menu</span>
+              </Link>
               <Link
                 href="#location"
                 onClick={() => setMobileMenuOpen(false)}
-                className="w-full bg-[#B72E35] hover:bg-[#9E242B] dark:bg-purple-600 dark:hover:bg-purple-500 text-white text-center py-2.5 rounded-full font-semibold text-xs sm:text-sm shadow-md flex items-center justify-center gap-1.5"
+                className="w-full bg-[#FAF4EB] dark:bg-[#241F1C] hover:bg-[#F3E7D3] dark:hover:bg-stone-800 text-[#241F1C] dark:text-[#F3E7D3] border border-[#C9AE8B]/70 dark:border-stone-700 text-center py-2.5 rounded-full font-medium text-xs sm:text-sm shadow-xs flex items-center justify-center gap-1.5"
               >
-                <MapPin className="w-4 h-4" />
+                <MapPin className="w-4 h-4 text-[#B72E35] dark:text-purple-400" />
                 <span>Get Directions to Tapovan</span>
               </Link>
             </div>
@@ -958,12 +981,18 @@ export const LandingPageView: React.FC = () => {
             {/* CTAs */}
             <div className="pt-2 sm:pt-4 flex flex-col sm:flex-row items-stretch sm:items-center justify-center gap-2.5 sm:gap-3.5 max-w-sm sm:max-w-none mx-auto w-full">
               <Link
-                href="#vibe"
+                href="/menu"
                 className="bg-[#B72E35] hover:bg-[#9E242B] dark:bg-purple-600 dark:hover:bg-purple-500 text-white px-6 sm:px-7 py-3 sm:py-3.5 rounded-full font-semibold text-xs sm:text-sm md:text-base shadow-md hover:shadow-lg transition-all transform hover:-translate-y-0.5 active:translate-y-0 flex items-center justify-center gap-2"
               >
                 <BookOpen className="w-4 h-4" />
-                <span>Explore The Sanctuary</span>
+                <span>View Menu</span>
                 <ArrowRight className="w-4 h-4" />
+              </Link>
+              <Link
+                href="#vibe"
+                className="bg-[#FAF4EB] dark:bg-[#241F1C] hover:bg-[#F3E7D3] dark:hover:bg-stone-800 text-[#241F1C] dark:text-[#F3E7D3] border border-[#C9AE8B]/70 dark:border-stone-700 px-5 sm:px-6 py-3 sm:py-3.5 rounded-full font-mono text-xs sm:text-sm font-semibold shadow-xs hover:border-[#B72E35] dark:hover:border-purple-500 transition-all flex items-center justify-center gap-2"
+              >
+                <span>The Sanctuary</span>
               </Link>
               <Link
                 href="#location"
@@ -978,7 +1007,7 @@ export const LandingPageView: React.FC = () => {
                 className="text-[#725039] dark:text-[#C9AE8B] hover:text-[#241F1C] dark:hover:text-purple-300 px-3 sm:px-4 py-2.5 sm:py-3.5 rounded-full font-medium text-xs sm:text-sm flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
               >
                 <Calendar className="w-4 h-4 text-[#B72E35] dark:text-purple-400" />
-                <span>Upcoming Events</span>
+                <span>Events</span>
               </button>
             </div>
 
@@ -1822,6 +1851,11 @@ export const LandingPageView: React.FC = () => {
             <div className="space-y-2">
               <h4 className="text-[#241F1C] dark:text-white font-bold uppercase text-[10px] sm:text-[11px] tracking-wider">The Experience</h4>
               <ul className="space-y-1.5 text-[#725039] dark:text-stone-400 text-xs">
+                <li>
+                  <Link href="/menu" className="text-[#B72E35] dark:text-purple-400 font-semibold hover:opacity-80 transition-opacity">
+                    📜 The Café Menu (Food &amp; Drinks)
+                  </Link>
+                </li>
                 <li>
                   <Link href="#vibe" className="hover:text-[#B72E35] dark:hover:text-purple-400 transition-colors">
                     📚 The Living Library

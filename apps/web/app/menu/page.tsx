@@ -1,32 +1,21 @@
-import { notFound } from "next/navigation";
-import { getTableSessionCookie } from "@/lib/session";
-import { getMenuCatalog } from "@/lib/queries/menu";
-import { MenuClientView } from "@/components/menu/MenuClientView";
+import { PublicMenuPageView } from "@/components/menu/PublicMenuPageView";
 
 export const dynamic = "force-dynamic";
-export const revalidate = 0;
 
 export const metadata = {
-  title: "Menu — smol café",
+  title: "The Menu — smol café · Tapovan, Rishikesh",
   description:
-    "Browse our full menu of artisanal coffees, all-day breakfasts, comfort bowls, and treats.",
+    "Artisanal coffees, spiced Kanpur bun makkhan, homestyle comfort bowls, wholesome thalis & Himalayan herbal infusions in Upper Tapovan, Rishikesh.",
+  keywords: [
+    "smol cafe menu",
+    "rishikesh cafe menu",
+    "tapovan coffee menu",
+    "bun makkhan rishikesh",
+    "thali tapovan",
+    "pour over coffee rishikesh",
+  ],
 };
 
-export default async function MenuPage() {
-  const session = await getTableSessionCookie();
-
-  if (!session || !session.sessionId) {
-    notFound();
-  }
-
-  const categories = await getMenuCatalog();
-
-  return (
-    <MenuClientView
-      categories={categories}
-      tableLabel={session?.tableLabel}
-      locationName={session?.locationName || "Rishikesh"}
-      guestName={session?.guestName}
-    />
-  );
+export default function MenuPage() {
+  return <PublicMenuPageView />;
 }

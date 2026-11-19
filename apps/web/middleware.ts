@@ -6,7 +6,6 @@ const TABLE_SESSION_COOKIE = "smol_table_session";
 // Customer routes that require an active table QR session
 const TABLE_PROTECTED_ROUTES = [
   "/home",
-  "/menu",
   "/drinks",
   "/order",
   "/orders",

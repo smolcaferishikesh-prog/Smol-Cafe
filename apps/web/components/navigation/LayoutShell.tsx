@@ -89,7 +89,6 @@ export const LayoutShell: React.FC<LayoutShellProps> = ({
     pathname === "/home" ||
     pathname?.startsWith("/home") ||
     pathname?.startsWith("/smol-menu") ||
-    pathname?.startsWith("/menu") ||
     pathname?.startsWith("/drinks") ||
     pathname?.startsWith("/orders") ||
     pathname?.startsWith("/order-status") ||
@@ -98,10 +97,11 @@ export const LayoutShell: React.FC<LayoutShellProps> = ({
     pathname?.startsWith("/events") ||
     pathname?.startsWith("/music");
 
-  // Bottom navbar ONLY shows if user has an active table session AND is on a customer route AND not on 404/error
+  // Bottom navbar ONLY shows if user has an active table session AND is on a customer route AND not on 404/error/menu
   const showBottomNavBar =
     !isErrorOr404 &&
     pathname !== "/404" &&
+    pathname !== "/menu" &&
     hasTableSession &&
     isCustomerNavRoute;
 

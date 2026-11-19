@@ -11,7 +11,7 @@ export const BottomNavBar: React.FC = () => {
   const activeIndex = React.useMemo(() => {
     if (pathname === "/home" || pathname === "/") return 0;
     if (pathname.startsWith("/drinks")) return 2;
-    if (pathname.startsWith("/smol-menu") || pathname.startsWith("/menu")) return 1;
+    if (pathname.startsWith("/smol-menu")) return 1;
     if (pathname.startsWith("/orders") || pathname.startsWith("/order-status")) return 3;
     if (pathname.startsWith("/profile") || pathname.startsWith("/account")) return 4;
     return 0;
