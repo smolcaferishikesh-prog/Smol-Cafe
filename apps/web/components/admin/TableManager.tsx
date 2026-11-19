@@ -28,6 +28,7 @@ import {
   Check,
   ChevronDown,
   Loader2,
+  BookOpen,
 } from "lucide-react";
 import {
   type DiningTableRecord,
@@ -578,6 +579,9 @@ export const TableManager: React.FC<TableManagerProps> = ({
   const [inspectingTag, setInspectingTag] = useState<TableJsonTag | null>(null);
   const [viewingQrTable, setViewingQrTable] = useState<DiningTableRecord | null>(null);
   const [isBatchQrModalOpen, setIsBatchQrModalOpen] = useState<boolean>(false);
+  const [isMenuQrModalOpen, setIsMenuQrModalOpen] = useState<boolean>(false);
+  const [menuQrDataUrl, setMenuQrDataUrl] = useState<string>("");
+  const [menuQrCopied, setMenuQrCopied] = useState<boolean>(false);
 
   // Custom Dropdown Open States
   const [isAddSectionDropdownOpen, setIsAddSectionDropdownOpen] = useState<boolean>(false);
@@ -652,6 +656,50 @@ export const TableManager: React.FC<TableManagerProps> = ({
       </div>
     `;
     printHtmlContent(content, `Smol Cafe — Table ${table.label} QR Stand`);
+  };
+
+  const handlePrintMenuStand = (qrUrl: string, url: string) => {
+    const origin = (qrDomain || DEFAULT_QR_DOMAIN).replace(/\/$/, "");
+    const menuUrl = url || `${origin}/menu`;
+    const content = `
+      <div class="card-container">
+        <div style="border-bottom: 1px solid #e7e5e4; padding-bottom: 8px; margin-bottom: 8px;">
+          <img src="/current_logo_transparent_on_cream.png" alt="smol café" class="logo" />
+          <span style="font-size: 8.5px; font-family: 'Noto Sans Mono', monospace; letter-spacing: 2px; color: #78716c; text-transform: uppercase; font-weight: bold; display: block;">
+            Tapovan, Rishikesh
+          </span>
+        </div>
+
+        <div style="margin: 6px 0;">
+          <div class="table-pill">
+            <span style="font-size: 9.5px; font-family: 'Noto Sans Mono', monospace; letter-spacing: 2px; text-transform: uppercase; display: block; font-weight: bold;">
+              PUBLIC MENU
+            </span>
+            <span class="font-serif" style="font-size: 26px; font-weight: 900; line-height: 1; display: block;">
+              MENU
+            </span>
+          </div>
+          <span style="display: block; font-size: 9.5px; font-family: 'Noto Sans Mono', monospace; color: #57534e; font-weight: bold; margin-top: 4px; text-transform: uppercase;">
+            FOOD &amp; DRINKS
+          </span>
+        </div>
+
+        <div class="qr-box">
+          <img src="${qrUrl}" alt="Smol Cafe Menu QR" />
+        </div>
+
+        <div>
+          <p class="tagline font-serif">Scan to View Menu &amp; Order</p>
+          <p class="subtag">Point your phone camera • No app download required</p>
+        </div>
+
+        <div class="footer-info">
+          <div class="footer-url">${menuUrl.replace(/^https?:\/\//, "")}</div>
+          <div>Wi-Fi: <strong style="color: #292524;">smol-guest</strong> | Pass: <strong style="color: #292524;">coffee123</strong></div>
+        </div>
+      </div>
+    `;
+    printHtmlContent(content, "Smol Cafe — Public Menu QR Stand");
   };
 
   const handlePrintAllStands = (originUrl: string) => {
@@ -751,6 +799,28 @@ export const TableManager: React.FC<TableManagerProps> = ({
       setCopied(false);
     }
   }, [viewingQrTable, qrDomain]);
+
+  // Real-time QR Generation for Public Café Menu
+  useEffect(() => {
+    if (isMenuQrModalOpen) {
+      const origin = (qrDomain || DEFAULT_QR_DOMAIN).replace(/\/$/, "");
+      const menuUrl = `${origin}/menu`;
+      QRCode.toDataURL(menuUrl, {
+        width: 480,
+        margin: 2,
+        color: {
+          dark: "#241F1C",
+          light: "#FFFFFF",
+        },
+        errorCorrectionLevel: "H",
+      })
+        .then(setMenuQrDataUrl)
+        .catch(console.error);
+    } else {
+      setMenuQrDataUrl("");
+      setMenuQrCopied(false);
+    }
+  }, [isMenuQrModalOpen, qrDomain]);
 
   // Batch QR Generation for all tables
   useEffect(() => {
@@ -1424,7 +1494,7 @@ export const TableManager: React.FC<TableManagerProps> = ({
               </div>
             ))}
           </div>
-        ) : filteredTables.length === 0 ? (
+        ) : filteredTables.length === 0 && !searchQuery.toLowerCase().trim().includes("menu") ? (
           <div className="text-center py-16 rounded-3xl border border-dashed border-[#C9AE8B]/50 dark:border-stone-800 bg-[#FAF4EB]/40 dark:bg-stone-900/40 p-6">
             <Armchair className="h-10 w-10 text-stone-400 mx-auto mb-2 opacity-50" />
             <p className="font-serif text-base font-bold text-[#241F1C] dark:text-white">No Tables Found</p>
@@ -1443,6 +1513,80 @@ export const TableManager: React.FC<TableManagerProps> = ({
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-3 sm:gap-4">
+            {/* ================================================================= */}
+            {/* PUBLIC MENU QR CARD (https://www.smolcafe.in/menu)                */}
+            {/* ================================================================= */}
+            {(selectedSection === "all" || !selectedSection || "menu".includes(searchQuery.toLowerCase().trim())) && (
+              <div className="rounded-3xl border-2 border-[#B72E35]/40 hover:border-[#B72E35] p-4 transition-all relative flex flex-col justify-between shadow-xs bg-[#FAF4EB] dark:bg-[#1A1715] ring-1 ring-[#B72E35]/15 hover:shadow-md">
+                {/* Card Top: Title, Badge & Status */}
+                <div>
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono text-xl font-black text-[#B72E35] dark:text-[#F2C84B]">
+                          Menu QR
+                        </span>
+                        <span className="text-[9px] font-mono uppercase bg-[#B72E35]/15 text-[#B72E35] dark:text-[#F2C84B] px-1.5 py-0.5 rounded-md font-bold">
+                          Public
+                        </span>
+                      </div>
+                      <span className="inline-block mt-1 text-[10.5px] font-mono font-bold px-2 py-0.5 rounded-full border bg-emerald-50 text-emerald-800 border-emerald-300 dark:bg-emerald-950/40 dark:text-emerald-300">
+                        smolcafe.in/menu
+                      </span>
+                    </div>
+
+                    {/* Status Dot */}
+                    <div className="flex flex-col items-end gap-1.5">
+                      <div className="flex items-center gap-1.5">
+                        <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+                        <span className="text-[10px] font-mono text-emerald-600 dark:text-emerald-400 font-bold">
+                          Live URL
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Info */}
+                  <div className="mt-3 flex items-center gap-1.5 text-xs text-[#725039] dark:text-stone-400 font-mono">
+                    <BookOpen className="h-3.5 w-3.5 text-[#B72E35] shrink-0" />
+                    <span>111 Dishes &amp; Recipe Details</span>
+                  </div>
+                </div>
+
+                {/* Card Bottom: Quick Actions */}
+                <div className="space-y-1.5 pt-4 border-t border-[#C9AE8B]/20 dark:border-stone-800/80 mt-3">
+                  <div className="grid grid-cols-2 gap-1.5">
+                    <button
+                      onClick={() => setIsMenuQrModalOpen(true)}
+                      className="flex items-center justify-center gap-1 rounded-xl bg-[#F3E7D3] dark:bg-stone-800 py-1.5 text-[11px] font-mono font-semibold text-[#241F1C] dark:text-stone-300 hover:bg-[#EBDDC8] dark:hover:bg-stone-700 transition cursor-pointer"
+                    >
+                      <QrCode className="h-3 w-3 text-[#B72E35] dark:text-[#F2C84B]" />
+                      <span>View QR</span>
+                    </button>
+
+                    <a
+                      href="https://www.smolcafe.in/menu"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center justify-center gap-1 rounded-xl bg-[#F3E7D3] dark:bg-stone-800 py-1.5 text-[11px] font-mono font-semibold text-[#241F1C] dark:text-stone-300 hover:bg-[#EBDDC8] dark:hover:bg-stone-700 transition cursor-pointer"
+                    >
+                      <ExternalLink className="h-3 w-3 text-[#754CFF]" />
+                      <span>Open Menu</span>
+                    </a>
+                  </div>
+
+                  <div className="flex items-center justify-between gap-1.5 pt-1">
+                    <button
+                      onClick={() => setIsMenuQrModalOpen(true)}
+                      className="flex-1 flex items-center justify-center gap-1 rounded-xl border border-[#C9AE8B]/40 dark:border-stone-700 bg-white dark:bg-stone-900 py-1.5 text-[11px] font-mono font-bold text-[#725039] dark:text-stone-300 hover:bg-stone-50 dark:hover:bg-stone-800 transition cursor-pointer"
+                    >
+                      <Printer className="h-3 w-3 text-[#754CFF] dark:text-[#C4B5FD]" />
+                      <span>Print Stand / Download</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
           {filteredTables.map((t) => {
             const cleanNum = t.label.padStart(2, "0");
             const isOcc = t.isOccupied;
@@ -2438,6 +2582,273 @@ export const TableManager: React.FC<TableManagerProps> = ({
               <div className="pt-1 print:hidden">
                 <button
                   onClick={() => setViewingQrTable(null)}
+                  className="w-full py-2.5 rounded-2xl bg-stone-200/80 hover:bg-stone-300 dark:bg-stone-800 dark:hover:bg-stone-700 text-[#241F1C] dark:text-white text-xs font-mono font-bold transition flex items-center justify-center gap-1.5 shadow-xs cursor-pointer"
+                >
+                  <X className="h-4 w-4" />
+                  <span>Close Preview</span>
+                </button>
+              </div>
+            </div>
+          </div>,
+          document.body
+        );
+      })()}
+
+      {/* ========================================================================= */}
+      {/* MODAL 5.5: REAL ARTISANAL PUBLIC CAFÉ MENU QR STAND VIEWER               */}
+      {/* ========================================================================= */}
+      {mounted && isMenuQrModalOpen && (() => {
+        const origin = (qrDomain || DEFAULT_QR_DOMAIN).replace(/\/$/, "");
+        const menuUrl = `${origin}/menu`;
+
+        return createPortal(
+          <div
+            onClick={(e) => {
+              if (e.target === e.currentTarget) setIsMenuQrModalOpen(false);
+            }}
+            className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 dark:bg-black/85 backdrop-blur-md p-4 animate-fade-in overflow-y-auto print:p-0 print:bg-transparent print:static print:block"
+          >
+            {/* Prominent Floating Close Button (Always Visible On-Screen) */}
+            <button
+              onClick={() => setIsMenuQrModalOpen(false)}
+              className="fixed top-4 right-4 sm:top-6 sm:right-6 z-60 flex items-center justify-center h-11 w-11 rounded-full bg-[#241F1C] text-white hover:bg-black shadow-2xl border-2 border-white/30 transition hover:scale-110 active:scale-95 cursor-pointer print:hidden"
+              title="Close (Esc)"
+            >
+              <X className="h-6 w-6" />
+            </button>
+
+            <div className="relative w-full max-w-md max-h-[90vh] overflow-y-auto rounded-3xl border border-[#C9AE8B]/50 dark:border-stone-700 bg-[#FAF4EB] dark:bg-[#1A1715] p-5 sm:p-6 shadow-2xl space-y-4 text-center my-auto print:my-0 print:p-0 print:border-none print:shadow-none print:bg-transparent print:max-h-none print:max-w-none">
+              <button
+                onClick={() => setIsMenuQrModalOpen(false)}
+                className="absolute right-4 top-4 text-stone-500 hover:text-stone-800 dark:hover:text-white p-1.5 rounded-full hover:bg-black/10 dark:hover:bg-white/10 transition print:hidden"
+                title="Close"
+              >
+                <X className="h-5 w-5" />
+              </button>
+
+              {/* Modal Header (Hidden on Print) */}
+              <div className="print:hidden space-y-2 pr-6">
+                <span className="text-[10px] font-mono uppercase tracking-widest text-[#B72E35] dark:text-[#F2C84B] font-bold">
+                  Official Public Menu QR Stand
+                </span>
+                <h3 className="font-serif text-2xl font-bold text-[#241F1C] dark:text-white">
+                  Public Café Menu
+                </h3>
+                <p className="text-xs font-mono text-[#725039] dark:text-stone-400">
+                  Upper Tapovan • 111 Dishes &amp; Recipes
+                </p>
+
+                {/* Domain & Host Target Input Selector */}
+                <div className="rounded-2xl border border-[#C9AE8B]/40 dark:border-stone-800 bg-[#F3E7D3]/40 dark:bg-stone-900/60 p-3.5 space-y-2.5 text-left shadow-xs">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[11px] font-mono font-extrabold text-[#241F1C] dark:text-stone-200 uppercase tracking-wider flex items-center gap-1.5">
+                      <QrCode className="h-3.5 w-3.5 text-[#B72E35] dark:text-[#F2C84B]" />
+                      Target QR Host URL
+                    </span>
+                    <span className="text-[10px] font-mono text-stone-500 dark:text-stone-400">Phone scan target</span>
+                  </div>
+
+                  {/* Dedicated full-width input */}
+                  <div>
+                    <input
+                      type="text"
+                      value={qrDomain}
+                      onChange={(e) => setQrDomain(e.target.value)}
+                      placeholder="e.g. https://www.smolcafe.in"
+                      className="w-full rounded-xl border border-[#C9AE8B]/50 dark:border-stone-700 bg-white dark:bg-stone-900 px-3 py-2 text-xs font-mono text-[#241F1C] dark:text-white placeholder-stone-400 focus:outline-none focus:ring-2 focus:ring-[#B72E35]/40 dark:focus:ring-amber-500/40 shadow-xs"
+                    />
+                  </div>
+
+                  {/* Preset Pills */}
+                  <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
+                    <span className="text-[10px] font-mono font-semibold text-stone-500 dark:text-stone-400 mr-1">
+                      Presets:
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setQrDomain(DEFAULT_QR_DOMAIN)}
+                      className={`px-2.5 py-1 rounded-lg text-[10.5px] font-mono font-bold transition cursor-pointer active:scale-95 ${
+                        qrDomain === DEFAULT_QR_DOMAIN || !qrDomain
+                          ? "bg-[#B72E35] text-white shadow-xs"
+                          : "bg-white dark:bg-stone-800 text-stone-700 dark:text-stone-300 border border-stone-300/80 dark:border-stone-700 hover:bg-[#F3E7D3] dark:hover:bg-stone-700"
+                      }`}
+                    >
+                      ✨ www.smolcafe.in
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setQrDomain(typeof window !== "undefined" ? window.location.origin : "http://localhost:3000")
+                      }
+                      className={`px-2.5 py-1 rounded-lg text-[10.5px] font-mono font-bold transition cursor-pointer active:scale-95 ${
+                        qrDomain === (typeof window !== "undefined" ? window.location.origin : "http://localhost:3000") &&
+                        qrDomain !== DEFAULT_QR_DOMAIN
+                          ? "bg-[#241F1C] text-white dark:bg-white dark:text-[#241F1C] shadow-xs"
+                          : "bg-white dark:bg-stone-800 text-stone-700 dark:text-stone-300 border border-stone-300/80 dark:border-stone-700 hover:bg-[#F3E7D3] dark:hover:bg-stone-700"
+                      }`}
+                    >
+                      📍 Active App
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setQrDomain("http://localhost:3000")}
+                      className={`px-2.5 py-1 rounded-lg text-[10.5px] font-mono font-bold transition cursor-pointer active:scale-95 ${
+                        qrDomain === "http://localhost:3000"
+                          ? "bg-[#241F1C] text-white dark:bg-white dark:text-[#241F1C] shadow-xs"
+                          : "bg-white dark:bg-stone-800 text-stone-700 dark:text-stone-300 border border-stone-300/80 dark:border-stone-700 hover:bg-[#F3E7D3] dark:hover:bg-stone-700"
+                      }`}
+                    >
+                      💻 Localhost (:3000)
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Printable Table Stand Card (Real Scannable QR - Matching Image 1) */}
+              <div
+                id="printable-menu-stand"
+                style={{ breakInside: "avoid", pageBreakInside: "avoid" }}
+                className="smol-printable-root mx-auto w-full max-w-[320px] rounded-3xl bg-white text-[#241F1C] p-5 shadow-lg border-2 border-stone-800 space-y-2.5 relative overflow-hidden print:shadow-none print:border-2 print:border-stone-900 print:m-auto print:break-inside-avoid print:max-w-[300px]"
+              >
+                {/* Brand Header with Smol Café Logo */}
+                <div className="border-b border-stone-200 pb-2 flex flex-col items-center">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src="/current_logo_transparent_on_cream.png"
+                    alt="smol café"
+                    className="h-14 w-auto object-contain mx-auto mb-1"
+                  />
+                  <span className="text-[8.5px] font-mono tracking-widest text-stone-500 uppercase font-bold">
+                    Tapovan, Rishikesh
+                  </span>
+                </div>
+
+                {/* Table Number / Menu Pill */}
+                <div className="py-0.5">
+                  <div className="inline-block rounded-xl bg-[#241F1C] text-[#FAF4EB] px-4 py-1 shadow-sm print:bg-[#241F1C] print:text-white">
+                    <span className="text-[9.5px] font-mono font-bold tracking-widest uppercase block">
+                      PUBLIC MENU
+                    </span>
+                    <span className="font-serif text-2xl font-black leading-none block">
+                      MENU
+                    </span>
+                  </div>
+                  <span className="block text-[9.5px] font-mono text-stone-600 font-bold mt-1 uppercase tracking-wide">
+                    FOOD &amp; DRINKS
+                  </span>
+                </div>
+
+                {/* Real High-Resolution Scannable QR Code */}
+                <div className="relative mx-auto w-48 h-48 bg-white rounded-2xl p-2 border border-stone-300 flex items-center justify-center shadow-inner print:shadow-none">
+                  {menuQrDataUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={menuQrDataUrl}
+                      alt="Real QR Code for Smol Cafe Menu"
+                      className="w-full h-full object-contain rounded-xl"
+                    />
+                  ) : (
+                    <div className="flex flex-col items-center justify-center text-stone-400 space-y-1">
+                      <QrCode className="h-10 w-10 animate-pulse" />
+                      <span className="text-[10px] font-mono">Generating QR...</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Customer Instructions */}
+                <div className="space-y-0.5">
+                  <p className="text-xs font-serif font-bold text-[#241F1C]">
+                    Scan to View Menu &amp; Order
+                  </p>
+                  <p className="text-[9px] font-mono text-stone-500 leading-tight">
+                    Point your phone camera • No app download required
+                  </p>
+                </div>
+
+                {/* Wi-Fi Details & Direct URL Footer */}
+                <div className="border-t border-stone-200 pt-1.5 text-[8.5px] font-mono text-stone-500 space-y-0.5">
+                  <div className="font-bold text-[#B72E35]">
+                    {menuUrl.replace(/^https?:\/\//, "")}
+                  </div>
+                  <div className="text-stone-400">
+                    Wi-Fi: <span className="text-stone-700 font-bold">smol-guest</span> | Pass:{" "}
+                    <span className="text-stone-700 font-bold">coffee123</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Direct Link Bar with Copy (Hidden on Print) */}
+              <div className="flex items-center justify-between rounded-xl bg-white dark:bg-stone-900 border border-[#C9AE8B]/40 dark:border-stone-800 p-2 text-xs font-mono print:hidden">
+                <span className="truncate text-[11px] text-[#725039] dark:text-stone-300 max-w-[220px] text-left">
+                  {menuUrl}
+                </span>
+                <button
+                  onClick={() => {
+                    if (navigator.clipboard) {
+                      navigator.clipboard.writeText(menuUrl);
+                      setMenuQrCopied(true);
+                      setTimeout(() => setMenuQrCopied(false), 2000);
+                    }
+                  }}
+                  className="flex items-center gap-1 rounded-lg bg-[#FAF4EB] dark:bg-stone-800 border border-[#C9AE8B]/30 px-2.5 py-1 text-[11px] text-[#241F1C] dark:text-white hover:bg-[#F3E7D3] transition shrink-0 cursor-pointer"
+                >
+                  {menuQrCopied ? (
+                    <>
+                      <Check className="h-3 w-3 text-emerald-600" />
+                      <span className="text-emerald-600 font-bold">Copied!</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="h-3 w-3" />
+                      <span>Copy</span>
+                    </>
+                  )}
+                </button>
+              </div>
+
+              {/* Action Buttons Toolbar (Hidden on Print) */}
+              <div className="grid grid-cols-3 gap-2 pt-1 print:hidden">
+                <a
+                  href={menuUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex flex-col items-center justify-center gap-1 rounded-2xl bg-[#241F1C] dark:bg-stone-800 text-white p-2.5 text-[11px] font-mono font-bold hover:bg-stone-800 dark:hover:bg-stone-700 transition"
+                >
+                  <ExternalLink className="h-4 w-4" />
+                  <span>Open Menu</span>
+                </a>
+
+                <button
+                  onClick={() => {
+                    if (menuQrDataUrl) {
+                      const link = document.createElement("a");
+                      link.href = menuQrDataUrl;
+                      link.download = "smol-cafe-public-menu-qr.png";
+                      document.body.appendChild(link);
+                      link.click();
+                      document.body.removeChild(link);
+                    }
+                  }}
+                  disabled={!menuQrDataUrl}
+                  className="flex flex-col items-center justify-center gap-1 rounded-2xl border border-[#C9AE8B]/50 dark:border-stone-700 bg-white dark:bg-stone-900 p-2.5 text-[11px] font-mono font-bold text-[#725039] dark:text-stone-300 hover:bg-[#F3E7D3] transition disabled:opacity-50 cursor-pointer"
+                >
+                  <Download className="h-4 w-4 text-[#B72E35] dark:text-[#F2C84B]" />
+                  <span>Download PNG</span>
+                </button>
+
+                <button
+                  onClick={() => handlePrintMenuStand(menuQrDataUrl, menuUrl)}
+                  className="flex flex-col items-center justify-center gap-1 rounded-2xl border border-[#C9AE8B]/50 dark:border-stone-700 bg-white dark:bg-stone-900 p-2.5 text-[11px] font-mono font-bold text-[#725039] dark:text-stone-300 hover:bg-[#F3E7D3] transition shadow-xs hover:border-[#B72E35] cursor-pointer"
+                >
+                  <Printer className="h-4 w-4 text-[#754CFF] dark:text-[#C4B5FD]" />
+                  <span>Print Stand</span>
+                </button>
+              </div>
+
+              {/* Bottom Full-Width Close Button (Hidden on Print) */}
+              <div className="pt-1 print:hidden">
+                <button
+                  onClick={() => setIsMenuQrModalOpen(false)}
                   className="w-full py-2.5 rounded-2xl bg-stone-200/80 hover:bg-stone-300 dark:bg-stone-800 dark:hover:bg-stone-700 text-[#241F1C] dark:text-white text-xs font-mono font-bold transition flex items-center justify-center gap-1.5 shadow-xs cursor-pointer"
                 >
                   <X className="h-4 w-4" />
