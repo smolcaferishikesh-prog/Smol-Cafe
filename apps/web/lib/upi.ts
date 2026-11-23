@@ -42,7 +42,7 @@ const DEFAULT_MERCHANT_CONFIG: MerchantConfig = {
   mapUrl: SMOL_CAFE_MAPS_URL,
   taxRatePercent: 5,
   serviceChargePercent: 0,
-  openingHours: "08:00 AM – 10:00 PM (Daily)",
+  openingHours: "7:30 AM – 11:00 PM (Daily)",
   wifiSsid: "smol_cafe_guest",
   wifiPassword: "coffee123",
   receiptHeader: "artisanal coffee & slow bakes",
