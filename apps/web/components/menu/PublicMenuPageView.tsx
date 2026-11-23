@@ -26,7 +26,8 @@ import {
   SlidersHorizontal,
 } from "lucide-react";
 import { ThemeToggle } from "@/components/common/ThemeToggle";
-import { SMOL_CAFE_MAPS_URL } from "@/lib/constants";
+import { SMOL_CAFE_MAPS_URL, SMOL_CAFE_TIMINGS } from "@/lib/constants";
+import { subscribeToSyncEvents } from "@/lib/sync-events";
 import {
   PUBLIC_MENU_SECTIONS,
   PUBLIC_ALL_ITEMS,
@@ -43,7 +44,69 @@ interface ModifierOption {
   extraCost: number;
 }
 
-export const PublicMenuPageView: React.FC = () => {
+export interface PublicLiveCatalogItem {
+  id: string;
+  name: string;
+  priceRupees: number;
+  status: "AVAILABLE" | "SOLD_OUT";
+}
+
+interface PublicMenuPageViewProps {
+  initialLiveCatalog?: Record<string, PublicLiveCatalogItem>;
+}
+
+export const PublicMenuPageView: React.FC<PublicMenuPageViewProps> = ({
+  initialLiveCatalog = {},
+}) => {
+  const [liveCatalog, setLiveCatalog] = useState<Record<string, PublicLiveCatalogItem>>(initialLiveCatalog);
+
+  // Live stock & price propagation from Kitchen / Admin without manual reload (fixes SMOL-004)
+  useEffect(() => {
+    const unsub = subscribeToSyncEvents((event) => {
+      if (event.type === "ITEM_AVAILABILITY_CHANGED" || event.type === "INVENTORY_UPDATED") {
+        const meta = (event.metadata as Record<string, unknown>) || {};
+        const itemName = String(meta.name || event.itemName || "").trim().toLowerCase();
+        const itemId = event.itemId || String(meta.id || "");
+        const nextStatus =
+          event.stockStatus === "SOLD_OUT" ||
+          event.availability === "SOLD_OUT" ||
+          meta.status === "SOLD_OUT"
+            ? "SOLD_OUT"
+            : "AVAILABLE";
+        const nextPrice =
+          typeof event.priceRupees === "number"
+            ? event.priceRupees
+            : typeof meta.priceRupees === "number"
+            ? (meta.priceRupees as number)
+            : undefined;
+
+        setLiveCatalog((prev) => {
+          const next = { ...prev };
+          if (itemName) {
+            const existing = next[itemName];
+            next[itemName] = {
+              id: itemId || existing?.id || itemName,
+              name: String(meta.name || existing?.name || itemName),
+              priceRupees: nextPrice ?? existing?.priceRupees ?? 0,
+              status: nextStatus,
+            };
+          } else if (itemId) {
+            for (const [k, v] of Object.entries(next)) {
+              if (v.id === itemId) {
+                next[k] = {
+                  ...v,
+                  priceRupees: nextPrice ?? v.priceRupees,
+                  status: nextStatus,
+                };
+              }
+            }
+          }
+          return next;
+        });
+      }
+    });
+    return unsub;
+  }, []);
   const [searchQuery, setSearchQuery] = useState("");
   const [dietaryFilter, setDietaryFilter] = useState<"all" | DietaryType>("all");
   const [activeSection, setActiveSection] = useState<string>("drinks");
@@ -155,7 +218,16 @@ export const PublicMenuPageView: React.FC = () => {
     return PUBLIC_MENU_SECTIONS.map((section) => {
       const filteredSubs = section.subcategories
         .map((sub) => {
-          const matchingItems = sub.items.filter((item) => {
+          const enrichedItems = sub.items.map((item) => {
+            const live = liveCatalog[item.name.trim().toLowerCase()];
+            if (!live) return item;
+            return {
+              ...item,
+              price: live.priceRupees > 0 ? `₹${live.priceRupees}` : item.price,
+              availability: live.status === "SOLD_OUT" ? "sold_out" : item.availability,
+            };
+          });
+          const matchingItems = enrichedItems.filter((item) => {
             const matchesQuery =
               !q ||
               item.name.toLowerCase().includes(q) ||
@@ -187,7 +259,7 @@ export const PublicMenuPageView: React.FC = () => {
         subcategories: filteredSubs,
       };
     }).filter((section) => section.subcategories.length > 0);
-  }, [searchQuery, dietaryFilter, showWishlistOnly, wishlist]);
+  }, [searchQuery, dietaryFilter, showWishlistOnly, wishlist, liveCatalog]);
 
   const totalMatches = useMemo(() => {
     return filteredSections.reduce(
@@ -739,9 +811,16 @@ export const PublicMenuPageView: React.FC = () => {
 
                               {/* Price Badge + Favorite Button */}
                               <div className="flex flex-col items-end shrink-0 gap-1.5">
-                                <span className="font-mono text-sm sm:text-base font-bold text-[#241F1C] dark:text-[#F3E7D3] group-hover:text-[#B72E35] dark:group-hover:text-purple-400 transition-colors">
-                                  {item.price}
-                                </span>
+                                <div className="flex items-center gap-1.5">
+                                  {item.availability === "sold_out" && (
+                                    <span className="text-[9.5px] font-mono font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-rose-100 dark:bg-rose-950/70 text-rose-700 dark:text-rose-300 border border-rose-300 dark:border-rose-800">
+                                      Sold Out
+                                    </span>
+                                  )}
+                                  <span className={`font-mono text-sm sm:text-base font-bold transition-colors ${item.availability === "sold_out" ? "line-through text-stone-400 dark:text-stone-500" : "text-[#241F1C] dark:text-[#F3E7D3] group-hover:text-[#B72E35] dark:group-hover:text-purple-400"}`}>
+                                    {item.price}
+                                  </span>
+                                </div>
 
                                 <div className="flex items-center gap-1">
                                   {item.serving && (
@@ -917,18 +996,35 @@ export const PublicMenuPageView: React.FC = () => {
                 <div className="p-4 rounded-2xl bg-[#FAF4EB] dark:bg-[#201A18] border border-[#E2D7C7] dark:border-stone-800 space-y-2">
                   <div className="flex items-center gap-1.5 text-xs font-serif font-bold text-[#241F1C] dark:text-[#F3E7D3]">
                     <Scale className="w-3.5 h-3.5 text-[#B72E35] dark:text-purple-400" />
-                    <span>Standard Kitchen Recipe Ingredients (Gram Standard):</span>
+                    <span>
+                      {selectedModifierId === "oat" || selectedModifierId === "almond"
+                        ? `Recipe Ingredients (${currentModifier.title} Milk Variant):`
+                        : "Standard Kitchen Recipe Ingredients (Gram Standard):"}
+                    </span>
                   </div>
                   <div className="flex flex-wrap gap-1.5">
-                    {ingredientsList.map((ing, idx) => (
-                      <span
-                        key={idx}
-                        className="font-mono text-xs px-2.5 py-1 rounded-xl bg-[#F3E7D3] dark:bg-stone-800/80 text-[#241F1C] dark:text-[#F3E7D3] border border-[#C9AE8B]/40 dark:border-stone-700/80"
-                      >
-                        {ing}
-                      </span>
-                    ))}
+                    {ingredientsList.map((ing, idx) => {
+                      const displayIng =
+                        selectedModifierId === "oat"
+                          ? ing.replace(/whole milk|dairy milk|milk/gi, "Oat milk")
+                          : selectedModifierId === "almond"
+                          ? ing.replace(/whole milk|dairy milk|milk/gi, "Almond milk")
+                          : ing;
+                      return (
+                        <span
+                          key={idx}
+                          className="font-mono text-xs px-2.5 py-1 rounded-xl bg-[#F3E7D3] dark:bg-stone-800/80 text-[#241F1C] dark:text-[#F3E7D3] border border-[#C9AE8B]/40 dark:border-stone-700/80"
+                        >
+                          {displayIng}
+                        </span>
+                      );
+                    })}
                   </div>
+                  {(selectedModifierId === "oat" || selectedModifierId === "almond") && (
+                    <p className="text-[11px] font-mono text-emerald-700 dark:text-emerald-400">
+                      Dairy substituted with {currentModifier.title.toLowerCase()} milk; kitchen cross-contact with dairy equipment may still occur. Base nutrition &amp; allergens below reflect the default recipe.
+                    </p>
+                  )}
                 </div>
               )}
 
@@ -1104,7 +1200,7 @@ export const PublicMenuPageView: React.FC = () => {
           <p className="text-xs sm:text-sm md:text-base text-[#725039] dark:text-[#C9AE8B] max-w-lg mx-auto leading-relaxed">
             Smol Door, Upper Tapovan, Rishikesh, Uttarakhand 249192.
             <br />
-            Open Every Day · 8:00 AM – 10:30 PM.
+            Open Every Day · {SMOL_CAFE_TIMINGS}.
           </p>
 
           <div className="flex flex-wrap items-center justify-center gap-3 pt-2">

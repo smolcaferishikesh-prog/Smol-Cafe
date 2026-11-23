@@ -508,7 +508,7 @@ export async function fetchAdminOverviewAction(forceRefresh = false): Promise<{
           amt: isComplimentary ? "₹0 (Comp)" : `₹${totalRupees}`,
           ord: `ORD-${o.order_no || o.id.slice(-4)}`,
           st: ledgerStatus,
-          time: orderDate.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+          time: `${orderDate.toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", hour12: true })} IST`,
         });
       }
     }

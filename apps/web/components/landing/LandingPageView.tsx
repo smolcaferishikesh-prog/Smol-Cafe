@@ -1445,7 +1445,7 @@ export const LandingPageView: React.FC = () => {
           <div className="text-center max-w-2xl mx-auto space-y-2 sm:space-y-3">
             <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#B72E35]/10 dark:bg-purple-500/20 text-[#B72E35] dark:text-purple-300 text-[10px] sm:text-[11px] font-mono uppercase tracking-wider font-semibold border border-[#B72E35]/20 dark:border-purple-500/30">
               <Users className="w-3.5 h-3.5" />
-              <span>Tapovan Sanctuary Tribe · 29 Moments</span>
+              <span>Tapovan Sanctuary Tribe · {COMMUNITY_MEDIA.length} Moments</span>
             </div>
             <h2 className="font-serif text-2xl xs:text-3xl sm:text-4xl lg:text-5xl font-bold tracking-tight text-[#241F1C] dark:text-[#F3E7D3]">
               The Smol Community
@@ -2204,7 +2204,7 @@ export const LandingPageView: React.FC = () => {
                                 className="px-3.5 py-1.5 rounded-full bg-[#FAF4EB] dark:bg-purple-950/40 hover:bg-[#B72E35] hover:text-white dark:hover:bg-purple-600 dark:hover:text-white text-[#B72E35] dark:text-purple-300 border border-[#B72E35]/40 dark:border-purple-500/40 font-mono text-xs font-semibold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
                               >
                                 <Ticket className="w-3.5 h-3.5 text-[#B72E35] dark:text-purple-400" />
-                                <span>Reserve Spot (Free)</span>
+                                <span>Reservations Opening Soon</span>
                               </button>
                             </div>
                           )}

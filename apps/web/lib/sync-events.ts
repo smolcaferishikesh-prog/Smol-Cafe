@@ -36,6 +36,7 @@ export interface SyncPayload {
   tableLabel?: string;
   tableId?: string;
   itemId?: string;
+  itemName?: string;
   availability?: string;
   portionsLeft?: number;
   stockStatus?: string;

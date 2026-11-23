@@ -18,6 +18,7 @@ import {
   Coffee,
   RefreshCw,
   ExternalLink,
+  LogOut,
   Gift,
   TrendingUp,
   Menu,
@@ -102,6 +103,7 @@ import {
   getRoleCredentialsAction,
   updateRoleCredentialAction,
   resetRoleCredentialAction,
+  staffBackdoorLogoutAction,
 } from "@/app/smol-backdoor/actions";
 import type { RoleCredentialsMap, RoleCredential } from "@/lib/auth/credentials";
 import type { OrderStatus } from "@smol-cafe/db";
@@ -2157,14 +2159,20 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
                 <span className="font-mono text-[#725039] dark:text-stone-400">Owner Access</span>
                 <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
               </div>
-              <Link
-                href="/menu"
-                onClick={() => setMobileMenuOpen(false)}
-                className="flex items-center justify-between rounded-xl border border-[#C9AE8B]/40 dark:border-stone-800 bg-[#F3E7D3] dark:bg-stone-900 px-3 py-2 text-xs text-[#725039] dark:text-stone-300 hover:bg-[#EBDDC8] dark:hover:bg-stone-800 transition"
+              <button
+                type="button"
+                onClick={async () => {
+                  setMobileMenuOpen(false);
+                  try {
+                    await staffBackdoorLogoutAction();
+                  } catch {}
+                  window.location.href = "/smol-backdoor";
+                }}
+                className="flex w-full items-center justify-between rounded-xl border border-[#B72E35]/40 dark:border-red-900/40 bg-[#FAF4EB] hover:bg-[#B72E35] dark:bg-stone-900 dark:hover:bg-[#B72E35] px-3 py-2 text-xs font-mono font-bold text-[#B72E35] dark:text-[#FF6B6B] hover:text-white dark:hover:text-white transition cursor-pointer group shadow-xs"
               >
-                <span>Switch to Customer QR</span>
-                <ExternalLink className="h-3 w-3 text-[#725039] dark:text-stone-500" />
-              </Link>
+                <span>Logout</span>
+                <LogOut className="h-3.5 w-3.5 text-[#B72E35] group-hover:text-white dark:text-[#FF6B6B] dark:group-hover:text-white shrink-0 transition" />
+              </button>
             </div>
           </aside>
         </div>
@@ -2237,13 +2245,19 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
             <span className="font-mono text-[#725039] dark:text-stone-400 text-[11px]">Owner Access</span>
             <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
           </div>
-          <Link
-            href="/menu"
-            className="flex items-center justify-between rounded-xl border border-[#C9AE8B]/40 dark:border-stone-800 bg-[#F3E7D3] dark:bg-stone-900 px-2.5 lg:px-3 py-1.5 lg:py-2 text-[11px] lg:text-xs text-[#725039] dark:text-stone-300 hover:bg-[#EBDDC8] dark:hover:bg-stone-800 transition"
+          <button
+            type="button"
+            onClick={async () => {
+              try {
+                await staffBackdoorLogoutAction();
+              } catch {}
+              window.location.href = "/smol-backdoor";
+            }}
+            className="flex w-full items-center justify-between rounded-xl border border-[#B72E35]/40 dark:border-red-900/40 bg-[#FAF4EB] hover:bg-[#B72E35] dark:bg-stone-900 dark:hover:bg-[#B72E35] px-2.5 lg:px-3 py-1.5 lg:py-2 text-[11px] lg:text-xs font-mono font-bold text-[#B72E35] dark:text-[#FF6B6B] hover:text-white dark:hover:text-white transition cursor-pointer group shadow-xs"
           >
-            <span className="truncate">Customer QR</span>
-            <ExternalLink className="h-3 w-3 text-[#725039] dark:text-stone-500 shrink-0" />
-          </Link>
+            <span className="truncate">Logout</span>
+            <LogOut className="h-3.5 w-3.5 text-[#B72E35] group-hover:text-white dark:text-[#FF6B6B] dark:group-hover:text-white shrink-0 transition" />
+          </button>
         </div>
       </aside>
 
@@ -3135,6 +3149,8 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
               section: t.section || "smol-cafe",
               isOccupied: Boolean(t.isOccupied),
             }))}
+            wifiSsid={merchantConfig.wifiSsid}
+            wifiPassword={merchantConfig.wifiPassword}
           />
         </div>
 
@@ -3773,7 +3789,7 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
                       onChange={(e) =>
                         setMerchantConfig({ ...merchantConfig, openingHours: e.target.value })
                       }
-                      placeholder="08:00 AM – 10:00 PM (Daily)"
+                      placeholder="7:30 AM – 11:00 PM (Daily)"
                       className="w-full rounded-xl border border-[#C9AE8B]/50 dark:border-stone-700 bg-[#F3E7D3]/40 dark:bg-stone-900 px-3.5 py-2.5 text-xs text-[#241F1C] dark:text-white focus:border-[#B72E35] focus:outline-none"
                     />
                   </div>
@@ -3874,7 +3890,7 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
                   Export Ledger (CSV)
                 </button>
                 <span className="self-start sm:self-auto rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300 dark:bg-emerald-950 dark:text-emerald-400 dark:border-emerald-800 px-3 py-1 text-xs font-mono font-bold shadow-xs">
-                  Gross Revenue: ₹{(overviewData?.kpis.grossRevenueRupees ?? 0).toLocaleString("en-IN")}
+                  Today&apos;s Gross Revenue (IST): ₹{(overviewData?.kpis.grossRevenueRupees ?? 0).toLocaleString("en-IN")}
                 </span>
               </div>
             </div>
@@ -4176,49 +4192,6 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
                   </tbody>
                 </table>
               </div>
-            </div>
-            {/* Header */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <div>
-                <h2 className="text-xl font-bold font-serif text-[#241F1C] dark:text-white lowercase">smol club · loyalty &amp; rewards manager</h2>
-                <p className="font-serif italic text-xs text-[#725039] dark:text-[#C9AE8B]">
-                  manage earning rules, max bill discounts, bonus quests, and customer points
-                </p>
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={handleSaveLoyaltyConfig}
-                  className="rounded-full bg-[#B72E35] hover:bg-[#9E252C] text-[#F3E7D3] px-4 py-2 text-xs font-serif font-bold shadow-xs transition active:scale-95 flex items-center gap-1.5 cursor-pointer"
-                >
-                  <Check className="w-3.5 h-3.5" />
-                  Save Loyalty Rules
-                </button>
-              </div>
-            </div>
-
-            {/* Notification Alert */}
-            {loyaltySaveNotice && (
-              <div className="rounded-2xl border border-emerald-300 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/60 p-3.5 text-xs font-mono text-emerald-900 dark:text-emerald-200 flex items-center gap-2 shadow-xs animate-fade-in">
-                <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
-                <span>{loyaltySaveNotice}</span>
-              </div>
-            )}
-
-            {/* Loyalty KPIs */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              {[
-                { label: "ENROLLED MEMBERS", val: loyaltyMembers.length.toLocaleString("en-IN"), sub: `${loyaltyMembers.length} active patrons`, color: "#B72E35" },
-                { label: "POINTS ISSUED", val: `${loyaltyMembers.reduce((acc, m) => acc + (m.currentBalance || 0), 0).toLocaleString("en-IN")} pts`, sub: `Valued at ₹${loyaltyMembers.reduce((acc, m) => acc + (m.currentBalance || 0), 0).toLocaleString("en-IN")}`, color: "#319795" },
-                { label: "MAX BILL DISCOUNT", val: `${loyaltyConfig.maxBillDiscountPercent}%`, sub: `1 pt = ₹${loyaltyConfig.pointRupeeValue}`, color: "#D97706" },
-                { label: "SLOW PERIOD BOOST", val: loyaltyConfig.slowPeriodActive ? `${loyaltyConfig.slowPeriodMultiplier}× Points` : "Disabled", sub: loyaltyConfig.slowPeriodHoursText, color: "#8C6D53" },
-              ].map((k, i) => (
-                <div key={i} className="rounded-2xl border border-[#C9AE8B]/40 dark:border-stone-800 bg-[#FAF4EB] dark:bg-[#1A1715] p-4 space-y-1 shadow-xs transition-colors">
-                  <span className="font-mono text-[9px] uppercase font-bold text-[#725039] dark:text-stone-400">{k.label}</span>
-                  <div className="font-serif text-2xl font-bold" style={{ color: k.color }}>{k.val}</div>
-                  <span className="font-mono text-[10px] text-[#725039]/80 dark:text-stone-500">{k.sub}</span>
-                </div>
-              ))}
             </div>
 
             {/* 1. Core Rules & System Controls */}

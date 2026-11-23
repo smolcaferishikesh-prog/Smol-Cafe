@@ -3,6 +3,8 @@ import { getCurrentUserProfileAction, getCustomerOrderHistoryAction } from "@/ap
 import { getLoyaltyAccountAction } from "@/app/account/loyalty-actions";
 import { ProfileView } from "@/components/account/ProfileView";
 
+export const dynamic = "force-dynamic";
+
 export const metadata = {
   title: "My Account & Receipts — smol café",
   description: "View past orders, digital bills, and claim table dining sessions.",

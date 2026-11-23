@@ -2,6 +2,8 @@ import { notFound } from "next/navigation";
 import { getTableSessionCookie } from "@/lib/session";
 import { CustomerHomeClientView } from "@/components/home/CustomerHomeClientView";
 
+export const dynamic = "force-dynamic";
+
 export const metadata = {
   title: "smol café — Good Coffee, Brighter Days",
   description: "A warm, literary neighbourhood café with a day-to-night personality in Rishikesh.",

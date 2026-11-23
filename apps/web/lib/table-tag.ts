@@ -1,5 +1,3 @@
-import { generateSafeUuid } from "./uuid";
-
 /**
  * Smol Café — JSON Tagging for Tables
  * Encapsulates table metadata, zone assignment, seating capacity,
@@ -16,10 +14,19 @@ export interface TableJsonTag {
   guest_count: number;
   qr_hash: string;
   service_mode: "DINE_IN" | "TAKEAWAY";
-  session_id: string;
-  created_at: string;
+  session_id: string | null;
+  status: "AVAILABLE" | "OCCUPIED";
+  created_at: string | null;
   device_fingerprint?: string;
   notes?: string;
+}
+
+export interface TableJsonTagOverrides {
+  tableId?: string;
+  zone?: TableZone;
+  capacity?: number;
+  isOccupied?: boolean;
+  openedAt?: string | null;
 }
 
 export const TABLE_ZONES_CONFIG: Record<string, { zone: TableZone; capacity: number }> = {
@@ -45,29 +52,45 @@ export const TABLE_ZONES_CONFIG: Record<string, { zone: TableZone; capacity: num
 };
 
 /**
- * Generates a standard TableJsonTag for a given table label and session ID.
+ * Generates a standard TableJsonTag from actual persisted table/session data (fixes SMOL-006).
+ * Empty tables never fabricate guest counts, session IDs, or placeholder timestamps.
  */
 export function createTableJsonTag(
   tableLabel: string,
-  sessionId?: string,
-  guestCount: number = 2
+  sessionId?: string | null,
+  guestCount?: number,
+  overrides?: TableJsonTagOverrides
 ): TableJsonTag {
-  const cleanLabel = (tableLabel || "01").replace(/^(table|t)[-\s_]*/i, "").trim().padStart(2, "0");
-  const config = TABLE_ZONES_CONFIG[cleanLabel] || {
+  const rawStripped = (tableLabel || "01").replace(/^(table|t)[-_\s]*/i, "").trim();
+  const cleanLabel = /^\d+$/.test(rawStripped) ? rawStripped.padStart(2, "0") : rawStripped;
+  const fallbackConfig = TABLE_ZONES_CONFIG[cleanLabel] || {
     zone: "smol-cafe" as TableZone,
-    capacity: 2,
+    capacity: 4,
   };
 
+  const isOccupied = overrides?.isOccupied ?? Boolean(sessionId);
+  const resolvedCapacity =
+    typeof overrides?.capacity === "number" && overrides.capacity > 0
+      ? overrides.capacity
+      : fallbackConfig.capacity;
+  const resolvedGuestCount = isOccupied
+    ? typeof guestCount === "number" && guestCount >= 0
+      ? guestCount
+      : 1
+    : 0;
+  const resolvedSessionId = isOccupied ? sessionId || null : null;
+  const slug = cleanLabel.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+
   return {
-    table_id: `tbl_${cleanLabel}`,
+    table_id: overrides?.tableId || `tbl_${slug || cleanLabel}`,
     table_number: cleanLabel,
-    zone: config.zone,
-    capacity: config.capacity,
-    guest_count: guestCount,
-    qr_hash: `smol-qr-t${cleanLabel}`,
+    zone: overrides?.zone || fallbackConfig.zone,
+    capacity: resolvedCapacity,
+    guest_count: resolvedGuestCount,
+    qr_hash: `smol-qr-t${slug || cleanLabel}`,
     service_mode: "DINE_IN",
-    session_id: sessionId || `sess_${cleanLabel}`,
-    created_at: "2026-01-01T00:00:00.000Z",
-    device_fingerprint: "mobile-web-client",
+    session_id: resolvedSessionId,
+    status: isOccupied ? "OCCUPIED" : "AVAILABLE",
+    created_at: isOccupied ? overrides?.openedAt || null : null,
   };
 }

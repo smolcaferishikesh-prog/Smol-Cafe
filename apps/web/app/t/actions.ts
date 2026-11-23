@@ -106,18 +106,46 @@ export async function resolveQrToken(
     const finalGuestName = guestName || existingCookie?.guestName;
     const finalGuestPhone = guestPhone || existingCookie?.guestPhone;
 
-    // 1. Query table_qr_tokens by hash, plain token, or standardized table-XX format
-    const matchDigits = plainToken.match(/(\d+)/);
+    // 1. Normalize token across numeric, alphabetic, mixed-case, hyphenated, and prefixed labels (e.g. "table-cafe", "cafe", "Cafe", "07", "table-07")
+    const strippedToken = plainToken.replace(/^(?:table|t)[-_\s]+/i, "").trim();
+    const spacedToken = strippedToken.replace(/[-_]+/g, " ").trim();
+    const isNumericToken = /^\d+$/.test(strippedToken);
+    const matchDigits = isNumericToken ? strippedToken.match(/^(\d+)$/) : null;
     const standardTableLabel = matchDigits ? matchDigits[1].padStart(2, "0") : "";
     const rawNumberLabel = matchDigits ? parseInt(matchDigits[1], 10).toString() : "";
-    const standardTokenHash = standardTableLabel ? `table-${standardTableLabel}` : "";
+    const normalizedSlug = strippedToken.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+    const standardTokenHash = standardTableLabel
+      ? `table-${standardTableLabel}`
+      : normalizedSlug
+      ? `table-${normalizedSlug}`
+      : "";
+
+    const normalizeForCompare = (val?: string | null): string =>
+      (val || "")
+        .trim()
+        .toLowerCase()
+        .replace(/^(?:table|t)[-_\s]+/i, "")
+        .replace(/[-_\s]+/g, " ")
+        .trim();
+
+    const candidateValues = Array.from(
+      new Set(
+        [
+          plainToken,
+          strippedToken,
+          spacedToken,
+          standardTableLabel,
+          rawNumberLabel,
+          normalizedSlug,
+          standardTokenHash,
+        ].filter(Boolean)
+      )
+    );
 
     // If this table was permanently deleted, immediately reject and never resurrect
     if (
-      isTableDeleted(plainToken) ||
       isTableDeleted(tokenHash) ||
-      (standardTableLabel && isTableDeleted(standardTableLabel)) ||
-      (rawNumberLabel && isTableDeleted(rawNumberLabel))
+      candidateValues.some((val) => isTableDeleted(val))
     ) {
       return {
         success: false,
@@ -126,32 +154,38 @@ export async function resolveQrToken(
       };
     }
 
-    const queryFilters = [
-      `token_hash.eq.${tokenHash}`,
-      `token_hash.eq.${plainToken}`,
-    ];
-    if (standardTokenHash && standardTokenHash !== plainToken) {
-      queryFilters.push(`token_hash.eq.${standardTokenHash}`);
-    }
+    const tokenCandidates = Array.from(
+      new Set(
+        [
+          tokenHash,
+          plainToken,
+          plainToken.toLowerCase(),
+          standardTokenHash,
+          strippedToken ? hashToken(strippedToken) : "",
+          standardTokenHash ? hashToken(standardTokenHash) : "",
+        ].filter(Boolean)
+      )
+    );
+
+    const queryFilters = tokenCandidates.map((val) => `token_hash.eq.${val}`);
 
     const { data: qrTokens, error: qrError } = await supabase
       .from("table_qr_tokens")
       .select("*")
       .or(queryFilters.join(","))
-      .limit(1);
+      .limit(5);
 
     let diningTable: DiningTable | null = null;
     let qrVersion = 1;
 
     if (!qrError && qrTokens && qrTokens.length > 0) {
-      const qrToken = qrTokens[0] as unknown as TableQrToken;
-      // If token wasn't revoked, resolve linked table
-      if (!qrToken.revoked_at) {
-        qrVersion = qrToken.version || 1;
+      const validQr = (qrTokens as unknown as TableQrToken[]).find((t) => !t.revoked_at);
+      if (validQr) {
+        qrVersion = validQr.version || 1;
         const { data: table } = await supabase
           .from("dining_tables")
           .select("*")
-          .eq("id", qrToken.table_id)
+          .eq("id", validQr.table_id)
           .maybeSingle();
 
         if (table && !isTableDeleted(table.id) && !isTableDeleted(table.label)) {
@@ -160,19 +194,63 @@ export async function resolveQrToken(
       }
     }
 
-    // Fallback 1: match table number directly or resolve table by label (padded and unpadded)
-    if (!diningTable && (standardTableLabel || plainToken)) {
-      const targetLabel = standardTableLabel || plainToken;
-      let query = supabase.from("dining_tables").select("*");
-      if (rawNumberLabel && rawNumberLabel !== targetLabel) {
-        query = query.or(`label.eq.${targetLabel},label.eq.${rawNumberLabel}`);
-      } else {
-        query = query.eq("label", targetLabel);
-      }
-      const { data: tableByLabel } = await query.limit(1).maybeSingle();
+    // Fallback 1: Direct UUID lookup if token is an immutable table ID
+    if (!diningTable && isUuid(plainToken)) {
+      const { data: tableById } = await supabase
+        .from("dining_tables")
+        .select("*")
+        .eq("id", plainToken)
+        .maybeSingle();
 
-      if (tableByLabel && !isTableDeleted(tableByLabel.id) && !isTableDeleted(tableByLabel.label)) {
-        diningTable = tableByLabel as unknown as DiningTable;
+      if (tableById && !isTableDeleted(tableById.id) && !isTableDeleted(tableById.label)) {
+        diningTable = tableById as unknown as DiningTable;
+      }
+    }
+
+    // Fallback 2: Case-insensitive & normalized label lookup (handles "Cafe", "table-cafe", "cafe", "07", "7", spaced/renamed labels)
+    if (!diningTable && candidateValues.length > 0) {
+      const labelCandidates = Array.from(
+        new Set(
+          [plainToken, strippedToken, spacedToken, standardTableLabel, rawNumberLabel].filter(Boolean)
+        )
+      );
+
+      for (const candidate of labelCandidates) {
+        const { data: tableByLabel } = await supabase
+          .from("dining_tables")
+          .select("*")
+          .ilike("label", candidate)
+          .limit(1)
+          .maybeSingle();
+
+        if (tableByLabel && !isTableDeleted(tableByLabel.id) && !isTableDeleted(tableByLabel.label)) {
+          diningTable = tableByLabel as unknown as DiningTable;
+          break;
+        }
+      }
+
+      // Final normalized scan across tables for punctuation/spacing aliases (e.g. "table-cafe-1" -> "Cafe 1")
+      if (!diningTable) {
+        const targetNorm = normalizeForCompare(plainToken);
+        const targetNum = isNumericToken ? parseInt(strippedToken, 10) : null;
+        const { data: allTables } = await supabase
+          .from("dining_tables")
+          .select("*");
+
+        if (Array.isArray(allTables) && allTables.length > 0) {
+          const matched = (allTables as unknown as DiningTable[]).find((t) => {
+            if (isTableDeleted(t.id) || isTableDeleted(t.label)) return false;
+            const normLabel = normalizeForCompare(t.label);
+            if (normLabel && targetNorm && normLabel === targetNorm) return true;
+            if (targetNum !== null && /^\d+$/.test(normLabel) && parseInt(normLabel, 10) === targetNum) {
+              return true;
+            }
+            return false;
+          });
+          if (matched) {
+            diningTable = matched;
+          }
+        }
       }
     }
 
