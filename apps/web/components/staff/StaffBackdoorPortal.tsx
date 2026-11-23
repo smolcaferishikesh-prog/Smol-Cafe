@@ -3,10 +3,7 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import {
-  staffBackdoorLoginAction,
-  getRoleCredentialsAction,
-} from "@/app/smol-backdoor/actions";
+import { staffBackdoorLoginAction } from "@/app/smol-backdoor/actions";
 import {
   ChefHat,
   Coffee,
@@ -51,32 +48,19 @@ export const StaffBackdoorPortal: React.FC = () => {
   const [shake, setShake] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const [livePins, setLivePins] = useState<{
-    kitchen: string;
-    barista: string;
-    cashier: string;
-    admin: string;
-  }>({
-    kitchen: "6175",
-    barista: "1234",
-    cashier: "8112",
-    admin: "9227",
-  });
+  const isSubmittingRef = useRef(false);
+  const autoSubmitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const cancelPendingAutoSubmit = useCallback(() => {
+    if (autoSubmitTimerRef.current) {
+      clearTimeout(autoSubmitTimerRef.current);
+      autoSubmitTimerRef.current = null;
+    }
+  }, []);
 
   useEffect(() => {
-    getRoleCredentialsAction()
-      .then((res) => {
-        if (res.success && res.credentials) {
-          setLivePins({
-            kitchen: res.credentials.kitchen.pin,
-            barista: res.credentials.barista?.pin || "1234",
-            cashier: res.credentials.cashier.pin,
-            admin: res.credentials.admin.pin,
-          });
-        }
-      })
-      .catch(console.error);
-  }, []);
+    return () => cancelPendingAutoSubmit();
+  }, [cancelPendingAutoSubmit]);
 
   const roles: RoleMeta[] = [
     {
@@ -150,6 +134,9 @@ export const StaffBackdoorPortal: React.FC = () => {
 
   const submitLogin = useCallback(
     async (role: RoleId, pinCode: string) => {
+      cancelPendingAutoSubmit();
+      if (isSubmittingRef.current) return;
+
       if (!pinCode || pinCode.trim().length === 0) {
         setErrorMessage("Please enter your station PIN to unlock.");
         triggerShake();
@@ -157,6 +144,7 @@ export const StaffBackdoorPortal: React.FC = () => {
         return;
       }
 
+      isSubmittingRef.current = true;
       setIsSubmitting(true);
       setErrorMessage(null);
 
@@ -172,50 +160,59 @@ export const StaffBackdoorPortal: React.FC = () => {
         } else {
           setErrorMessage(res.message || "Invalid Station PIN. Please re-enter.");
           triggerShake();
-          setPin("");
+          if (res.errorCode !== "SERVICE_ERROR") {
+            setPin("");
+          }
+          isSubmittingRef.current = false;
           setIsSubmitting(false);
         }
       } catch {
-        setErrorMessage("Network error connecting to security server.");
+        setErrorMessage("Network error connecting to security server. Please retry.");
         triggerShake();
+        isSubmittingRef.current = false;
         setIsSubmitting(false);
       }
     },
-    [router]
+    [cancelPendingAutoSubmit]
   );
 
   // Handle keypad taps
   const handleKeyTap = (digit: string) => {
-    if (isSubmitting) return;
+    if (isSubmittingRef.current || isSubmitting) return;
     if (pin.length < 8) {
       const nextPin = pin + digit;
       setPin(nextPin);
       setErrorMessage(null);
 
-      // If exactly 4 digits, trigger loader immediately and auto submit
+      // If exactly 4 digits, auto-submit once without duplicate races
       if (nextPin.length === 4) {
-        setIsSubmitting(true);
-        setTimeout(() => {
-          submitLogin(selectedRole, nextPin);
+        cancelPendingAutoSubmit();
+        const activeRole = selectedRole;
+        autoSubmitTimerRef.current = setTimeout(() => {
+          void submitLogin(activeRole, nextPin);
         }, 100);
       }
     }
   };
 
   const handleBackspace = () => {
-    if (isSubmitting) return;
+    if (isSubmittingRef.current || isSubmitting) return;
+    cancelPendingAutoSubmit();
     setPin((prev) => prev.slice(0, -1));
     setErrorMessage(null);
   };
 
   const handleClear = () => {
-    if (isSubmitting) return;
+    if (isSubmittingRef.current || isSubmitting) return;
+    cancelPendingAutoSubmit();
     setPin("");
     setErrorMessage(null);
   };
 
   // Switch Station
   const handleSelectRole = (r: RoleId) => {
+    if (isSubmittingRef.current || isSubmitting) return;
+    cancelPendingAutoSubmit();
     setSelectedRole(r);
     setPin("");
     setErrorMessage(null);
@@ -423,11 +420,16 @@ export const StaffBackdoorPortal: React.FC = () => {
               value={pin}
               autoComplete="current-password"
               onChange={(e) => {
+                if (isSubmittingRef.current || isSubmitting) return;
                 const clean = e.target.value.replace(/\D/g, "");
                 setPin(clean);
                 setErrorMessage(null);
+                cancelPendingAutoSubmit();
                 if (clean.length === 4) {
-                  setTimeout(() => submitLogin(selectedRole, clean), 150);
+                  const activeRole = selectedRole;
+                  autoSubmitTimerRef.current = setTimeout(() => {
+                    void submitLogin(activeRole, clean);
+                  }, 150);
                 }
               }}
               onKeyDown={(e) => {

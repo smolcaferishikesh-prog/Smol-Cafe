@@ -491,56 +491,47 @@ export async function redeemLoyaltyRewardAction(
  * Server Action (Admin): Fetches customer members directory for loyalty management
  */
 export async function fetchLoyaltyMembersAction(): Promise<LoyaltyMemberItem[]> {
-  return [
-    {
-      id: "mem_1",
-      profileId: "prof_9876543210",
-      displayName: "Sonu Singh",
-      phone: "+91 98765 43210",
-      currentBalance: 245,
-      totalEarned: 480,
-      totalSpentRupees: 4800,
-      visitCount: 6,
-      tier: "Artisan Ambassador",
-      lastVisitAt: new Date(Date.now() - 3600000 * 2).toISOString(),
-    },
-    {
-      id: "mem_2",
-      profileId: "prof_9811223344",
-      displayName: "Ananya Sharma",
-      phone: "+91 98112 23344",
-      currentBalance: 180,
-      totalEarned: 320,
-      totalSpentRupees: 3200,
-      visitCount: 4,
-      tier: "Regular Patron",
-      lastVisitAt: new Date(Date.now() - 3600000 * 26).toISOString(),
-    },
-    {
-      id: "mem_3",
-      profileId: "prof_9700112233",
-      displayName: "Rohan Varma",
-      phone: "+91 97001 12233",
-      currentBalance: 95,
-      totalEarned: 140,
-      totalSpentRupees: 1400,
-      visitCount: 2,
-      tier: "Seedling Patron",
-      lastVisitAt: new Date(Date.now() - 3600000 * 72).toISOString(),
-    },
-    {
-      id: "mem_4",
-      profileId: "prof_9944556677",
-      displayName: "Priya Nair",
-      phone: "+91 99445 56677",
-      currentBalance: 320,
-      totalEarned: 580,
-      totalSpentRupees: 5800,
-      visitCount: 8,
-      tier: "Artisan Ambassador",
-      lastVisitAt: new Date(Date.now() - 3600000 * 12).toISOString(),
-    },
-  ];
+  try {
+    const supabase = createAdminClient();
+    const { data: profiles, error } = await supabase
+      .from("customer_profiles")
+      .select("id, display_name, phone, points_balance, total_points_earned, total_spent_paise, visit_count, updated_at, created_at")
+      .order("updated_at", { ascending: false })
+      .limit(200);
+
+    if (error || !Array.isArray(profiles) || profiles.length === 0) {
+      return [];
+    }
+
+    return profiles.map((p: Record<string, unknown>) => {
+      const balance = Number(p.points_balance ?? 0);
+      const earned = Number(p.total_points_earned ?? balance);
+      const spentPaise = Number(p.total_spent_paise ?? 0);
+      const visits = Number(p.visit_count ?? 1);
+      const tier =
+        balance >= 300
+          ? "Artisan Ambassador"
+          : balance >= 100
+          ? "Regular Patron"
+          : "Seedling Patron";
+
+      return {
+        id: String(p.id || ""),
+        profileId: String(p.id || ""),
+        displayName: String(p.display_name || "Smol Patron"),
+        phone: String(p.phone || ""),
+        currentBalance: balance,
+        totalEarned: earned,
+        totalSpentRupees: Math.round(spentPaise / 100),
+        visitCount: visits,
+        tier,
+        lastVisitAt: String(p.updated_at || p.created_at || new Date().toISOString()),
+      };
+    });
+  } catch (err) {
+    console.warn("fetchLoyaltyMembersAction: returning empty list due to DB notice:", err);
+    return [];
+  }
 }
 
 /**

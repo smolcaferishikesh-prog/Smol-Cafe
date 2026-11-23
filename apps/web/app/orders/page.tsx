@@ -2,6 +2,8 @@ import { notFound } from "next/navigation";
 import { fetchActiveOrdersAction } from "./actions";
 import { OrderStatusClientView } from "@/components/orders/OrderStatusClientView";
 
+export const dynamic = "force-dynamic";
+
 export const metadata = {
   title: "Order Status — smol café",
   description: "Live order status tracking for your dining session at smol café.",

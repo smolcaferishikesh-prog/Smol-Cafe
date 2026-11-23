@@ -126,17 +126,17 @@ export function TableGuestOnboardingForm({
       try {
         const result = await withTimeout(
           onboardGuestAndRedirectAction(formData),
-          5000,
-          { success: true }
+          8000,
+          { success: false, error: "Request timed out while setting up your table session. Please try again." }
         );
-        if (result && !result.success) {
-          setError(result.error || "Could not set up table session. Please try again.");
-        } else {
-          router.push("/home");
+        if (!result || !result.success) {
+          setError(result?.error || "Could not set up table session. Please try again.");
+          return;
         }
+        router.push("/home");
       } catch (err) {
         console.error("Error onboarding guest:", err);
-        router.push("/home");
+        setError("Network error while connecting to your table. Please check your connection and try again.");
       }
     });
   };
@@ -147,11 +147,11 @@ export function TableGuestOnboardingForm({
       try {
         const result = await withTimeout(
           skipGuestOnboardingAction(tableToken),
-          4000,
-          { success: true, tableLabel }
+          8000,
+          { success: false, error: "Request timed out while starting your table session. Please try again." }
         );
-        if (result && !result.success) {
-          setError(result.error || "Could not set up table session. Please try again.");
+        if (!result || !result.success) {
+          setError(result?.error || "Could not set up table session. Please try again.");
           return;
         }
         if (typeof window !== "undefined") {
@@ -161,7 +161,7 @@ export function TableGuestOnboardingForm({
         router.push("/home");
       } catch (err) {
         console.error("Error establishing guest session:", err);
-        router.push("/home");
+        setError("Network error while connecting to your table. Please check your connection and try again.");
       }
     });
   };

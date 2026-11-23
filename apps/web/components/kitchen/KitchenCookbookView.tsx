@@ -35,6 +35,7 @@ import {
 } from "lucide-react";
 import { type KitchenMenuItem, fetchKitchenMenuCatalogAction } from "@/app/kitchen/menu-actions";
 import { RAW_MENU_ITEMS } from "@/lib/mock-db/seedData";
+import { PUBLIC_ALL_ITEMS } from "@/lib/menu/publicMenuMaster";
 
 export interface RecipeIngredient {
   name: string;
@@ -79,14 +80,45 @@ function determineCookbookStation(cat: string): string {
   return "Cold Prep & Bowls";
 }
 
-function parseIngredientsList(rawIngredients: string): RecipeIngredient[] {
-  if (!rawIngredients) return [{ name: "Fresh Pantry Ingredients", quantity: "Standard batch" }];
+const MEASURED_RECIPE_BY_NAME: Record<string, string> = Object.fromEntries(
+  PUBLIC_ALL_ITEMS.filter((i) => i.ingredients && i.ingredients.trim().length > 0).map((i) => [
+    i.name.trim().toLowerCase(),
+    i.ingredients.trim(),
+  ])
+);
+
+function parseIngredientsList(rawIngredients: string, dishName?: string): RecipeIngredient[] {
+  // Prefer verified measured quantities from master recipe specification (fixes SMOL-011)
+  const measuredRaw = dishName ? MEASURED_RECIPE_BY_NAME[dishName.trim().toLowerCase()] : undefined;
+  if (measuredRaw) {
+    return measuredRaw
+      .split(/[;,]/)
+      .map((part) => part.trim())
+      .filter(Boolean)
+      .map((entry) => {
+        const qtyMatch = entry.match(/^(.*?)\s+(\d+(?:\.\d+)?\s*(?:ml|g|kg|l|tsp|tbsp|pcs|pc|slices|slice|cups|cup|shots|shot|oz|drops|pinch)\b.*)$/i);
+        if (qtyMatch) {
+          return {
+            name: qtyMatch[1].trim(),
+            quantity: qtyMatch[2].trim(),
+            notes: "Verified SOP measure",
+          };
+        }
+        return {
+          name: entry,
+          quantity: "Measured per spec",
+          notes: "Verified SOP",
+        };
+      });
+  }
+
+  if (!rawIngredients) return [{ name: "Fresh Pantry Ingredients", quantity: "Pending measurement" }];
   return rawIngredients.split(",").map((ing) => {
     const trimmed = ing.trim();
     return {
       name: trimmed,
-      quantity: "Standard portion",
-      notes: "Pantry stock",
+      quantity: "Pending measurement",
+      notes: "Draft SOP — confirm exact portion",
     };
   });
 }
@@ -167,7 +199,7 @@ RAW_MENU_ITEMS.forEach((raw) => {
     difficulty: (raw.cat.includes("Pasta") || raw.cat.includes("Meals") ? "Intermediate" : "Beginner (Easy)") as RecipeDetail["difficulty"],
     servingWare: raw.ware || "Artisanal Ceramic Ware",
     idealTemperature: raw.cat.includes("Cold") || raw.cat.includes("Refreshers") ? "Chilled (4°C)" : "Warm & Fresh (65°C)",
-    ingredients: parseIngredientsList(raw.ingredients),
+    ingredients: parseIngredientsList(raw.ingredients, raw.name),
     steps: parseStepsFromPrep(raw.prep, raw.name, raw.equipment),
     proTips: [
       raw.notes || "Maintain consistent station cleanliness and standard portion weights.",
@@ -766,7 +798,19 @@ export const KitchenCookbookView: React.FC = () => {
                   <div className="flex items-center gap-1 shrink-0">
                     {item.hasDetailedRecipe ? (
                       <span className="rounded-lg bg-emerald-100 dark:bg-emerald-950/80 border border-emerald-300 text-emerald-800 dark:text-emerald-300 px-2 py-0.5 font-mono text-[9px] font-bold">
-                        SOP Ready
+                        {(() => {
+                          const itemRecipe =
+                            recipes[item.id] ||
+                            Object.values(recipes).find(
+                              (r) => r.dishName.trim().toLowerCase() === item.name.trim().toLowerCase()
+                            );
+                          return itemRecipe &&
+                            itemRecipe.ingredients.some(
+                              (ing) => ing.quantity !== "Pending measurement" && ing.quantity !== "Standard portion"
+                            )
+                            ? "SOP Ready"
+                            : "Draft SOP";
+                        })()}
                       </span>
                     ) : (
                       <span className="rounded-lg bg-[#FEF3C7] dark:bg-amber-950/80 border border-amber-300 text-[#92400E] dark:text-amber-300 px-2 py-0.5 font-mono text-[9px] font-bold">

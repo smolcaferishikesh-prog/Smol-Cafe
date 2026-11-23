@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import type { ActiveCashierTable } from "@/app/bill/actions";
@@ -19,6 +19,7 @@ import {
   markOrderDeliveredAction,
   type PendingOrderVerification,
   type PaidHistoryRecord,
+  type PaidHistoryItem,
   type DeliveryOrder,
 } from "@/app/cashier/actions";
 import {
@@ -78,6 +79,37 @@ export const CashierDashboard: React.FC<CashierDashboardProps> = ({
   const [deliveryOrders, setDeliveryOrders] = useState<DeliveryOrder[]>(initialDeliveryOrders);
   const [deliveringOrderIds, setDeliveringOrderIds] = useState<Set<string>>(new Set());
   const [paidHistory, setPaidHistory] = useState<PaidHistoryRecord[]>(initialPaidHistory);
+  const [paidDateScope, setPaidDateScope] = useState<"TODAY" | "ALL">("TODAY");
+
+  const getIstDateKey = useCallback((isoOrDate: string | Date) => {
+    try {
+      const d = typeof isoOrDate === "string" ? new Date(isoOrDate) : isoOrDate;
+      return d.toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+    } catch {
+      return "";
+    }
+  }, []);
+
+  const formatIstTimestamp = useCallback((iso: string) => {
+    try {
+      return `${new Date(iso).toLocaleString("en-IN", {
+        timeZone: "Asia/Kolkata",
+        day: "2-digit",
+        month: "short",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: true,
+      })} IST`;
+    } catch {
+      return "Recently";
+    }
+  }, []);
+
+  const todayIstKey = getIstDateKey(new Date());
+  const filteredPaidHistory: PaidHistoryRecord[] = useMemo(() => {
+    if (paidDateScope === "ALL") return paidHistory;
+    return paidHistory.filter((rec: PaidHistoryRecord) => getIstDateKey(rec.paidAt) === todayIstKey);
+  }, [paidHistory, paidDateScope, getIstDateKey, todayIstKey]);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isMounted, setIsMounted] = useState(false);
   const playedChimeOrderIdsRef = useRef<Set<string>>(
@@ -859,7 +891,7 @@ export const CashierDashboard: React.FC<CashierDashboardProps> = ({
             <span className="hidden sm:inline">Paid Orders</span>
             <span className="sm:hidden">Paid History</span>
             <span className="rounded-full bg-[#F3E7D3] dark:bg-stone-800 px-1.5 sm:px-2 py-0.2 text-[10px] font-mono text-[#725039] dark:text-stone-300">
-              {paidHistory.length}
+              {filteredPaidHistory.length}
             </span>
           </button>
 
@@ -1310,19 +1342,49 @@ export const CashierDashboard: React.FC<CashierDashboardProps> = ({
           <div className="space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
               <div>
-                <h1 className="text-xl font-extrabold tracking-tight text-[#241F1C] dark:text-white">Today&apos;s Paid Orders &amp; Audit Log</h1>
+                <h1 className="text-xl font-extrabold tracking-tight text-[#241F1C] dark:text-white">
+                  {paidDateScope === "TODAY"
+                    ? `Today's Paid Orders & Audit Log (${todayIstKey} IST)`
+                    : "All Historical Paid Orders & Audit Log"}
+                </h1>
                 <p className="text-xs text-[#725039] dark:text-stone-400">
-                  Closed table chits and completed payment transactions
+                  {paidDateScope === "TODAY"
+                    ? "Settled table chits and payments recorded today in Asia/Kolkata (IST)"
+                    : "Full historical settlement ledger across all business dates (IST)"}
                 </p>
               </div>
-              <div className="self-start sm:self-auto">
+              <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
+                <div className="inline-flex rounded-full border border-[#C9AE8B]/40 dark:border-stone-700 bg-[#FAF4EB] dark:bg-stone-900 p-0.5 text-[11px] font-mono">
+                  <button
+                    type="button"
+                    onClick={() => setPaidDateScope("TODAY")}
+                    className={`px-2.5 py-1 rounded-full font-bold transition cursor-pointer ${
+                      paidDateScope === "TODAY"
+                        ? "bg-[#241F1C] text-white dark:bg-[#F2C84B] dark:text-[#1C1714]"
+                        : "text-[#725039] dark:text-stone-400"
+                    }`}
+                  >
+                    Today (IST)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPaidDateScope("ALL")}
+                    className={`px-2.5 py-1 rounded-full font-bold transition cursor-pointer ${
+                      paidDateScope === "ALL"
+                        ? "bg-[#241F1C] text-white dark:bg-[#F2C84B] dark:text-[#1C1714]"
+                        : "text-[#725039] dark:text-stone-400"
+                    }`}
+                  >
+                    All History ({paidHistory.length})
+                  </button>
+                </div>
                 <span className="inline-flex items-center rounded-full bg-emerald-100 dark:bg-emerald-950/80 border border-emerald-300 dark:border-emerald-800/60 px-3 py-1 font-mono text-xs font-bold text-emerald-800 dark:text-emerald-400 shadow-xs">
-                  Total: ₹{paidHistory.reduce((acc, p) => acc + p.totalRupees, 0)}
+                  Total ({filteredPaidHistory.length}): ₹{filteredPaidHistory.reduce((acc: number, p: PaidHistoryRecord) => acc + p.totalRupees, 0)}
                 </span>
               </div>
             </div>
 
-            {paidHistory.length === 0 ? (
+            {filteredPaidHistory.length === 0 ? (
               <div className="rounded-3xl border border-[#C9AE8B]/40 dark:border-stone-800 bg-[#FAF4EB] dark:bg-[#1A1715] p-8 text-center text-[#725039] dark:text-stone-400 space-y-3 shadow-xs transition-colors">
                 <Receipt className="h-8 w-8 text-[#8C6D53] dark:text-stone-500 mx-auto" />
                 <p className="text-sm font-bold text-[#241F1C] dark:text-stone-200">No settled orders yet today</p>
@@ -1334,7 +1396,7 @@ export const CashierDashboard: React.FC<CashierDashboardProps> = ({
               <>
                 {/* Mobile View: Responsive Cards (< sm) */}
                 <div className="space-y-3 sm:hidden">
-                  {paidHistory.map((rec) => (
+                  {filteredPaidHistory.map((rec: PaidHistoryRecord) => (
                     <div
                       key={rec.id}
                       className="rounded-2xl border border-[#C9AE8B]/40 dark:border-stone-800 bg-[#FAF4EB] dark:bg-[#1A1715] p-4 shadow-xs transition-colors space-y-3"
@@ -1391,7 +1453,7 @@ export const CashierDashboard: React.FC<CashierDashboardProps> = ({
                       {/* Items Details List */}
                       {rec.items && rec.items.length > 0 && (
                         <div className="bg-[#F3E7D3]/60 dark:bg-stone-900/60 rounded-xl p-2.5 space-y-1 text-xs font-mono">
-                          {rec.items.map((item, idx) => (
+                          {rec.items.map((item: PaidHistoryItem, idx: number) => (
                             <div key={idx} className="flex items-center justify-between text-[#241F1C] dark:text-stone-300 text-[11px]">
                               <span>
                                 <strong className="text-[#B72E35] dark:text-[#F6AD55]">{item.qty}×</strong> {item.name}
@@ -1408,7 +1470,7 @@ export const CashierDashboard: React.FC<CashierDashboardProps> = ({
                           <span className="text-[10px] uppercase font-mono text-[#8C6D53] dark:text-stone-500">Settled At</span>
                           <span className="font-mono text-xs text-[#725039] dark:text-stone-400" suppressHydrationWarning>
                             {isMounted
-                              ? new Date(rec.paidAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                              ? formatIstTimestamp(rec.paidAt)
                               : "Recently"}
                           </span>
                         </div>
@@ -1460,14 +1522,14 @@ export const CashierDashboard: React.FC<CashierDashboardProps> = ({
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-[#C9AE8B]/20 dark:divide-stone-800 font-mono">
-                        {paidHistory.map((rec) => (
+                        {filteredPaidHistory.map((rec: PaidHistoryRecord) => (
                           <tr key={rec.id} className="hover:bg-[#F3E7D3]/60 dark:hover:bg-stone-900/50 transition">
                             <td className="p-3.5 font-bold text-[#241F1C] dark:text-stone-200 whitespace-nowrap">{rec.id}</td>
                             <td className="p-3.5 text-[#8C6207] dark:text-[#F6AD55] font-bold whitespace-nowrap">Table {rec.tableLabel}</td>
                             <td className="p-3.5 max-w-[280px]">
                               {rec.items && rec.items.length > 0 ? (
                                 <div className="space-y-0.5">
-                                  {rec.items.map((item, idx) => (
+                                  {rec.items.map((item: PaidHistoryItem, idx: number) => (
                                     <div key={idx} className="text-[11px] text-[#241F1C] dark:text-stone-300 truncate">
                                       <strong className="text-[#B72E35] dark:text-[#F6AD55]">{item.qty}×</strong> {item.name}
                                       <span className="text-[#8C6D53] dark:text-stone-500 text-[10px] ml-1.5">(₹{item.subtotalRupees})</span>
@@ -1520,7 +1582,7 @@ export const CashierDashboard: React.FC<CashierDashboardProps> = ({
                             <td className="p-3.5 font-bold text-[#241F1C] dark:text-white font-serif text-sm whitespace-nowrap">₹{rec.totalRupees}</td>
                             <td className="p-3.5 text-[#725039] dark:text-stone-400 text-[11px] whitespace-nowrap" suppressHydrationWarning>
                               {isMounted
-                                ? new Date(rec.paidAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                                ? formatIstTimestamp(rec.paidAt)
                                 : "Recently"}
                             </td>
                             <td className="p-3.5 text-right whitespace-nowrap">

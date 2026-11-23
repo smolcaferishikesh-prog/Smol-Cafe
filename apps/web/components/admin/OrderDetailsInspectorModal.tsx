@@ -137,7 +137,7 @@ export const OrderDetailsInspectorModal: React.FC<OrderDetailsInspectorModalProp
                     order?.status
                   )}`}
                 >
-                  {order?.status || "ACTIVE"}
+                  {order?.status || "AVAILABLE"}
                 </span>
               </div>
               <p className="font-serif italic text-xs text-[#725039] dark:text-[#C9AE8B]">
@@ -198,7 +198,21 @@ export const OrderDetailsInspectorModal: React.FC<OrderDetailsInspectorModalProp
         </div>
 
         {/* Tab 1: Clean Formatted Details View */}
-        {activeTab === "details" && (
+        {activeTab === "details" && !order && (
+          <div className="rounded-2xl border border-[#C9AE8B]/40 dark:border-stone-800 bg-[#FAF4EB] dark:bg-[#201C19] p-6 text-center space-y-2">
+            <div className="mx-auto flex h-11 w-11 items-center justify-center rounded-2xl bg-[#F3E7D3] dark:bg-stone-800 text-[#725039] dark:text-[#C9AE8B]">
+              <Armchair className="h-5 w-5" />
+            </div>
+            <h4 className="font-serif text-base font-bold text-[#241F1C] dark:text-white">
+              No active order on Table {tableNumber}
+            </h4>
+            <p className="text-xs text-[#725039] dark:text-stone-400 max-w-sm mx-auto">
+              This table is currently available with no open dining session or bill. Switch to POS JSON Metadata to inspect the table configuration.
+            </p>
+          </div>
+        )}
+
+        {activeTab === "details" && order && (
           <div className="space-y-4">
             {/* Live Progress Pipeline */}
             {order && (
@@ -344,7 +358,9 @@ export const OrderDetailsInspectorModal: React.FC<OrderDetailsInspectorModalProp
                   Ordered Items &amp; Quantity
                 </span>
                 <span className="font-mono text-[10px] text-[#725039] dark:text-stone-400">
-                  {order?.itemsDetail?.length || order?.items?.length || 1} Item(s)
+                  {order.itemsDetail && order.itemsDetail.length > 0
+                    ? `${order.itemsDetail.length} Line(s) · ${order.itemsDetail.reduce((sum, it) => sum + (it.qty || 1), 0)} Unit(s)`
+                    : `${order.items?.length || 0} Item(s)`}
                 </span>
               </div>
 
@@ -374,7 +390,7 @@ export const OrderDetailsInspectorModal: React.FC<OrderDetailsInspectorModalProp
                     </div>
                   ))
                 ) : (
-                  (order?.items || ["Artisanal Flat White (x2)", "Bun Makkhan (x1)"]).map(
+                  (order?.items || []).map(
                     (itStr, idx) => (
                       <div
                         key={idx}

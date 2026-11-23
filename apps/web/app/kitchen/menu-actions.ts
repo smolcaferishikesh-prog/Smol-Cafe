@@ -70,18 +70,81 @@ function getIngredientStore() {
   return globalThis.__SMOL_KITCHEN_INGREDIENTS__;
 }
 
-// Station classification helper
+// Station classification helper (fixes INV-004: route hot drinks/teas to Brew Bar and hot meals/eggs to Hot Kitchen)
 function inferStation(categoryName: string, itemName: string): string {
   const cat = categoryName.toLowerCase();
   const name = itemName.toLowerCase();
 
-  if (cat.includes("coffee") || cat.includes("cold & easy") || cat.includes("shakes") || cat.includes("chai")) {
+  if (
+    cat.includes("coffee") ||
+    cat.includes("cold & easy") ||
+    cat.includes("shakes") ||
+    cat.includes("chai") ||
+    cat.includes("tea") ||
+    cat.includes("drink") ||
+    cat.includes("beverage") ||
+    cat.includes("cooler") ||
+    name.includes("espresso") ||
+    name.includes("latte") ||
+    name.includes("cappuccino") ||
+    name.includes("americano") ||
+    name.includes("mocha") ||
+    name.includes("chai") ||
+    name.includes("tea") ||
+    name.includes("brew") ||
+    name.includes("matcha") ||
+    name.includes("chocolate") ||
+    name.includes("fizz") ||
+    name.includes("lemonade") ||
+    name.includes("shake") ||
+    name.includes("smoothie")
+  ) {
     return "Brew Bar & Beverages";
   }
-  if (cat.includes("slow mornings") || cat.includes("there's always room") || name.includes("croissant") || name.includes("bun")) {
+  if (
+    cat.includes("there's always room") ||
+    cat.includes("bakery") ||
+    cat.includes("dessert") ||
+    name.includes("croissant") ||
+    name.includes("bun") ||
+    name.includes("cake") ||
+    name.includes("brownie") ||
+    name.includes("cookie") ||
+    name.includes("muffin") ||
+    name.includes("pastry")
+  ) {
     return "Bakery & Bakes";
   }
-  if (cat.includes("sandwiches") || cat.includes("pasta & pizza")) {
+  if (
+    cat.includes("sandwiches") ||
+    cat.includes("pasta") ||
+    cat.includes("pizza") ||
+    cat.includes("slow mornings") ||
+    cat.includes("breakfast") ||
+    cat.includes("rice bowl") ||
+    cat.includes("thali") ||
+    cat.includes("comfort") ||
+    cat.includes("hot") ||
+    name.includes("omelette") ||
+    name.includes("egg") ||
+    name.includes("chilla") ||
+    name.includes("paratha") ||
+    name.includes("toast") ||
+    name.includes("sandwich") ||
+    name.includes("panini") ||
+    name.includes("pasta") ||
+    name.includes("pizza") ||
+    name.includes("curry") ||
+    name.includes("masala") ||
+    name.includes("rice bowl") ||
+    name.includes("khichdi") ||
+    name.includes("maggi") ||
+    name.includes("noodle") ||
+    name.includes("soup") ||
+    name.includes("thali") ||
+    name.includes("poha") ||
+    name.includes("upma")
+  ) {
     return "Hot Kitchen & Grill";
   }
   return "Cold Prep & Bowls";
@@ -105,7 +168,26 @@ export async function fetchKitchenMenuCatalogAction(): Promise<{
 
     catalog.forEach((cat: CategoryWithItems) => {
       cat.items.forEach((it) => {
-        const custom = stockStore[it.id] || { stockStatus: "IN_STOCK" };
+        // Derive canonical availability from DB/catalog status first (fixes SMOL-005 Admin vs Kitchen mismatch)
+        const catalogMetaAvailability = String(it.metadata?.availability || "").toUpperCase();
+        const catalogStatus = String(it.status || "").toUpperCase();
+        const canonicalStockStatus: ItemStockStatus =
+          catalogStatus === "SOLD_OUT" || catalogMetaAvailability === "SOLD_OUT"
+            ? "SOLD_OUT"
+            : catalogMetaAvailability === "LOW_STOCK"
+            ? "LOW_STOCK"
+            : "IN_STOCK";
+        const customOverride = stockStore[it.id];
+        const effectiveStockStatus: ItemStockStatus =
+          canonicalStockStatus === "SOLD_OUT"
+            ? "SOLD_OUT"
+            : customOverride?.stockStatus || canonicalStockStatus;
+        const custom = {
+          stockStatus: effectiveStockStatus,
+          lowStockCount: customOverride?.lowStockCount,
+          isChefSpecial: customOverride?.isChefSpecial,
+          chefNotes: customOverride?.chefNotes,
+        };
         const station = inferStation(cat.name, it.name);
 
         items.push({

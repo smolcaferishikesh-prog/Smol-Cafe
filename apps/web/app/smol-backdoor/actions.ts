@@ -25,6 +25,7 @@ export interface StaffLoginResult {
   role?: string;
   redirectTo?: string;
   message?: string;
+  errorCode?: "MISSING_PIN" | "UNKNOWN_ROLE" | "INVALID_PIN" | "SERVICE_ERROR";
 }
 
 /**
@@ -129,8 +130,13 @@ export async function resetRoleCredentialAction(
 }> {
   const auth = await requireStaffAuth(["admin", "super_admin"]);
   if (!auth.authorized) {
-    const current = await getStoredCredentials();
-    return { success: false, credentials: current, message: "Unauthorized." };
+    const masked: RoleCredentialsMap = {
+      admin: { ...DEFAULT_ROLE_CREDENTIALS.admin, pin: "****", password: undefined },
+      cashier: { ...DEFAULT_ROLE_CREDENTIALS.cashier, pin: "****" },
+      kitchen: { ...DEFAULT_ROLE_CREDENTIALS.kitchen, pin: "****" },
+      barista: { ...DEFAULT_ROLE_CREDENTIALS.barista, pin: "****" },
+    };
+    return { success: false, credentials: masked, message: "Unauthorized." };
   }
 
   const creds = await getStoredCredentials();
@@ -198,87 +204,85 @@ export async function staffBackdoorLoginAction(
   const { role, pin, password } = data;
 
   if (!pin || pin.trim().length === 0) {
-    return { success: false, message: "PIN is required. Please enter your station PIN." };
-  }
-
-  const creds = await getStoredCredentials();
-  const currentCred = creds[role];
-
-  if (!currentCred) {
-    return { success: false, message: "Unknown staff role specified." };
+    return {
+      success: false,
+      errorCode: "MISSING_PIN",
+      message: "PIN is required. Please enter your station PIN.",
+    };
   }
 
   const trimmedPin = pin.trim();
+  const trimmedPass = password?.trim() || "";
 
-  // Kitchen Quick Passcode - STRICT check against active PIN
-  if (role === "kitchen") {
-    if (trimmedPin !== currentCred.pin) {
-      return { success: false, message: "Invalid Kitchen Station PIN. Please try again." };
+  const matchesRole = (cred: RoleCredential | undefined): boolean => {
+    if (!cred) return false;
+    if (trimmedPin === cred.pin) return true;
+    if (role === "admin" && trimmedPass.length > 0 && cred.password && trimmedPass === cred.password) {
+      return true;
     }
-    const token = generateRoleCredentialToken("kitchen", currentCred.pin);
-    await setStaffSessionCookie("kitchen", token);
+    return false;
+  };
+
+  try {
+    let creds = await getStoredCredentials();
+    let currentCred = creds[role];
+
+    if (!currentCred) {
+      return {
+        success: false,
+        errorCode: "UNKNOWN_ROLE",
+        message: "Unknown staff role specified.",
+      };
+    }
+
+    // If cached credential did not match, force one fresh Supabase read before rejecting (prevents stale-cache false rejections)
+    if (!matchesRole(currentCred)) {
+      creds = await getStoredCredentials({ forceRefresh: true });
+      currentCred = creds[role];
+    }
+
+    if (!matchesRole(currentCred)) {
+      const invalidMessages: Record<StaffLoginInput["role"], string> = {
+        kitchen: "Invalid Kitchen Station PIN. Please try again.",
+        barista: "Invalid Barista Station PIN. Please try again.",
+        cashier: "Invalid Cashier Desk PIN. Please try again.",
+        admin: "Invalid Admin PIN or master password. Please try again.",
+      };
+      return {
+        success: false,
+        errorCode: "INVALID_PIN",
+        message: invalidMessages[role],
+      };
+    }
+
+    const token =
+      role === "admin"
+        ? generateRoleCredentialToken("admin", currentCred.pin, currentCred.password)
+        : generateRoleCredentialToken(role, currentCred.pin);
+
+    await setStaffSessionCookie(role, token);
+
+    const redirectMap: Record<StaffLoginInput["role"], { redirectTo: string; message: string }> = {
+      kitchen: { redirectTo: "/smol-backdoor/kitchen", message: "Kitchen display station unlocked!" },
+      barista: { redirectTo: "/smol-backdoor/barista", message: "Barista brew desk unlocked!" },
+      cashier: { redirectTo: "/smol-backdoor/cashier", message: "Cashier & settlement desk unlocked!" },
+      admin: { redirectTo: "/smol-backdoor/admin", message: "Admin Control Tower unlocked!" },
+    };
+
     return {
       success: true,
-      role: "kitchen",
-      redirectTo: "/smol-backdoor/kitchen",
-      message: "Kitchen display station unlocked!",
+      role,
+      redirectTo: redirectMap[role].redirectTo,
+      message: redirectMap[role].message,
     };
-  }
-
-  // Barista Quick Passcode - STRICT check against active PIN
-  if (role === "barista") {
-    if (trimmedPin !== currentCred.pin) {
-      return { success: false, message: "Invalid Barista Station PIN. Please try again." };
-    }
-    const token = generateRoleCredentialToken("barista", currentCred.pin);
-    await setStaffSessionCookie("barista", token);
+  } catch (err) {
+    console.error("Staff login service error:", err);
     return {
-      success: true,
-      role: "barista",
-      redirectTo: "/smol-backdoor/barista",
-      message: "Barista brew desk unlocked!",
+      success: false,
+      errorCode: "SERVICE_ERROR",
+      message: "Authentication service temporarily unavailable. Please retry in a moment.",
     };
   }
-
-  // Cashier Quick Passcode - STRICT check against active PIN
-  if (role === "cashier") {
-    if (trimmedPin !== currentCred.pin) {
-      return { success: false, message: "Invalid Cashier Desk PIN. Please try again." };
-    }
-    const token = generateRoleCredentialToken("cashier", currentCred.pin);
-    await setStaffSessionCookie("cashier", token);
-    return {
-      success: true,
-      role: "cashier",
-      redirectTo: "/smol-backdoor/cashier",
-      message: "Cashier & settlement desk unlocked!",
-    };
-  }
-
-  // Admin Master Passcode — STRICT check against active Admin PIN or master password
-  if (role === "admin") {
-    const pinMatches = trimmedPin === currentCred.pin;
-    const passMatches = Boolean(
-      password &&
-      password.trim().length > 0 &&
-      currentCred.password &&
-      password.trim() === currentCred.password
-    );
-
-    if (!pinMatches && !passMatches) {
-      return { success: false, message: "Invalid Admin PIN or master password. Please try again." };
-    }
-    const token = generateRoleCredentialToken("admin", currentCred.pin, currentCred.password);
-    await setStaffSessionCookie("admin", token);
-    return {
-      success: true,
-      role: "admin",
-      redirectTo: "/smol-backdoor/admin",
-      message: "Admin Control Tower unlocked!",
-    };
-  }
-
-  return { success: false, message: "Unknown staff role specified." };
 }
 
 /**

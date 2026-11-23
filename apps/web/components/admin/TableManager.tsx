@@ -651,7 +651,7 @@ export const TableManager: React.FC<TableManagerProps> = ({
 
         <div class="footer-info">
           <div class="footer-url">${tableUrl.replace(/^https?:\/\//, "")}</div>
-          <div>Wi-Fi: <strong style="color: #292524;">smol-guest</strong> | Pass: <strong style="color: #292524;">coffee123</strong></div>
+          <div>Wi-Fi: <strong style="color: #292524;">smol_cafe_guest</strong> | Pass: <strong style="color: #292524;">coffee123</strong></div>
         </div>
       </div>
     `;
@@ -695,7 +695,7 @@ export const TableManager: React.FC<TableManagerProps> = ({
 
         <div class="footer-info">
           <div class="footer-url">${menuUrl.replace(/^https?:\/\//, "")}</div>
-          <div>Wi-Fi: <strong style="color: #292524;">smol-guest</strong> | Pass: <strong style="color: #292524;">coffee123</strong></div>
+          <div>Wi-Fi: <strong style="color: #292524;">smol_cafe_guest</strong> | Pass: <strong style="color: #292524;">coffee123</strong></div>
         </div>
       </div>
     `;
@@ -745,7 +745,7 @@ export const TableManager: React.FC<TableManagerProps> = ({
 
             <div class="footer-info">
               <div class="footer-url">${tableUrl.replace(/^https?:\/\//, "")}</div>
-              <div>Wi-Fi: <strong style="color: #292524;">smol-guest</strong> | Pass: <strong style="color: #292524;">coffee123</strong></div>
+              <div>Wi-Fi: <strong style="color: #292524;">smol_cafe_guest</strong> | Pass: <strong style="color: #292524;">coffee123</strong></div>
             </div>
           </div>
         `;
@@ -1675,7 +1675,17 @@ export const TableManager: React.FC<TableManagerProps> = ({
                     </button>
 
                     <button
-                      onClick={() => setInspectingTag(createTableJsonTag(cleanNum))}
+                      onClick={() =>
+                        setInspectingTag(
+                          createTableJsonTag(t.label, null, t.isOccupied ? 1 : 0, {
+                            tableId: t.id,
+                            zone: t.section,
+                            capacity: t.seats,
+                            isOccupied: Boolean(t.isOccupied),
+                            openedAt: t.isOccupied ? t.updated_at || t.created_at || null : null,
+                          })
+                        )
+                      }
                       className="flex items-center justify-center gap-1 rounded-xl bg-[#F3E7D3] dark:bg-stone-800 py-1.5 text-[11px] font-mono font-semibold text-[#241F1C] dark:text-stone-300 hover:bg-[#EBDDC8] dark:hover:bg-stone-700 transition"
                     >
                       <Tag className="h-3 w-3 text-[#754CFF]" />
@@ -2506,7 +2516,7 @@ export const TableManager: React.FC<TableManagerProps> = ({
                     {tableUrl.replace(/^https?:\/\//, "")}
                   </div>
                   <div className="text-stone-400">
-                    Wi-Fi: <span className="text-stone-700 font-bold">smol-guest</span> | Pass: <span className="text-stone-700 font-bold">coffee123</span>
+                    Wi-Fi: <span className="text-stone-700 font-bold">smol_cafe_guest</span> | Pass: <span className="text-stone-700 font-bold">coffee123</span>
                   </div>
                 </div>
               </div>
@@ -2543,7 +2553,7 @@ export const TableManager: React.FC<TableManagerProps> = ({
               {/* Action Buttons Toolbar (Hidden on Print) */}
               <div className="grid grid-cols-3 gap-2 pt-1 print:hidden">
                 <Link
-                  href={`/table/${viewingQrTable.label.toLowerCase().replace(/^(table|t)[-\s_]*/i, "")}`}
+                  href={tableUrl}
                   target="_blank"
                   className="flex flex-col items-center justify-center gap-1 rounded-2xl bg-[#241F1C] dark:bg-stone-800 text-white p-2.5 text-[11px] font-mono font-bold hover:bg-stone-800 dark:hover:bg-stone-700 transition"
                 >
@@ -2771,7 +2781,7 @@ export const TableManager: React.FC<TableManagerProps> = ({
                     {menuUrl.replace(/^https?:\/\//, "")}
                   </div>
                   <div className="text-stone-400">
-                    Wi-Fi: <span className="text-stone-700 font-bold">smol-guest</span> | Pass:{" "}
+                    Wi-Fi: <span className="text-stone-700 font-bold">smol_cafe_guest</span> | Pass:{" "}
                     <span className="text-stone-700 font-bold">coffee123</span>
                   </div>
                 </div>
@@ -3043,7 +3053,7 @@ export const TableManager: React.FC<TableManagerProps> = ({
                           {tableUrl.replace(/^https?:\/\//, "")}
                         </div>
                         <div className="text-stone-400">
-                          Wi-Fi: <span className="text-stone-700 font-bold">smol-guest</span> | Pass: <span className="text-stone-700 font-bold">coffee123</span>
+                          Wi-Fi: <span className="text-stone-700 font-bold">smol_cafe_guest</span> | Pass: <span className="text-stone-700 font-bold">coffee123</span>
                         </div>
                       </div>
                     </div>
