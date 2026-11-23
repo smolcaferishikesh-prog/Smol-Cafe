@@ -44,7 +44,7 @@ const DEFAULT_MERCHANT_CONFIG: MerchantConfig = {
   serviceChargePercent: 0,
   openingHours: "08:00 AM – 10:00 PM (Daily)",
   wifiSsid: "smol_cafe_guest",
-  wifiPassword: "slowcoffeewarmvibes",
+  wifiPassword: "coffee123",
   receiptHeader: "artisanal coffee & slow bakes",
   receiptFooter: "small place • slow coffee • warm conversations",
   contactEmail: "hello@smolcafe.in",
