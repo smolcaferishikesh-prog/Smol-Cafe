@@ -3135,6 +3135,8 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
               section: t.section || "smol-cafe",
               isOccupied: Boolean(t.isOccupied),
             }))}
+            wifiSsid={merchantConfig.wifiSsid}
+            wifiPassword={merchantConfig.wifiPassword}
           />
         </div>
 

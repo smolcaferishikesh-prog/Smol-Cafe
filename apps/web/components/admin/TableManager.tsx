@@ -43,6 +43,7 @@ import { JsonTagInspectorModal } from "@/components/table/JsonTagInspectorModal"
 import { createTableJsonTag, type TableJsonTag } from "@/lib/table-tag";
 import { broadcastSyncEvent, subscribeToSyncEvents } from "@/lib/sync-events";
 import { normalizeTableLabel } from "@/lib/table-label";
+import { getUpiConfig, type MerchantConfig } from "@/lib/upi";
 
 export const DEFAULT_QR_DOMAIN = "https://www.smolcafe.in";
 
@@ -301,13 +302,49 @@ let __cachedSectionsMemory: string[] | null = null;
 interface TableManagerProps {
   initialTables?: DiningTableRecord[];
   initialSections?: string[];
+  wifiSsid?: string;
+  wifiPassword?: string;
 }
 
 export const TableManager: React.FC<TableManagerProps> = ({
   initialTables = [],
   initialSections = [],
+  wifiSsid: propWifiSsid,
+  wifiPassword: propWifiPassword,
 }) => {
   const router = useRouter();
+
+  // Active WiFi credentials state (synced with Admin Settings / localStorage)
+  const [merchantConfig, setMerchantConfig] = useState<MerchantConfig>(() => getUpiConfig());
+
+  useEffect(() => {
+    setMerchantConfig(getUpiConfig());
+
+    const handleMerchantUpdate = (e: Event) => {
+      const customEvent = e as CustomEvent<MerchantConfig>;
+      if (customEvent.detail) {
+        setMerchantConfig(customEvent.detail);
+      } else {
+        setMerchantConfig(getUpiConfig());
+      }
+    };
+
+    const handleStorage = (e: StorageEvent) => {
+      if (e.key === "smol_merchant_config") {
+        setMerchantConfig(getUpiConfig());
+      }
+    };
+
+    window.addEventListener("smol_merchant_updated", handleMerchantUpdate);
+    window.addEventListener("storage", handleStorage);
+    return () => {
+      window.removeEventListener("smol_merchant_updated", handleMerchantUpdate);
+      window.removeEventListener("storage", handleStorage);
+    };
+  }, []);
+
+  const activeWifiSsid = propWifiSsid || merchantConfig.wifiSsid || "smol_cafe_guest";
+  const activeWifiPassword = propWifiPassword || merchantConfig.wifiPassword || "coffee123";
 
   // Instant 0ms memory initialization:
   const [tables, setTables] = useState<DiningTableRecord[]>(() => {
@@ -651,7 +688,7 @@ export const TableManager: React.FC<TableManagerProps> = ({
 
         <div class="footer-info">
           <div class="footer-url">${tableUrl.replace(/^https?:\/\//, "")}</div>
-          <div>Wi-Fi: <strong style="color: #292524;">smol_cafe_guest</strong> | Pass: <strong style="color: #292524;">coffee123</strong></div>
+          <div>Wi-Fi: <strong style="color: #292524;">${activeWifiSsid}</strong> | Pass: <strong style="color: #292524;">${activeWifiPassword}</strong></div>
         </div>
       </div>
     `;
@@ -695,7 +732,7 @@ export const TableManager: React.FC<TableManagerProps> = ({
 
         <div class="footer-info">
           <div class="footer-url">${menuUrl.replace(/^https?:\/\//, "")}</div>
-          <div>Wi-Fi: <strong style="color: #292524;">smol_cafe_guest</strong> | Pass: <strong style="color: #292524;">coffee123</strong></div>
+          <div>Wi-Fi: <strong style="color: #292524;">${activeWifiSsid}</strong> | Pass: <strong style="color: #292524;">${activeWifiPassword}</strong></div>
         </div>
       </div>
     `;
@@ -745,7 +782,7 @@ export const TableManager: React.FC<TableManagerProps> = ({
 
             <div class="footer-info">
               <div class="footer-url">${tableUrl.replace(/^https?:\/\//, "")}</div>
-              <div>Wi-Fi: <strong style="color: #292524;">smol_cafe_guest</strong> | Pass: <strong style="color: #292524;">coffee123</strong></div>
+              <div>Wi-Fi: <strong style="color: #292524;">${activeWifiSsid}</strong> | Pass: <strong style="color: #292524;">${activeWifiPassword}</strong></div>
             </div>
           </div>
         `;
@@ -2516,7 +2553,7 @@ export const TableManager: React.FC<TableManagerProps> = ({
                     {tableUrl.replace(/^https?:\/\//, "")}
                   </div>
                   <div className="text-stone-400">
-                    Wi-Fi: <span className="text-stone-700 font-bold">smol_cafe_guest</span> | Pass: <span className="text-stone-700 font-bold">coffee123</span>
+                    Wi-Fi: <span className="text-stone-700 font-bold">{activeWifiSsid}</span> | Pass: <span className="text-stone-700 font-bold">{activeWifiPassword}</span>
                   </div>
                 </div>
               </div>
@@ -2781,8 +2818,8 @@ export const TableManager: React.FC<TableManagerProps> = ({
                     {menuUrl.replace(/^https?:\/\//, "")}
                   </div>
                   <div className="text-stone-400">
-                    Wi-Fi: <span className="text-stone-700 font-bold">smol_cafe_guest</span> | Pass:{" "}
-                    <span className="text-stone-700 font-bold">coffee123</span>
+                    Wi-Fi: <span className="text-stone-700 font-bold">{activeWifiSsid}</span> | Pass:{" "}
+                    <span className="text-stone-700 font-bold">{activeWifiPassword}</span>
                   </div>
                 </div>
               </div>
@@ -3053,7 +3090,7 @@ export const TableManager: React.FC<TableManagerProps> = ({
                           {tableUrl.replace(/^https?:\/\//, "")}
                         </div>
                         <div className="text-stone-400">
-                          Wi-Fi: <span className="text-stone-700 font-bold">smol_cafe_guest</span> | Pass: <span className="text-stone-700 font-bold">coffee123</span>
+                          Wi-Fi: <span className="text-stone-700 font-bold">{activeWifiSsid}</span> | Pass: <span className="text-stone-700 font-bold">{activeWifiPassword}</span>
                         </div>
                       </div>
                     </div>

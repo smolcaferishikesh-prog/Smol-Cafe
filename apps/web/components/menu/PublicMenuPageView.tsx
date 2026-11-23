@@ -996,18 +996,35 @@ export const PublicMenuPageView: React.FC<PublicMenuPageViewProps> = ({
                 <div className="p-4 rounded-2xl bg-[#FAF4EB] dark:bg-[#201A18] border border-[#E2D7C7] dark:border-stone-800 space-y-2">
                   <div className="flex items-center gap-1.5 text-xs font-serif font-bold text-[#241F1C] dark:text-[#F3E7D3]">
                     <Scale className="w-3.5 h-3.5 text-[#B72E35] dark:text-purple-400" />
-                    <span>Standard Kitchen Recipe Ingredients (Gram Standard):</span>
+                    <span>
+                      {selectedModifierId === "oat" || selectedModifierId === "almond"
+                        ? `Recipe Ingredients (${currentModifier.title} Milk Variant):`
+                        : "Standard Kitchen Recipe Ingredients (Gram Standard):"}
+                    </span>
                   </div>
                   <div className="flex flex-wrap gap-1.5">
-                    {ingredientsList.map((ing, idx) => (
-                      <span
-                        key={idx}
-                        className="font-mono text-xs px-2.5 py-1 rounded-xl bg-[#F3E7D3] dark:bg-stone-800/80 text-[#241F1C] dark:text-[#F3E7D3] border border-[#C9AE8B]/40 dark:border-stone-700/80"
-                      >
-                        {ing}
-                      </span>
-                    ))}
+                    {ingredientsList.map((ing, idx) => {
+                      const displayIng =
+                        selectedModifierId === "oat"
+                          ? ing.replace(/whole milk|dairy milk|milk/gi, "Oat milk")
+                          : selectedModifierId === "almond"
+                          ? ing.replace(/whole milk|dairy milk|milk/gi, "Almond milk")
+                          : ing;
+                      return (
+                        <span
+                          key={idx}
+                          className="font-mono text-xs px-2.5 py-1 rounded-xl bg-[#F3E7D3] dark:bg-stone-800/80 text-[#241F1C] dark:text-[#F3E7D3] border border-[#C9AE8B]/40 dark:border-stone-700/80"
+                        >
+                          {displayIng}
+                        </span>
+                      );
+                    })}
                   </div>
+                  {(selectedModifierId === "oat" || selectedModifierId === "almond") && (
+                    <p className="text-[11px] font-mono text-emerald-700 dark:text-emerald-400">
+                      Dairy substituted with {currentModifier.title.toLowerCase()} milk; kitchen cross-contact with dairy equipment may still occur. Base nutrition &amp; allergens below reflect the default recipe.
+                    </p>
+                  )}
                 </div>
               )}
 
