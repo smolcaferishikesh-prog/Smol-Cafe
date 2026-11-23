@@ -18,6 +18,7 @@ import {
   Coffee,
   RefreshCw,
   ExternalLink,
+  LogOut,
   Gift,
   TrendingUp,
   Menu,
@@ -102,6 +103,7 @@ import {
   getRoleCredentialsAction,
   updateRoleCredentialAction,
   resetRoleCredentialAction,
+  staffBackdoorLogoutAction,
 } from "@/app/smol-backdoor/actions";
 import type { RoleCredentialsMap, RoleCredential } from "@/lib/auth/credentials";
 import type { OrderStatus } from "@smol-cafe/db";
@@ -2157,14 +2159,20 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
                 <span className="font-mono text-[#725039] dark:text-stone-400">Owner Access</span>
                 <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
               </div>
-              <Link
-                href="/menu"
-                onClick={() => setMobileMenuOpen(false)}
-                className="flex items-center justify-between rounded-xl border border-[#C9AE8B]/40 dark:border-stone-800 bg-[#F3E7D3] dark:bg-stone-900 px-3 py-2 text-xs text-[#725039] dark:text-stone-300 hover:bg-[#EBDDC8] dark:hover:bg-stone-800 transition"
+              <button
+                type="button"
+                onClick={async () => {
+                  setMobileMenuOpen(false);
+                  try {
+                    await staffBackdoorLogoutAction();
+                  } catch {}
+                  window.location.href = "/smol-backdoor";
+                }}
+                className="flex w-full items-center justify-between rounded-xl border border-[#B72E35]/40 dark:border-red-900/40 bg-[#FAF4EB] hover:bg-[#B72E35] dark:bg-stone-900 dark:hover:bg-[#B72E35] px-3 py-2 text-xs font-mono font-bold text-[#B72E35] dark:text-[#FF6B6B] hover:text-white dark:hover:text-white transition cursor-pointer group shadow-xs"
               >
-                <span>Switch to Customer QR</span>
-                <ExternalLink className="h-3 w-3 text-[#725039] dark:text-stone-500" />
-              </Link>
+                <span>Logout</span>
+                <LogOut className="h-3.5 w-3.5 text-[#B72E35] group-hover:text-white dark:text-[#FF6B6B] dark:group-hover:text-white shrink-0 transition" />
+              </button>
             </div>
           </aside>
         </div>
@@ -2237,13 +2245,19 @@ export const AdminTowerDashboard: React.FC<AdminTowerProps> = ({ initialOverview
             <span className="font-mono text-[#725039] dark:text-stone-400 text-[11px]">Owner Access</span>
             <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
           </div>
-          <Link
-            href="/menu"
-            className="flex items-center justify-between rounded-xl border border-[#C9AE8B]/40 dark:border-stone-800 bg-[#F3E7D3] dark:bg-stone-900 px-2.5 lg:px-3 py-1.5 lg:py-2 text-[11px] lg:text-xs text-[#725039] dark:text-stone-300 hover:bg-[#EBDDC8] dark:hover:bg-stone-800 transition"
+          <button
+            type="button"
+            onClick={async () => {
+              try {
+                await staffBackdoorLogoutAction();
+              } catch {}
+              window.location.href = "/smol-backdoor";
+            }}
+            className="flex w-full items-center justify-between rounded-xl border border-[#B72E35]/40 dark:border-red-900/40 bg-[#FAF4EB] hover:bg-[#B72E35] dark:bg-stone-900 dark:hover:bg-[#B72E35] px-2.5 lg:px-3 py-1.5 lg:py-2 text-[11px] lg:text-xs font-mono font-bold text-[#B72E35] dark:text-[#FF6B6B] hover:text-white dark:hover:text-white transition cursor-pointer group shadow-xs"
           >
-            <span className="truncate">Customer QR</span>
-            <ExternalLink className="h-3 w-3 text-[#725039] dark:text-stone-500 shrink-0" />
-          </Link>
+            <span className="truncate">Logout</span>
+            <LogOut className="h-3.5 w-3.5 text-[#B72E35] group-hover:text-white dark:text-[#FF6B6B] dark:group-hover:text-white shrink-0 transition" />
+          </button>
         </div>
       </aside>
 
